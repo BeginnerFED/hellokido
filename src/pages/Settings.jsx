@@ -130,13 +130,13 @@ const Settings = () => {
                 <span className="text-sm text-gray-500 dark:text-gray-400">
                   {language === 'tr' ? 'Uygulama Versiyonu' : 'Application Version'}
                 </span>
-                <span className="text-sm text-gray-900 dark:text-white font-medium px-2.5 py-1 bg-gray-100 dark:bg-gray-800 rounded">1.0.0</span>
+                <span className="text-sm text-gray-900 dark:text-white font-medium px-2.5 py-1 bg-gray-100 dark:bg-gray-800 rounded">1.0.12</span>
               </div>
               <div className="flex justify-between items-center py-2">
                 <span className="text-sm text-gray-500 dark:text-gray-400">
                   {language === 'tr' ? 'Son Güncelleme' : 'Last Update'}
                 </span>
-                <span className="text-sm text-gray-900 dark:text-white">{new Date().toLocaleDateString()}</span>
+                <span className="text-sm text-gray-900 dark:text-white">05.07.2025</span>
               </div>
             </SettingCard>
           </SettingCategory>

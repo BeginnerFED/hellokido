@@ -18,6 +18,7 @@ const RemainingUsage = () => {
   const [loadingLessons, setLoadingLessons] = useState(false);
   const [statusUpdateLoading, setStatusUpdateLoading] = useState(false);
   const [studentDetails, setStudentDetails] = useState(null);
+  const [visibleLessonsCount, setVisibleLessonsCount] = useState(10);
 
   useEffect(() => {
     fetchStudents();
@@ -27,6 +28,7 @@ const RemainingUsage = () => {
     if (selectedStudent) {
       fetchStudentLessons(selectedStudent.registration_id);
       fetchStudentDetails(selectedStudent.registration_id);
+      setVisibleLessonsCount(10); // Reset visible lessons when selecting a new student
     }
   }, [selectedStudent]);
 
@@ -269,6 +271,7 @@ const RemainingUsage = () => {
     setShowDetailView(false);
     setSelectedStudent(null);
     setStudentDetails(null);
+    setVisibleLessonsCount(10); // Reset visible lessons count
   };
 
   const handleFilterClick = () => {
@@ -276,8 +279,13 @@ const RemainingUsage = () => {
       setShowDetailView(false);
       setSelectedStudent(null);
       setStudentDetails(null);
+      setVisibleLessonsCount(10); // Reset visible lessons count
     }
     setIsFilterSheetOpen(true);
+  };
+
+  const handleLoadMore = () => {
+    setVisibleLessonsCount(prev => prev + 10);
   };
 
   const filteredStudents = students.filter(student => {
@@ -815,7 +823,7 @@ const RemainingUsage = () => {
                     </div>
                   ) : (
                     <div className="space-y-3">
-                      {studentLessons.map((lesson) => (
+                      {studentLessons.slice(0, visibleLessonsCount).map((lesson) => (
                         <div key={lesson.id} className="bg-[#f5f5f7] dark:bg-[#161922] rounded-xl overflow-hidden">
                           {/* Üst kısım - Ders bilgileri ve statü */}
                           <div className="p-4">
@@ -920,6 +928,23 @@ const RemainingUsage = () => {
                           </div>
                         </div>
                       ))}
+                      
+                      {/* Load More Button */}
+                      {visibleLessonsCount < studentLessons.length && (
+                        <div className="flex justify-center pt-4">
+                          <button
+                            onClick={handleLoadMore}
+                            className="px-6 py-3 bg-[#f5f5f7] dark:bg-[#161922] text-[#1d1d1f] dark:text-white border border-[#d2d2d7] dark:border-[#2a3241] rounded-xl hover:bg-[#e5e5ea] dark:hover:bg-[#1a1f2e] focus:outline-none focus:ring-2 focus:ring-[#0071e3] focus:ring-offset-2 dark:focus:ring-offset-[#121621] transition-all duration-200 flex items-center gap-2"
+                          >
+                            <span className="text-sm font-medium">
+                              {language === 'tr' ? 'Daha Fazla Yükle' : 'Load More'}
+                            </span>
+                            <span className="text-xs text-[#6e6e73] dark:text-[#86868b] bg-[#e5e5ea] dark:bg-[#2a3241] px-2 py-1 rounded-full">
+                              +{Math.min(10, studentLessons.length - visibleLessonsCount)}
+                            </span>
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
