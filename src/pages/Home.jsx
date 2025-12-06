@@ -6,7 +6,7 @@ import { supabase } from '../lib/supabase';
 import { format } from 'date-fns';
 import { tr, enUS } from 'date-fns/locale';
 import Masonry from 'react-masonry-css';
-import { 
+import {
   ArrowPathIcon,
   CalendarDaysIcon
 } from '@heroicons/react/24/outline';
@@ -28,7 +28,7 @@ const Home = () => {
   const cleanupOldData = () => {
     const savedMessages = JSON.parse(localStorage.getItem('sentWhatsAppMessages') || '{}');
     const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD formatı
-    
+
     // Bugünden önceki tüm tarihleri temizle
     const updatedMessages = {};
     for (const date in savedMessages) {
@@ -36,7 +36,7 @@ const Home = () => {
         updatedMessages[date] = savedMessages[date];
       }
     }
-    
+
     localStorage.setItem('sentWhatsAppMessages', JSON.stringify(updatedMessages));
     return updatedMessages;
   };
@@ -55,34 +55,34 @@ const Home = () => {
       // çünkü WhatsApp'a gitsin istiyoruz
       event.stopPropagation(); // Event yayılımını engelle
     }
-    
+
     const today = new Date().toISOString().split('T')[0];
-    const updatedMessages = {...sentMessages};
-    
+    const updatedMessages = { ...sentMessages };
+
     if (!updatedMessages[today]) {
       updatedMessages[today] = [];
     }
-    
+
     // Sadece ekle, zaten tıklama olayı WhatsApp'a yönlendirmek için
     if (!updatedMessages[today].includes(participantId)) {
       updatedMessages[today].push(participantId);
     }
-    
+
     setSentMessages(updatedMessages);
     localStorage.setItem('sentWhatsAppMessages', JSON.stringify(updatedMessages));
-    
+
     // Bu fonksiyon artık href'in çalışmasını engellemeyecek
   };
 
   // Yeni fonksiyon: Sadece mesaj gönderildi olarak işaretle (silme yapma)
   const addMessageSent = (participantId) => {
     const today = new Date().toISOString().split('T')[0];
-    const updatedMessages = {...sentMessages};
-    
+    const updatedMessages = { ...sentMessages };
+
     if (!updatedMessages[today]) {
       updatedMessages[today] = [];
     }
-    
+
     // Eğer zaten mesaj gönderilmişse, tekrar ekleme
     if (!updatedMessages[today].includes(participantId)) {
       updatedMessages[today].push(participantId);
@@ -100,18 +100,18 @@ const Home = () => {
   // Yarınki dersleri ve katılımcıları çeken fonksiyon
   const fetchTomorrowEvents = async () => {
     setIsLoading(true);
-    
+
     // Yarının başlangıç ve bitiş tarihlerini hesapla
     const today = new Date();
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
-    
+
     const tomorrowStart = new Date(tomorrow);
     tomorrowStart.setHours(0, 0, 0, 0);
-    
+
     const tomorrowEnd = new Date(tomorrow);
     tomorrowEnd.setHours(23, 59, 59, 999);
-    
+
     try {
       // Yarınki dersleri sorgula
       const { data: events, error: eventsError } = await supabase
@@ -121,9 +121,9 @@ const Home = () => {
         .lte('event_date', tomorrowEnd.toISOString())
         .eq('is_active', true)
         .order('event_date', { ascending: true });
-      
+
       if (eventsError) throw eventsError;
-      
+
       // Her ders için katılımcıları getir - ilişkisel sorgu yerine manuel işlemler yapacağız
       const eventsWithParticipants = await Promise.all(events.map(async (event) => {
         // 1. Önce event_participants tablosundan katılımcıları çek - TÜM STATÜLER
@@ -132,9 +132,9 @@ const Home = () => {
           .select('*')
           .eq('event_id', event.id)
           .order('created_at');
-        
+
         if (participantsError) throw participantsError;
-        
+
         // Katılımcı yoksa, hemen boş bir dizi döndür
         if (!participants || participants.length === 0) {
           return {
@@ -142,18 +142,18 @@ const Home = () => {
             participants: []
           };
         }
-        
+
         // 2. Katılımcıların registration_id'lerini çıkar
         const registrationIds = participants.map(p => p.registration_id);
-        
+
         // 3. Bu registration_id'ler için registrations tablosundan bilgileri çek
         const { data: registrations, error: registrationsError } = await supabase
           .from('registrations')
           .select('id, student_name, student_age, parent_name, parent_phone')
           .in('id', registrationIds);
-        
+
         if (registrationsError) throw registrationsError;
-        
+
         // 4. Kayıt bilgilerini katılımcılarla birleştir
         const participantsWithDetails = participants.map(participant => {
           const registration = registrations.find(r => r.id === participant.registration_id);
@@ -162,13 +162,13 @@ const Home = () => {
             registrations: registration // Yapı önceki ile uyumlu olması için "registrations" olarak bırakıyoruz
           };
         });
-        
+
         return {
           ...event,
           participants: participantsWithDetails || []
         };
       }));
-      
+
       setTomorrowEvents(eventsWithParticipants);
     } catch (error) {
       console.error('Yarınki dersler çekilirken hata oluştu:', error);
@@ -180,16 +180,16 @@ const Home = () => {
   // Bugünkü dersleri ve katılımcıları çeken fonksiyon
   const fetchTodayEvents = async () => {
     setIsLoadingToday(true);
-    
+
     // Bugünün başlangıç ve bitiş tarihlerini hesapla
     const today = new Date();
-    
+
     const todayStart = new Date(today);
     todayStart.setHours(0, 0, 0, 0);
-    
+
     const todayEnd = new Date(today);
     todayEnd.setHours(23, 59, 59, 999);
-    
+
     try {
       // Bugünkü dersleri sorgula
       const { data: events, error: eventsError } = await supabase
@@ -199,9 +199,9 @@ const Home = () => {
         .lte('event_date', todayEnd.toISOString())
         .eq('is_active', true)
         .order('event_date', { ascending: true });
-      
+
       if (eventsError) throw eventsError;
-      
+
       // Her ders için katılımcıları getir - ilişkisel sorgu yerine manuel işlemler yapacağız
       const eventsWithParticipants = await Promise.all(events.map(async (event) => {
         // 1. Önce event_participants tablosundan katılımcıları çek - TÜM STATÜLER
@@ -210,9 +210,9 @@ const Home = () => {
           .select('*')
           .eq('event_id', event.id)
           .order('created_at');
-        
+
         if (participantsError) throw participantsError;
-        
+
         // Katılımcı yoksa, hemen boş bir dizi döndür
         if (!participants || participants.length === 0) {
           return {
@@ -220,18 +220,18 @@ const Home = () => {
             participants: []
           };
         }
-        
+
         // 2. Katılımcıların registration_id'lerini çıkar
         const registrationIds = participants.map(p => p.registration_id);
-        
+
         // 3. Bu registration_id'ler için registrations tablosundan bilgileri çek
         const { data: registrations, error: registrationsError } = await supabase
           .from('registrations')
           .select('id, student_name, student_age, parent_name, parent_phone')
           .in('id', registrationIds);
-        
+
         if (registrationsError) throw registrationsError;
-        
+
         // 4. Kayıt bilgilerini katılımcılarla birleştir
         const participantsWithDetails = participants.map(participant => {
           const registration = registrations.find(r => r.id === participant.registration_id);
@@ -240,13 +240,13 @@ const Home = () => {
             registrations: registration // Yapı önceki ile uyumlu olması için "registrations" olarak bırakıyoruz
           };
         });
-        
+
         return {
           ...event,
           participants: participantsWithDetails || []
         };
       }));
-      
+
       setTodayEvents(eventsWithParticipants);
     } catch (error) {
       console.error('Bugünkü dersler çekilirken hata oluştu:', error);
@@ -258,7 +258,7 @@ const Home = () => {
   // Ödemesi bekleyen kayıtları çeken fonksiyon
   const fetchPendingPayments = async () => {
     setIsLoadingPayments(true);
-    
+
     try {
       // Ödemesi beklemede olan kayıtları çek
       const { data, error } = await supabase
@@ -266,9 +266,9 @@ const Home = () => {
         .select('*')
         .eq('payment_status', 'beklemede')
         .order('created_at', { ascending: false });
-      
+
       if (error) throw error;
-      
+
       setPendingPayments(data || []);
     } catch (error) {
       console.error('Bekleyen ödemeler çekilirken hata oluştu:', error);
@@ -280,22 +280,22 @@ const Home = () => {
   // Yakında sona erecek paketleri çeken fonksiyon
   const fetchExpiringSoonPackages = async () => {
     setIsLoadingPackages(true);
-    
+
     try {
       // Bitiş tarihine 7 gün kalan paketleri çek
       const today = new Date();
       const cutoffDate = new Date(today);
       cutoffDate.setDate(today.getDate() + 7); // Önümüzdeki 7 gün içinde bitecek olanlar
-      
+
       const { data, error } = await supabase
         .from('registrations')
         .select('*')
         .lte('package_end_date', cutoffDate.toISOString())
         .gte('package_end_date', today.toISOString()) // Bugün ve sonrası (zaten bitmiş olanları gösterme)
         .order('package_end_date', { ascending: true });
-      
+
       if (error) throw error;
-      
+
       setExpiringSoonPackages(data || []);
     } catch (error) {
       console.error('Bitiş tarihi yaklaşan paketler çekilirken hata oluştu:', error);
@@ -308,7 +308,7 @@ const Home = () => {
   const updateLessonStatus = async (lessonId, newStatus) => {
     try {
       setUpdatingLessonId(lessonId);
-      
+
       // Optimistik UI güncellemesi - API çağrısından önce UI'ı güncelle
       // Bu sayede sayfa yeniden yüklenmeyecek ve kullanıcı aynı yerde kalacak
       setTodayEvents(prevEvents => {
@@ -321,24 +321,24 @@ const Home = () => {
             }
             return participant;
           });
-          
+
           // Etkinliği güncellenen katılımcılarla birlikte döndür
           return { ...event, participants: updatedParticipants };
         });
       });
-      
+
       // Optimistik güncelleme sonrası, backend'i güncelle
       const { error } = await supabase
         .from('event_participants')
         .update({ status: newStatus })
         .eq('id', lessonId);
-      
+
       if (error) {
         // Hata durumunda, eski verileri geri getirmek için fetchTodayEvents() çağrılabilir
         console.error('Ders statüsü güncellenirken hata oluştu:', error);
         fetchTodayEvents(); // Sadece hata durumunda yeniden verileri çek
       }
-      
+
     } catch (error) {
       console.error('Ders statüsü güncellenirken hata oluştu:', error);
       fetchTodayEvents(); // Sadece hata durumunda yeniden verileri çek
@@ -421,19 +421,19 @@ const Home = () => {
     <div>
       {/* Header */}
       <div className="flex items-center justify-between h-auto sm:h-16 px-6 border-b border-[#d2d2d7] dark:border-[#2a3241] py-4 sm:py-0 gap-4 sm:gap-0">
-          <div>
-            <h1 className="text-xl font-medium text-[#1d1d1f] dark:text-white">
-              {language === 'en' ? 'Home' : 'Anasayfa'}
-            </h1>
+        <div>
+          <h1 className="text-xl font-medium text-[#1d1d1f] dark:text-white">
+            {language === 'en' ? 'Home' : 'Anasayfa'}
+          </h1>
+        </div>
+        <div className="flex items-center">
+          <div className="text-sm text-[#6e6e73] dark:text-[#86868b]">
+            {language === 'en' ? 'Today: ' : 'Bugün: '}
+            <span className="font-semibold text-[#1d1d1f] dark:text-white">
+              {formatDate(new Date(), 'd MMMM yyyy')}
+            </span>
           </div>
-          <div className="flex items-center">
-            <div className="text-sm text-[#6e6e73] dark:text-[#86868b]">
-              {language === 'en' ? 'Today: ' : 'Bugün: '} 
-              <span className="font-semibold text-[#1d1d1f] dark:text-white">
-                {formatDate(new Date(), 'd MMMM yyyy')}
-              </span>
-            </div>
-          </div>
+        </div>
       </div>
 
       {/* Content */}
@@ -453,8 +453,8 @@ const Home = () => {
               </span>
             </div>
           </div>
-          <button 
-            onClick={fetchTomorrowEvents} 
+          <button
+            onClick={fetchTomorrowEvents}
             className="flex items-center gap-1.5 text-[#0071e3] hover:text-[#0077ED] text-sm font-medium"
           >
             <ArrowPathIcon className="h-4 w-4" />
@@ -513,8 +513,8 @@ const Home = () => {
               {language === 'en' ? 'No lessons for tomorrow' : 'Yarın için ders bulunmuyor'}
             </h3>
             <p className="text-sm text-[#6e6e73] dark:text-[#86868b] max-w-md mx-auto">
-              {language === 'en' 
-                ? 'There are no lessons scheduled for tomorrow. You can add new lessons from the Calendar page.' 
+              {language === 'en'
+                ? 'There are no lessons scheduled for tomorrow. You can add new lessons from the Calendar page.'
                 : 'Yarın için planlanmış herhangi bir ders bulunmuyor. Takvim sayfasından yeni ders ekleyebilirsiniz.'}
             </p>
           </div>
@@ -573,7 +573,7 @@ const Home = () => {
                     ) : (
                       <div className="space-y-3">
                         {event.participants.map((participant) => (
-                          <div 
+                          <div
                             key={participant.id}
                             className="p-3 bg-[#f5f5f7] dark:bg-[#1c1c1e]/40 rounded-lg"
                           >
@@ -585,12 +585,12 @@ const Home = () => {
                                   </div>
                                   <div>
                                     <div className="flex items-center gap-2">
-                                    <p className="text-[13px] font-medium text-[#1d1d1f] dark:text-white">
-                                      {participant.registrations.student_name}
-                                      <span className="ml-1.5 text-[11px] text-[#6e6e73] dark:text-[#86868b] font-normal">
-                                        ({participant.registrations.student_age})
-                                      </span>
-                                    </p>
+                                      <p className="text-[13px] font-medium text-[#1d1d1f] dark:text-white">
+                                        {participant.registrations.student_name}
+                                        <span className="ml-1.5 text-[11px] text-[#6e6e73] dark:text-[#86868b] font-normal">
+                                          ({participant.registrations.student_age})
+                                        </span>
+                                      </p>
                                     </div>
                                     <p className="text-[11px] text-[#6e6e73] dark:text-[#86868b]">
                                       {language === 'en' ? 'Parent: ' : 'Veli: '}{participant.registrations.parent_name}
@@ -603,16 +603,17 @@ const Home = () => {
                                 <span className={`text-[10px] px-2 py-0.5 rounded-full flex items-center justify-center ${statusColors[participant.status] || 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300'}`}>
                                   {statusLabels[participant.status]?.[language] || participant.status}
                                 </span>
-                                
+
                                 {/* WhatsApp butonu - sadece scheduled durumdaki öğrenciler için gösterilsin */}
                                 {participant.status === 'scheduled' && (
-                                <a 
-                                  href={`https://wa.me/90${participant.registrations.parent_phone.replace(/\D/g, '').replace(/^0+/, '')}?text=${encodeURIComponent(`Merhaba ${participant.registrations.parent_name} Hanım 😊
+                                  <a
+                                    href={`https://wa.me/90${participant.registrations.parent_phone.replace(/\D/g, '').replace(/^0+/, '')}?text=${encodeURIComponent(`Merhaba ${participant.registrations.parent_name} Hanım 😊
 Çocuğunuzun etkinliğimizde bize katılacak olmasından büyük mutluluk duyuyoruz! İşte rezervasyonunuzla ilgili detaylar:
 * Etkinlik Tarihi: ${format(new Date(event.event_date), 'd MMMM yyyy', { locale: tr })} (Yarın)
 * Saat: ${format(new Date(event.event_date), 'HH:mm', { locale: tr })} 
 * Etkinlik: ${eventTypeLabels[event.event_type]} 
 * Yer: Ritim İstanbul B blok Kat:1 Ofis 237
+* Adres: https://maps.app.goo.gl/rb2m4migY24gA8GMA
 * Süre: 45-60 dk
 Etkinlik sırasında çocuklarınızı güvende tutmak için gerekli tüm önlemleri aldık. Lütfen çocuğunuzun rahat kıyafetlerle gelmesini sağlayın ve yanlarına bir su şişesi ve küçük bir atıştırmalık getirmeyi unutmayın. Yedek kıyafet yada aktivite önlüğü getirmenizi tavsiye ederiz.
 Rezervasyonunuzun iptali için lütfen bir gün önceden bizi bilgilendiriniz. Rezervasyonunuza saatinde gelmenizi rica ederiz. 
@@ -621,12 +622,12 @@ Sizleri ve çocuğunuzu atölyemizde görmek için sabırsızlanıyoruz!
 Sevgilerle,
 HelloKido Oyun Atölyesi 🌸`)}`}
                                     onClick={(e) => toggleMessageSent(participant.id, e)}
-                                  target="_blank" 
-                                  rel="noopener noreferrer"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
                                     className="w-8 h-8 rounded-full bg-[#f5f5f7] dark:bg-[#2a3241] hover:bg-[#e5e5e5] dark:hover:bg-[#3a4251] flex items-center justify-center text-[#34c759] border border-[#d2d2d7] dark:border-[#2a3241] transition-colors relative"
-                                  title={language === 'en' ? 'Send Reminder via WhatsApp' : 'WhatsApp\'tan Hatırlatma Mesajı Gönder'}
-                                >
-                                  <FaWhatsapp className="w-4 h-4" />
+                                    title={language === 'en' ? 'Send Reminder via WhatsApp' : 'WhatsApp\'tan Hatırlatma Mesajı Gönder'}
+                                  >
+                                    <FaWhatsapp className="w-4 h-4" />
                                     {isMessageSent(participant.id) && (
                                       <div className="absolute -top-1 -right-1 w-4 h-4 bg-white dark:bg-[#2a3241] rounded-full flex items-center justify-center border border-[#d2d2d7] dark:border-[#1c1c1e]">
                                         <FaCheck className="w-2 h-2 text-[#34c759]" />
@@ -662,8 +663,8 @@ HelloKido Oyun Atölyesi 🌸`)}`}
               </span>
             </div>
           </div>
-          <button 
-            onClick={fetchTodayEvents} 
+          <button
+            onClick={fetchTodayEvents}
             className="flex items-center gap-1.5 text-[#ff9500] hover:text-[#ffA520] text-sm font-medium"
           >
             <ArrowPathIcon className="h-4 w-4" />
@@ -722,8 +723,8 @@ HelloKido Oyun Atölyesi 🌸`)}`}
               {language === 'en' ? 'No lessons for today' : 'Bugün için ders bulunmuyor'}
             </h3>
             <p className="text-sm text-[#6e6e73] dark:text-[#86868b] max-w-md mx-auto">
-              {language === 'en' 
-                ? 'There are no lessons scheduled for today. You can add new lessons from the Calendar page.' 
+              {language === 'en'
+                ? 'There are no lessons scheduled for today. You can add new lessons from the Calendar page.'
                 : 'Bugün için planlanmış herhangi bir ders bulunmuyor. Takvim sayfasından yeni ders ekleyebilirsiniz.'}
             </p>
           </div>
@@ -782,7 +783,7 @@ HelloKido Oyun Atölyesi 🌸`)}`}
                     ) : (
                       <div className="space-y-3">
                         {event.participants.map((participant) => (
-                          <div 
+                          <div
                             key={participant.id}
                             className="p-3 bg-[#f5f5f7] dark:bg-[#1c1c1e]/40 rounded-lg"
                           >
@@ -813,50 +814,46 @@ HelloKido Oyun Atölyesi 🌸`)}`}
                                   {statusLabels[participant.status]?.[language] || participant.status}
                                 </span>
                               </div>
-                              
+
                               {/* Statü Butonları - Planlandı butonu kaldırıldı */}
                               <div className="grid grid-cols-2 sm:flex sm:flex-row items-center justify-center gap-2 mt-1 w-full">
-                                <button 
+                                <button
                                   onClick={() => updateLessonStatus(participant.id, 'attended')}
                                   disabled={updatingLessonId === participant.id}
-                                  className={`flex-1 px-3 py-1 text-[11px] font-medium rounded-full border transition ${
-                                    participant.status === 'attended'
+                                  className={`flex-1 px-3 py-1 text-[11px] font-medium rounded-full border transition ${participant.status === 'attended'
                                       ? 'bg-green-100 text-green-800 border-green-300 dark:bg-green-900/30 dark:text-green-300 dark:border-green-800/50'
                                       : 'bg-white text-gray-700 border-gray-300 hover:bg-green-50 hover:text-green-700 hover:border-green-300 dark:bg-[#1c1c1e]/40 dark:text-gray-300 dark:border-gray-700'
-                                  }`}
+                                    }`}
                                 >
                                   {language === 'en' ? 'Joined' : 'Katıldı'}
                                 </button>
-                                <button 
+                                <button
                                   onClick={() => updateLessonStatus(participant.id, 'no_show')}
                                   disabled={updatingLessonId === participant.id}
-                                  className={`flex-1 px-3 py-1 text-[11px] font-medium rounded-full border transition ${
-                                    participant.status === 'no_show'
+                                  className={`flex-1 px-3 py-1 text-[11px] font-medium rounded-full border transition ${participant.status === 'no_show'
                                       ? 'bg-red-100 text-red-800 border-red-300 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800/50'
                                       : 'bg-white text-gray-700 border-gray-300 hover:bg-red-50 hover:text-red-700 hover:border-red-300 dark:bg-[#1c1c1e]/40 dark:text-gray-300 dark:border-gray-700'
-                                  }`}
+                                    }`}
                                 >
                                   {language === 'en' ? 'Absent' : 'Gelmedi'}
                                 </button>
-                                <button 
+                                <button
                                   onClick={() => updateLessonStatus(participant.id, 'postponed')}
                                   disabled={updatingLessonId === participant.id}
-                                  className={`flex-1 px-3 py-1 text-[11px] font-medium rounded-full border transition ${
-                                    participant.status === 'postponed'
+                                  className={`flex-1 px-3 py-1 text-[11px] font-medium rounded-full border transition ${participant.status === 'postponed'
                                       ? 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800/50'
                                       : 'bg-white text-gray-700 border-gray-300 hover:bg-amber-50 hover:text-amber-700 hover:border-amber-300 dark:bg-[#1c1c1e]/40 dark:text-gray-300 dark:border-gray-700'
-                                  }`}
+                                    }`}
                                 >
                                   {language === 'en' ? 'Delayed' : 'Ertelendi'}
                                 </button>
-                                <button 
+                                <button
                                   onClick={() => updateLessonStatus(participant.id, 'makeup')}
                                   disabled={updatingLessonId === participant.id}
-                                  className={`flex-1 px-3 py-1 text-[11px] font-medium rounded-full border transition ${
-                                    participant.status === 'makeup'
+                                  className={`flex-1 px-3 py-1 text-[11px] font-medium rounded-full border transition ${participant.status === 'makeup'
                                       ? 'bg-purple-100 text-purple-800 border-purple-300 dark:bg-purple-900/30 dark:text-purple-300 dark:border-purple-800/50'
                                       : 'bg-white text-gray-700 border-gray-300 hover:bg-purple-50 hover:text-purple-700 hover:border-purple-300 dark:bg-[#1c1c1e]/40 dark:text-gray-300 dark:border-gray-700'
-                                  }`}
+                                    }`}
                                 >
                                   {language === 'en' ? 'Makeup' : 'Telafi'}
                                 </button>
@@ -886,8 +883,8 @@ HelloKido Oyun Atölyesi 🌸`)}`}
                   {language === 'en' ? 'Pending Payments' : 'Bekleyen Ödemeler'}
                 </h2>
               </div>
-              <button 
-                onClick={fetchPendingPayments} 
+              <button
+                onClick={fetchPendingPayments}
                 className="flex items-center gap-1.5 text-[#0071e3] hover:text-[#0077ED] text-sm font-medium"
               >
                 <ArrowPathIcon className="h-4 w-4" />
@@ -909,8 +906,8 @@ HelloKido Oyun Atölyesi 🌸`)}`}
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-full bg-[#f5f5f7] dark:bg-[#2a3241] relative overflow-hidden">
                         <div className="absolute inset-0 -translate-x-full animate-[shimmer_2s_infinite] bg-gradient-to-r from-transparent via-white/20 dark:via-white/5 to-transparent" />
-              </div>
-              <div>
+                      </div>
+                      <div>
                         <div className="h-5 bg-[#f5f5f7] dark:bg-[#2a3241] rounded-md w-40 mb-1.5 relative overflow-hidden">
                           <div className="absolute inset-0 -translate-x-full animate-[shimmer_2s_infinite] bg-gradient-to-r from-transparent via-white/20 dark:via-white/5 to-transparent" />
                         </div>
@@ -946,46 +943,46 @@ HelloKido Oyun Atölyesi 🌸`)}`}
                     {language === 'en' ? `Total ${pendingPayments.length} pending payments` : `Toplam ${pendingPayments.length} bekleyen ödeme`}
                   </h3>
                 </div>
-                
+
                 <div className="max-h-[350px] overflow-y-auto">
-                {pendingPayments.map((registration) => (
-                  <div 
-                    key={registration.id}
-                    className="p-4 sm:px-6 py-4 flex items-center justify-between border-b border-[#d2d2d7] dark:border-[#2a3241] last:border-b-0 hover:bg-[#f5f5f7] dark:hover:bg-[#1c1c1e]/40 transition-colors"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-[#ff9500]/10 flex items-center justify-center text-[#ff9500] text-sm font-medium">
-                        {registration.student_name.charAt(0)}
+                  {pendingPayments.map((registration) => (
+                    <div
+                      key={registration.id}
+                      className="p-4 sm:px-6 py-4 flex items-center justify-between border-b border-[#d2d2d7] dark:border-[#2a3241] last:border-b-0 hover:bg-[#f5f5f7] dark:hover:bg-[#1c1c1e]/40 transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-[#ff9500]/10 flex items-center justify-center text-[#ff9500] text-sm font-medium">
+                          {registration.student_name.charAt(0)}
+                        </div>
+                        <div>
+                          <p className="text-[15px] font-medium text-[#1d1d1f] dark:text-white flex items-center gap-2">
+                            {registration.student_name}
+                            <span className="text-[13px] text-[#6e6e73] dark:text-[#86868b] font-normal">
+                              ({registration.student_age})
+                            </span>
+                          </p>
+                          <p className="text-[13px] text-[#6e6e73] dark:text-[#86868b]">
+                            {language === 'en' ? 'Parent: ' : 'Veli: '}{registration.parent_name}
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-[15px] font-medium text-[#1d1d1f] dark:text-white flex items-center gap-2">
-                          {registration.student_name}
-                          <span className="text-[13px] text-[#6e6e73] dark:text-[#86868b] font-normal">
-                            ({registration.student_age})
-                          </span>
-                        </p>
-                        <p className="text-[13px] text-[#6e6e73] dark:text-[#86868b]">
-                          {language === 'en' ? 'Parent: ' : 'Veli: '}{registration.parent_name}
-                        </p>
+                      <div className="flex items-center gap-2">
+                        <a
+                          href={`https://wa.me/90${registration.parent_phone.replace(/\D/g, '').replace(/^0+/, '')}?text=${encodeURIComponent(`Merhabalar ${registration.parent_name}. ${registration.student_name} için ödeme beklemekteyiz. Bilginize sunarız.`)}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="w-8 h-8 rounded-full bg-[#f5f5f7] dark:bg-[#2a3241] hover:bg-[#e5e5e5] dark:hover:bg-[#3a4251] flex items-center justify-center text-[#34c759] border border-[#d2d2d7] dark:border-[#2a3241] transition-colors"
+                          title={language === 'en' ? 'Send Payment Reminder via WhatsApp' : 'WhatsApp\'tan Ödeme Hatırlatma Mesajı Gönder'}
+                        >
+                          <FaWhatsapp className="w-4 h-4" />
+                        </a>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <a 
-                        href={`https://wa.me/90${registration.parent_phone.replace(/\D/g, '').replace(/^0+/, '')}?text=${encodeURIComponent(`Merhabalar ${registration.parent_name}. ${registration.student_name} için ödeme beklemekteyiz. Bilginize sunarız.`)}`}
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="w-8 h-8 rounded-full bg-[#f5f5f7] dark:bg-[#2a3241] hover:bg-[#e5e5e5] dark:hover:bg-[#3a4251] flex items-center justify-center text-[#34c759] border border-[#d2d2d7] dark:border-[#2a3241] transition-colors"
-                        title={language === 'en' ? 'Send Payment Reminder via WhatsApp' : 'WhatsApp\'tan Ödeme Hatırlatma Mesajı Gönder'}
-                      >
-                        <FaWhatsapp className="w-4 h-4" />
-                      </a>
-                    </div>
-                  </div>
-                ))}
+                  ))}
                 </div>
               </div>
             )}
-      </div>
+          </div>
 
           {/* Paket Süresi Bitmeye Yaklaşanlar Bölümü */}
           <div>
@@ -996,10 +993,10 @@ HelloKido Oyun Atölyesi 🌸`)}`}
                 </div>
                 <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-white">
                   {language === 'en' ? 'Packages Expiring Soon' : 'Paket Süresi Bitmeye Yaklaşanlar'}
-        </h2>
+                </h2>
               </div>
-              <button 
-                onClick={fetchExpiringSoonPackages} 
+              <button
+                onClick={fetchExpiringSoonPackages}
                 className="flex items-center gap-1.5 text-[#ac39ff] hover:text-[#b54aff] text-sm font-medium"
               >
                 <ArrowPathIcon className="h-4 w-4" />
@@ -1015,7 +1012,7 @@ HelloKido Oyun Atölyesi 🌸`)}`}
                     <div className="absolute inset-0 -translate-x-full animate-[shimmer_2s_infinite] bg-gradient-to-r from-transparent via-white/20 dark:via-white/5 to-transparent" />
                   </div>
                 </div>
-                
+
                 {[...Array(3)].map((_, i) => (
                   <div key={i} className="p-5 flex items-center justify-between border-b border-[#d2d2d7] dark:border-[#2a3241] last:border-b-0">
                     <div className="flex items-center gap-3">
@@ -1055,68 +1052,68 @@ HelloKido Oyun Atölyesi 🌸`)}`}
               <div className="bg-white dark:bg-[#121621] rounded-xl border border-[#d2d2d7] dark:border-[#2a3241] overflow-hidden">
                 <div className="p-4 sm:px-6 border-b border-[#d2d2d7] dark:border-[#2a3241] bg-[#f5f5f7] dark:bg-[#1c1c1e]/40">
                   <h3 className="text-sm font-medium text-[#1d1d1f] dark:text-white">
-                    {language === 'en' 
-                      ? `Total ${expiringSoonPackages.length} upcoming package expiration${expiringSoonPackages.length !== 1 ? 's' : ''}` 
+                    {language === 'en'
+                      ? `Total ${expiringSoonPackages.length} upcoming package expiration${expiringSoonPackages.length !== 1 ? 's' : ''}`
                       : `Toplam ${expiringSoonPackages.length} yaklaşan paket bitişi`}
                   </h3>
                 </div>
-                
+
                 <div className="max-h-[350px] overflow-y-auto">
-                {expiringSoonPackages.map((registration) => {
-                  // Kalan gün sayısını hesapla
-                  const endDate = new Date(registration.package_end_date);
-                  const today = new Date();
-                  const diffTime = Math.abs(endDate - today);
-                  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                  
-                  // Aciliyet seviyesine göre renk belirle
-                  let urgencyColor = "text-[#34c759]"; // Yeşil (daha çok zaman var)
-                  if (diffDays <= 3) {
-                    urgencyColor = "text-[#ff3b30]"; // Kırmızı (çok az zaman kaldı)
-                  } else if (diffDays <= 7) {
-                    urgencyColor = "text-[#ff9500]"; // Turuncu (az zaman kaldı)
-                  }
-                  
-                  return (
-                    <div 
-                      key={registration.id}
-                      className="p-4 sm:px-6 py-4 flex items-center justify-between border-b border-[#d2d2d7] dark:border-[#2a3241] last:border-b-0 hover:bg-[#f5f5f7] dark:hover:bg-[#1c1c1e]/40 transition-colors"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-[#ac39ff]/10 flex items-center justify-center text-[#ac39ff] text-sm font-medium">
-                          {registration.student_name.charAt(0)}
-                        </div>
-                        <div>
-                          <p className="text-[15px] font-medium text-[#1d1d1f] dark:text-white flex items-center gap-2">
-                            {registration.student_name}
-                            <span className="text-[13px] text-[#6e6e73] dark:text-[#86868b] font-normal">
-                              ({registration.student_age})
-                            </span>
-                          </p>
-                          <div className="flex items-center gap-2">
-                            <p className={`text-[13px] ${urgencyColor} font-medium`}>
-                              {language === 'en' ? `${diffDays} day${diffDays !== 1 ? 's' : ''} left` : `${diffDays} gün kaldı`}
+                  {expiringSoonPackages.map((registration) => {
+                    // Kalan gün sayısını hesapla
+                    const endDate = new Date(registration.package_end_date);
+                    const today = new Date();
+                    const diffTime = Math.abs(endDate - today);
+                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+                    // Aciliyet seviyesine göre renk belirle
+                    let urgencyColor = "text-[#34c759]"; // Yeşil (daha çok zaman var)
+                    if (diffDays <= 3) {
+                      urgencyColor = "text-[#ff3b30]"; // Kırmızı (çok az zaman kaldı)
+                    } else if (diffDays <= 7) {
+                      urgencyColor = "text-[#ff9500]"; // Turuncu (az zaman kaldı)
+                    }
+
+                    return (
+                      <div
+                        key={registration.id}
+                        className="p-4 sm:px-6 py-4 flex items-center justify-between border-b border-[#d2d2d7] dark:border-[#2a3241] last:border-b-0 hover:bg-[#f5f5f7] dark:hover:bg-[#1c1c1e]/40 transition-colors"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-[#ac39ff]/10 flex items-center justify-center text-[#ac39ff] text-sm font-medium">
+                            {registration.student_name.charAt(0)}
+                          </div>
+                          <div>
+                            <p className="text-[15px] font-medium text-[#1d1d1f] dark:text-white flex items-center gap-2">
+                              {registration.student_name}
+                              <span className="text-[13px] text-[#6e6e73] dark:text-[#86868b] font-normal">
+                                ({registration.student_age})
+                              </span>
                             </p>
-                            <span className="text-[11px] text-[#6e6e73] dark:text-[#86868b]">
-                              ({formatDate(endDate, 'd MMMM yyyy')})
-                            </span>
+                            <div className="flex items-center gap-2">
+                              <p className={`text-[13px] ${urgencyColor} font-medium`}>
+                                {language === 'en' ? `${diffDays} day${diffDays !== 1 ? 's' : ''} left` : `${diffDays} gün kaldı`}
+                              </p>
+                              <span className="text-[11px] text-[#6e6e73] dark:text-[#86868b]">
+                                ({formatDate(endDate, 'd MMMM yyyy')})
+                              </span>
+                            </div>
                           </div>
                         </div>
+                        <div className="flex items-center gap-2">
+                          <a
+                            href={`https://wa.me/90${registration.parent_phone.replace(/\D/g, '').replace(/^0+/, '')}?text=${encodeURIComponent(`Merhabalar ${registration.parent_name}. ${registration.student_name} adlı öğrencinizin paket süresi ${format(endDate, 'd MMMM yyyy', { locale: tr })} tarihinde sona erecektir. Bilginize sunarız.`)}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="w-8 h-8 rounded-full bg-[#f5f5f7] dark:bg-[#2a3241] hover:bg-[#e5e5e5] dark:hover:bg-[#3a4251] flex items-center justify-center text-[#34c759] border border-[#d2d2d7] dark:border-[#2a3241] transition-colors"
+                            title={language === 'en' ? 'Send Package Expiration Info via WhatsApp' : 'WhatsApp\'tan Paket Bitiş Bilgisi Gönder'}
+                          >
+                            <FaWhatsapp className="w-4 h-4" />
+                          </a>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <a 
-                          href={`https://wa.me/90${registration.parent_phone.replace(/\D/g, '').replace(/^0+/, '')}?text=${encodeURIComponent(`Merhabalar ${registration.parent_name}. ${registration.student_name} adlı öğrencinizin paket süresi ${format(endDate, 'd MMMM yyyy', { locale: tr })} tarihinde sona erecektir. Bilginize sunarız.`)}`}
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="w-8 h-8 rounded-full bg-[#f5f5f7] dark:bg-[#2a3241] hover:bg-[#e5e5e5] dark:hover:bg-[#3a4251] flex items-center justify-center text-[#34c759] border border-[#d2d2d7] dark:border-[#2a3241] transition-colors"
-                          title={language === 'en' ? 'Send Package Expiration Info via WhatsApp' : 'WhatsApp\'tan Paket Bitiş Bilgisi Gönder'}
-                        >
-                          <FaWhatsapp className="w-4 h-4" />
-                        </a>
-                      </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
                 </div>
               </div>
             )}

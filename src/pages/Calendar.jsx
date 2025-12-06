@@ -37,7 +37,7 @@ const useWindowSize = () => {
 
     // Add event listener
     window.addEventListener('resize', handleResize);
-    
+
     // Remove event listener when component unmounts
     return () => window.removeEventListener('resize', handleResize);
   }, []);
@@ -57,6 +57,7 @@ const Calendar = () => {
   });
   const [events, setEvents] = useState([]);
   const [groupedEvents, setGroupedEvents] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
   const [toast, setToast] = useState({
     message: '',
     type: 'success',
@@ -64,21 +65,21 @@ const Calendar = () => {
   });
   const [currentWeekRange, setCurrentWeekRange] = useState(null);
   const calendarRef = useRef(null);
-  
+
   // States for Copy Week Modal
   const [isCopyWeekModalOpen, setIsCopyWeekModalOpen] = useState(false);
   const [hasConflictsInTargetWeek, setHasConflictsInTargetWeek] = useState(false);
   const [copyWeekLoading, setCopyWeekLoading] = useState(false);
   const [currentWeekEvents, setCurrentWeekEvents] = useState([]);
-  
+
   // Action notification state variables
   const [isActionNotificationVisible, setIsActionNotificationVisible] = useState(false);
   const [actionNotificationMessage, setActionNotificationMessage] = useState('');
   const [targetWeekForNavigation, setTargetWeekForNavigation] = useState(null);
-  
+
   // Get screen width
   const { width } = useWindowSize();
-  
+
   // Helper function to format age group text
   const formatAgeGroup = (ageGroup) => {
     // If screen width is less than 1700px or zoomed
@@ -96,7 +97,7 @@ const Calendar = () => {
           .trim();
       }
     }
-    
+
     // Normal view
     return ageGroup;
   };
@@ -137,12 +138,18 @@ const Calendar = () => {
   };
 
   // Fetch events
-  const fetchEvents = async () => {
+  const fetchEvents = async (start, end) => {
     try {
+      if (!start || !end) return;
+
+      setIsLoading(true);
+
       const { data: eventsData, error: eventsError } = await supabase
         .from('events')
         .select('*, event_participants(registration_id)')
         .eq('is_active', true)
+        .gte('event_date', start.toISOString())
+        .lt('event_date', end.toISOString())
         .order('event_date', { ascending: true });
 
       if (eventsError) throw eventsError;
@@ -152,17 +159,21 @@ const Calendar = () => {
         .flatMap(event => event.event_participants)
         .map(participant => participant.registration_id);
 
-      const { data: studentsData, error: studentsError } = await supabase
-        .from('registrations')
-        .select('id, student_name')
-        .in('id', registrationIds);
+      // registrationIds boş ise boşuna sorgu atma
+      let studentMap = {};
+      if (registrationIds.length > 0) {
+        const { data: studentsData, error: studentsError } = await supabase
+          .from('registrations')
+          .select('id, student_name')
+          .in('id', registrationIds);
 
-      if (studentsError) throw studentsError;
+        if (studentsError) throw studentsError;
 
-      // Match student names with IDs
-      const studentMap = Object.fromEntries(
-        studentsData.map(student => [student.id, student.student_name])
-      );
+        // Match student names with IDs
+        studentMap = Object.fromEntries(
+          studentsData.map(student => [student.id, student.student_name])
+        );
+      }
 
       // Convert events to FullCalendar format
       const formattedEvents = eventsData.map(event => {
@@ -192,11 +203,13 @@ const Calendar = () => {
       });
 
       setEvents(formattedEvents);
-      
+
       // Group events by day and type
       groupEventsByDayAndType(formattedEvents);
     } catch (error) {
       console.error(language === 'tr' ? 'Etkinlikler getirilirken hata:' : 'Error fetching events:', error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -204,16 +217,16 @@ const Calendar = () => {
   const groupEventsByDayAndType = (events) => {
     // Group events by day and type
     const groupedByDayAndType = {};
-    
+
     events.forEach(event => {
       const date = new Date(event.start);
       const dateKey = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
       const eventType = event.extendedProps.eventType;
-      
+
       if (!groupedByDayAndType[dateKey]) {
         groupedByDayAndType[dateKey] = {};
       }
-      
+
       if (!groupedByDayAndType[dateKey][eventType]) {
         groupedByDayAndType[dateKey][eventType] = {
           count: 0,
@@ -222,23 +235,23 @@ const Calendar = () => {
           color: event.backgroundColor
         };
       }
-      
+
       groupedByDayAndType[dateKey][eventType].count += 1;
       groupedByDayAndType[dateKey][eventType].events.push(event);
     });
-    
+
     // Convert groups to FullCalendar format
     const groupedEvents = [];
-    
+
     Object.keys(groupedByDayAndType).forEach(dateKey => {
       const [year, month, day] = dateKey.split('-').map(Number);
-      
+
       Object.keys(groupedByDayAndType[dateKey]).forEach(eventType => {
         const group = groupedByDayAndType[dateKey][eventType];
-        
+
         // Group all event types (even if count is 1)
         const date = new Date(year, month, day);
-        
+
         groupedEvents.push({
           id: `group-${dateKey}-${eventType}`,
           title: `${group.count} ${group.typeDetails.label}`,
@@ -256,19 +269,17 @@ const Calendar = () => {
         });
       });
     });
-    
+
     setGroupedEvents(groupedEvents);
   };
 
   // Load events when component mounts and when new events are added
-  useEffect(() => {
-    fetchEvents();
-  }, []);
+  // useEffect removed because datesSet in FullCalendar will handle initial fetch
 
   // Render event content
   const renderEventContent = (eventInfo) => {
     const { typeDetails, currentCapacity, maxCapacity, ageGroup, students, description, isGrouped, count } = eventInfo.event.extendedProps;
-    
+
     // Ay görünümünde ve gruplandırılmış etkinlik ise
     if (eventInfo.view.type === 'dayGridMonth' && isGrouped) {
       return (
@@ -277,7 +288,7 @@ const Calendar = () => {
         </div>
       );
     }
-    
+
     // Normal etkinlik görünümü
     return (
       <div className="event-card w-full h-full flex flex-row text-white overflow-hidden">
@@ -285,7 +296,7 @@ const Calendar = () => {
         <div className="event-title">
           {typeDetails.label}
         </div>
-        
+
         {/* İçerik Alanı */}
         <div className="event-content">
           {/* Bilgiler */}
@@ -300,13 +311,13 @@ const Calendar = () => {
                 })}
               </span>
             </div>
-            
+
             {/* Yaş Grubu */}
             <div className="flex items-center gap-1 bg-white/15 px-2.5 py-1 rounded-md shadow-sm w-fit">
               <AcademicCapIcon className="w-3 h-3 text-white/70" />
               <span className="font-medium">{formatAgeGroup(ageGroup)}</span>
             </div>
-            
+
             {/* Kapasite */}
             <div className="flex items-center gap-1 bg-white/15 px-2.5 py-1 rounded-md shadow-sm w-fit">
               <UserGroupIcon className="w-3 h-3 text-white/70" />
@@ -345,22 +356,22 @@ const Calendar = () => {
     const selectedDateTime = new Date(selectInfo.startStr);
     const selectedHour = selectedDateTime.getHours().toString().padStart(2, '0');
     const selectedMinute = selectedDateTime.getMinutes().toString().padStart(2, '0');
-    
+
     // Seçilen dakikayı en yakın 15'in katına yuvarla (00, 15, 30, 45)
     const roundedMinute = Math.round(selectedMinute / 15) * 15;
     const formattedMinute = (roundedMinute === 60 ? 0 : roundedMinute).toString().padStart(2, '0');
-    
+
     setSelectedDate(selectInfo.startStr);
-    
+
     // Ay görünümünde (dayGridMonth) ise dakika seçilmesin
     const isMonthView = selectInfo.view.type === 'dayGridMonth';
-    
+
     // Seçilen saat bilgisini de sakla
     setSelectedTime({
       hour: selectedHour,
       minute: isMonthView ? '' : formattedMinute
     });
-    
+
     setIsModalOpen(true);
   };
 
@@ -429,8 +440,8 @@ const Calendar = () => {
 
       if (conflictingEvent) {
         throw new Error(
-          language === 'tr' 
-            ? 'Bu tarih ve saatte başka bir etkinlik zaten mevcut. Lütfen farklı bir saat seçin.' 
+          language === 'tr'
+            ? 'Bu tarih ve saatte başka bir etkinlik zaten mevcut. Lütfen farklı bir saat seçin.'
             : 'There is already another event at this date and time. Please select a different time.'
         );
       }
@@ -479,12 +490,15 @@ const Calendar = () => {
 
       // Başarı mesajı göster
       showToast(
-        language === 'tr' ? 'Etkinlik başarıyla oluşturuldu' : 'Event created successfully', 
+        language === 'tr' ? 'Etkinlik başarıyla oluşturuldu' : 'Event created successfully',
         'success'
       );
 
-      // Etkinlikleri yeniden yükle
-      await fetchEvents();
+      // Etkinlikleri yeniden yükle - mevcut görünüm aralığında
+      if (calendarRef.current) {
+        const calendarApi = calendarRef.current.getApi();
+        await fetchEvents(calendarApi.view.currentStart, calendarApi.view.currentEnd);
+      }
       handleCloseModal();
     } catch (error) {
       console.error(language === 'tr' ? 'Etkinlik oluşturulurken hata:' : 'Error creating event:', error);
@@ -495,14 +509,14 @@ const Calendar = () => {
   // Etkinliğe tıklandığında
   const handleEventClick = (clickInfo) => {
     const event = clickInfo.event;
-    
+
     // Gruplandırılmış etkinlik ise ve ay görünümündeyse, hafta görünümüne geç
     if (event.extendedProps.isGrouped && clickInfo.view.type === 'dayGridMonth') {
       const calendarApi = clickInfo.view.calendar;
       calendarApi.changeView('timeGridWeek', event.start);
       return;
     }
-    
+
     // Gruplandırılmış değilse etkinlik düzenleme sheet'ini aç
     if (!event.extendedProps.isGrouped) {
       setSelectedEvent(event.id);
@@ -513,10 +527,10 @@ const Calendar = () => {
   // Görünüm değiştiğinde
   const handleViewDidMount = (viewInfo) => {
     const calendar = viewInfo.view.calendar;
-    
+
     // Mevcut görünümün başlangıç tarihini sakla (hafta kopyalama için)
     setCurrentWeekRange(viewInfo.view.currentStart);
-    
+
     // Ay görünümünde gruplandırılmış etkinlikleri göster ve sürüklemeyi devre dışı bırak
     if (viewInfo.view.type === 'dayGridMonth') {
       calendar.removeAllEventSources();
@@ -528,21 +542,21 @@ const Calendar = () => {
       calendar.addEventSource(events);
       calendar.setOption('editable', true);
     }
-    
+
     // Mevcut görünümdeki etkinlikleri sakla (hafta kopyalama için)
     if (viewInfo.view.type === 'timeGridWeek') {
       const start = viewInfo.view.currentStart;
       const end = viewInfo.view.currentEnd;
-      
+
       // Geçerli hafta içindeki etkinlikleri filtrele - düzeltilmiş sürüm
       const eventsInCurrentWeek = events.filter(event => {
         const eventDate = new Date(event.start);
-        
+
         // Date.getTime() kullanarak milisaniye cinsinden karşılaştırma
-        return eventDate.getTime() >= start.getTime() && 
-               eventDate.getTime() < end.getTime();
+        return eventDate.getTime() >= start.getTime() &&
+          eventDate.getTime() < end.getTime();
       });
-      
+
       setCurrentWeekEvents(eventsInCurrentWeek);
     }
   };
@@ -566,19 +580,22 @@ const Calendar = () => {
 
       // Show success message
       showToast(
-        language === 'tr' ? 'Etkinlik başarıyla taşındı' : 'Event moved successfully', 
+        language === 'tr' ? 'Etkinlik başarıyla taşındı' : 'Event moved successfully',
         'success'
       );
 
-      // Reload events
-      await fetchEvents();
+      // Reload events - mevcut görünüm aralığında
+      if (calendarRef.current) {
+        const calendarApi = calendarRef.current.getApi();
+        await fetchEvents(calendarApi.view.currentStart, calendarApi.view.currentEnd);
+      }
     } catch (error) {
       console.error(
-        language === 'tr' ? 'Etkinlik taşınırken hata:' : 'Error moving event:', 
+        language === 'tr' ? 'Etkinlik taşınırken hata:' : 'Error moving event:',
         error
       );
       showToast(
-        language === 'tr' ? 'Etkinlik taşınırken bir hata oluştu' : 'An error occurred while moving the event', 
+        language === 'tr' ? 'Etkinlik taşınırken bir hata oluştu' : 'An error occurred while moving the event',
         'error'
       );
       dropInfo.revert();
@@ -590,28 +607,28 @@ const Calendar = () => {
     if (calendarRef.current) {
       const calendarApi = calendarRef.current.getApi();
       const view = calendarApi.view;
-      
+
       // Hafta görünümünde değilse, hafta görünümüne geç
       if (view.type !== 'timeGridWeek') {
         calendarApi.changeView('timeGridWeek');
-        
+
         // Görünüm değiştikten sonra modalı açmak için kısa bir gecikme ekle
         setTimeout(() => {
-          
+
           // Gecikme sonrası yeni görünümdeki etkinlikleri kontrol et
           const updatedView = calendarApi.view;
           const start = updatedView.currentStart;
           const end = updatedView.currentEnd;
-          
+
           // Geçerli hafta içindeki etkinlikleri filtrele - düzeltilmiş sürüm
           const updatedCurrentWeekEvents = events.filter(event => {
             const eventDate = new Date(event.start);
-            
+
             // Date.getTime() kullanarak milisaniye cinsinden karşılaştırma
-            return eventDate.getTime() >= start.getTime() && 
-                   eventDate.getTime() < end.getTime();
+            return eventDate.getTime() >= start.getTime() &&
+              eventDate.getTime() < end.getTime();
           });
-          
+
           console.log(`Kopyalanacak etkinlikler: ${updatedCurrentWeekEvents.length} adet`);
           setCurrentWeekEvents(updatedCurrentWeekEvents);
           setCurrentWeekRange(start);
@@ -619,36 +636,36 @@ const Calendar = () => {
         }, 500); // 300 yerine 500ms daha güvenli olabilir
         return;
       }
-      
+
       // Güncellenen mevcut hafta etkinliklerini kontrol et - düzeltilmiş sürüm
       const start = view.currentStart;
       const end = view.currentEnd;
-      
+
       const updatedCurrentWeekEvents = events.filter(event => {
         const eventDate = new Date(event.start);
-        
+
         // Date.getTime() kullanarak milisaniye cinsinden karşılaştırma
-        return eventDate.getTime() >= start.getTime() && 
-               eventDate.getTime() < end.getTime();
+        return eventDate.getTime() >= start.getTime() &&
+          eventDate.getTime() < end.getTime();
       });
-      
+
       console.log(`Kopyalanacak etkinlikler: ${updatedCurrentWeekEvents.length} adet. Hafta: ${format(start, 'yyyy-MM-dd')} - ${format(end, 'yyyy-MM-dd')}`);
-      
+
       // events dizisinin boş olup olmadığını kontrol et
       if (events.length === 0) {
         console.warn('DİKKAT: Genel etkinlik listesi boş!');
       }
-      
+
       // Debug: Tüm etkinliklerin tarihlerini kontrol et
       if (updatedCurrentWeekEvents.length === 0 && events.length > 0) {
         console.log('Neden etkinlik bulunamadı? Tüm etkinlik tarihleri:');
         events.forEach((event, index) => {
           console.log(`Etkinlik ${index}: ${new Date(event.start).toISOString()} (${event.extendedProps.eventType})`);
         });
-        
+
         console.log(`Aranan tarih aralığı: ${start.toISOString()} - ${end.toISOString()}`);
       }
-      
+
       setCurrentWeekEvents(updatedCurrentWeekEvents);
       setCurrentWeekRange(start);
       setIsCopyWeekModalOpen(true);
@@ -665,54 +682,54 @@ const Calendar = () => {
   const handleCopyWeek = async (targetWeekStart) => {
     try {
       setCopyWeekLoading(true);
-      
+
       console.log(`Kopyalama başlıyor. Etkinlik sayısı: ${currentWeekEvents.length}`);
       console.log(`Mevcut hafta: ${currentWeekRange ? new Date(currentWeekRange).toISOString() : 'undefined'}`);
       console.log(`Hedef hafta: ${targetWeekStart.toISOString()}`);
-      
+
       // Kopyalanacak hafta boşsa, komple events'tan kontrol edelim
       if (!currentWeekEvents || currentWeekEvents.length === 0) {
         // Son bir kurtarma denemesi - mevcut takvim görünümünü manuel olarak kontrol et
         if (calendarRef.current) {
           const calendarApi = calendarRef.current.getApi();
           const view = calendarApi.view;
-          
+
           if (view.type === 'timeGridWeek') {
             const start = view.currentStart;
             const end = view.currentEnd;
-            
+
             // Geçerli hafta içindeki etkinlikleri filtrele - son deneme
             const rescueEvents = events.filter(event => {
               const eventDate = new Date(event.start);
-              
+
               // Sadece gün, ay, yıl karşılaştırması yapalım
               const eventDay = eventDate.getDate();
               const eventMonth = eventDate.getMonth();
               const eventYear = eventDate.getFullYear();
-              
+
               // Tarih aralığındaki günleri kontrol et
               for (let d = new Date(start); d < end; d.setDate(d.getDate() + 1)) {
-                if (d.getDate() === eventDay && 
-                    d.getMonth() === eventMonth && 
-                    d.getFullYear() === eventYear) {
+                if (d.getDate() === eventDay &&
+                  d.getMonth() === eventMonth &&
+                  d.getFullYear() === eventYear) {
                   return true;
                 }
               }
               return false;
             });
-            
+
             console.log(`Son deneme kurtarma: ${rescueEvents.length} etkinlik bulundu`);
-            
+
             if (rescueEvents.length > 0) {
               // Kurtarma başarılı, bu etkinlikleri kullan
               setCurrentWeekEvents(rescueEvents);
-              
+
               // Bu değişkeni kullanarak devam et
               const currentWeekEventsToUse = rescueEvents;
-              
+
               // Hedef haftanın bitiş tarihini hesapla
               const targetWeekEnd = addDays(new Date(targetWeekStart), 7);
-              
+
               // Hedef haftadaki mevcut etkinlikleri getir
               const { data: existingEventsInTargetWeek, error: existingEventsError } = await supabase
                 .from('events')
@@ -720,22 +737,22 @@ const Calendar = () => {
                 .eq('is_active', true)
                 .gte('event_date', targetWeekStart.toISOString())
                 .lt('event_date', targetWeekEnd.toISOString());
-                
+
               if (existingEventsError) throw existingEventsError;
-              
+
               // Günlerin farkını hesapla (bir hafta sonra olacak)
               const daysDiff = Math.round((targetWeekStart - new Date(currentWeekRange)) / (1000 * 60 * 60 * 24));
-              
+
               // Başarıyla kopyalanan etkinlik sayacı
               let successCount = 0;
               let conflictCount = 0;
-              
+
               // Her etkinlik için kopyalama işlemi
               for (const event of currentWeekEventsToUse) {
                 // Etkinliğin yeni tarihini hesapla
                 const eventDate = new Date(event.start);
                 const newEventDate = addDays(eventDate, daysDiff);
-                
+
                 // Hedef tarihte zaten etkinlik var mı kontrol et (saat ve dakika bazında)
                 const hasConflict = existingEventsInTargetWeek.some(existingEvent => {
                   const existingEventDate = new Date(existingEvent.event_date);
@@ -747,18 +764,18 @@ const Calendar = () => {
                     existingEventDate.getMinutes() === newEventDate.getMinutes()
                   );
                 });
-                
+
                 // Çakışma varsa bu etkinliği atla
                 if (hasConflict) {
                   conflictCount++;
                   continue;
                 }
-                
+
                 // Orijinal etkinlik verisini al
                 const originalEvent = event.extendedProps.originalEvent;
-                
+
                 if (!originalEvent) continue;
-                
+
                 // Yeni etkinlik verisi oluştur
                 const newEventData = {
                   event_date: newEventDate.toISOString(),
@@ -768,37 +785,37 @@ const Calendar = () => {
                   max_capacity: originalEvent.max_capacity,
                   current_capacity: 0 // Başlangıçta 0 olmalı, trigger katılımcılar eklendiğinde bu değeri arttıracak
                 };
-                
+
                 // Etkinliği veritabanına ekle
                 const { data: newEvent, error: newEventError } = await supabase
                   .from('events')
                   .insert([newEventData])
                   .select()
                   .single();
-                  
+
                 if (newEventError) throw newEventError;
-                
+
                 // Katılımcıları kopyala
                 if (originalEvent.event_participants && originalEvent.event_participants.length > 0) {
                   const participantInserts = originalEvent.event_participants.map(participant => ({
                     event_id: newEvent.id,
                     registration_id: participant.registration_id
                   }));
-                  
+
                   const { error: participantError } = await supabase
                     .from('event_participants')
                     .insert(participantInserts);
-                    
+
                   if (participantError) throw participantError;
                 }
-                
+
                 successCount++;
               }
-              
+
               // Tüm etkinlikler kopyalandı
               setCopyWeekLoading(false);
               setIsCopyWeekModalOpen(false);
-              
+
               // Başarı mesajı göster
               if (successCount > 0) {
                 let message = `${successCount} etkinlik başarıyla kopyalandı`;
@@ -810,10 +827,10 @@ const Calendar = () => {
                   type: 'success',
                   isVisible: true
                 });
-                
+
                 // Etkinlikleri yeniden yükle
                 await fetchEvents();
-                
+
                 // Takvim görünümünü kopyalanan haftaya çevirme işlemi yerine bildirim göster
                 setTargetWeekForNavigation(targetWeekStart);
                 setActionNotificationMessage(`Etkinlikler ${format(targetWeekStart, 'dd MMMM yyyy', { locale: tr })} - ${format(addDays(targetWeekStart, 6), 'dd MMMM yyyy', { locale: tr })} tarihlerine kopyalandı.`);
@@ -831,21 +848,21 @@ const Calendar = () => {
                   isVisible: true
                 });
               }
-              
+
               return; // Kurtarma başarılı, işlemi tamamla ve çık
             }
           }
         }
-        
+
         showToast('Bu haftada kopyalanacak etkinlik bulunamadı', 'error');
         setCopyWeekLoading(false);
         setIsCopyWeekModalOpen(false);
         return;
       }
-      
+
       // Hedef haftanın bitiş tarihini hesapla
       const targetWeekEnd = addDays(new Date(targetWeekStart), 7);
-      
+
       // Hedef haftadaki mevcut etkinlikleri getir
       const { data: existingEventsInTargetWeek, error: existingEventsError } = await supabase
         .from('events')
@@ -853,22 +870,22 @@ const Calendar = () => {
         .eq('is_active', true)
         .gte('event_date', targetWeekStart.toISOString())
         .lt('event_date', targetWeekEnd.toISOString());
-        
+
       if (existingEventsError) throw existingEventsError;
-      
+
       // Günlerin farkını hesapla (bir hafta sonra olacak)
       const daysDiff = Math.round((targetWeekStart - new Date(currentWeekRange)) / (1000 * 60 * 60 * 24));
-      
+
       // Başarıyla kopyalanan etkinlik sayacı
       let successCount = 0;
       let conflictCount = 0;
-      
+
       // Her etkinlik için kopyalama işlemi
       for (const event of currentWeekEvents) {
         // Etkinliğin yeni tarihini hesapla
         const eventDate = new Date(event.start);
         const newEventDate = addDays(eventDate, daysDiff);
-        
+
         // Hedef tarihte zaten etkinlik var mı kontrol et (saat ve dakika bazında)
         const hasConflict = existingEventsInTargetWeek.some(existingEvent => {
           const existingEventDate = new Date(existingEvent.event_date);
@@ -880,18 +897,18 @@ const Calendar = () => {
             existingEventDate.getMinutes() === newEventDate.getMinutes()
           );
         });
-        
+
         // Çakışma varsa bu etkinliği atla
         if (hasConflict) {
           conflictCount++;
           continue;
         }
-        
+
         // Orijinal etkinlik verisini al
         const originalEvent = event.extendedProps.originalEvent;
-        
+
         if (!originalEvent) continue;
-        
+
         // Yeni etkinlik verisi oluştur
         const newEventData = {
           event_date: newEventDate.toISOString(),
@@ -901,37 +918,37 @@ const Calendar = () => {
           max_capacity: originalEvent.max_capacity,
           current_capacity: 0 // Başlangıçta 0 olmalı, trigger katılımcılar eklendiğinde bu değeri arttıracak
         };
-        
+
         // Etkinliği veritabanına ekle
         const { data: newEvent, error: newEventError } = await supabase
           .from('events')
           .insert([newEventData])
           .select()
           .single();
-          
+
         if (newEventError) throw newEventError;
-        
+
         // Katılımcıları kopyala
         if (originalEvent.event_participants && originalEvent.event_participants.length > 0) {
           const participantInserts = originalEvent.event_participants.map(participant => ({
             event_id: newEvent.id,
             registration_id: participant.registration_id
           }));
-          
+
           const { error: participantError } = await supabase
             .from('event_participants')
             .insert(participantInserts);
-            
+
           if (participantError) throw participantError;
         }
-        
+
         successCount++;
       }
-      
+
       // Tüm etkinlikler kopyalandı
       setCopyWeekLoading(false);
       setIsCopyWeekModalOpen(false);
-      
+
       // Başarı mesajı göster
       if (successCount > 0) {
         let message = `${successCount} etkinlik başarıyla kopyalandı`;
@@ -943,10 +960,13 @@ const Calendar = () => {
           type: 'success',
           isVisible: true
         });
-        
-        // Etkinlikleri yeniden yükle
-        await fetchEvents();
-        
+
+        // Etkinlikleri yeniden yükle - mevcut görünüm aralığında
+        if (calendarRef.current) {
+          const calendarApi = calendarRef.current.getApi();
+          await fetchEvents(calendarApi.view.currentStart, calendarApi.view.currentEnd);
+        }
+
         // Takvim görünümünü kopyalanan haftaya çevirme işlemi yerine bildirim göster
         setTargetWeekForNavigation(targetWeekStart);
         setActionNotificationMessage(`Etkinlikler ${format(targetWeekStart, 'dd MMMM yyyy', { locale: tr })} - ${format(addDays(targetWeekStart, 6), 'dd MMMM yyyy', { locale: tr })} tarihlerine kopyalandı.`);
@@ -984,7 +1004,7 @@ const Calendar = () => {
   useEffect(() => {
     const addCopyWeekButton = () => {
       if (!calendarRef.current) return;
-      
+
       // Takvim başlığını içeren elementi bul
       const titleElement = document.querySelector('.fc-toolbar-title');
       if (!titleElement) return;
@@ -997,27 +1017,27 @@ const Calendar = () => {
       const iconContainer = document.createElement('div');
       iconContainer.classList.add('relative', 'inline-flex', 'ml-2', 'items-center');
       iconContainer.id = 'copy-week-icon';
-      
+
       // İkon elementi
       const iconElement = document.createElement('button');
       iconElement.classList.add(
-        'inline-flex', 'items-center', 'justify-center', 
-        'w-7', 'h-7', 'bg-white', 'dark:bg-[#121621]', 
-        'border', 'border-[#d2d2d7]', 'dark:border-[#2a3241]', 
+        'inline-flex', 'items-center', 'justify-center',
+        'w-7', 'h-7', 'bg-white', 'dark:bg-[#121621]',
+        'border', 'border-[#d2d2d7]', 'dark:border-[#2a3241]',
         'rounded-full', 'text-[#6e6e73]', 'dark:text-[#86868b]',
         'hover:text-[#1d1d1f]', 'dark:hover:text-white',
         'hover:border-[#0071e3]', 'dark:hover:border-[#0071e3]',
         'transition-all', 'duration-200', 'cursor-pointer',
         'group'
       );
-      
+
       // SVG ikonu
       iconElement.innerHTML = `
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
           <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 7.5V6.108c0-1.135.845-2.098 1.976-2.192.373-.03.748-.057 1.123-.08M15.75 18H18a2.25 2.25 0 0 0 2.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 0 0-1.123-.08M15.75 18.75v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5A3.375 3.375 0 0 0 6.375 7.5H5.25m11.9-3.664A2.251 2.251 0 0 0 15 2.25h-1.5a2.251 2.251 0 0 0-2.15 1.586m5.8 0c.065.21.1.433.1.664v.75h-6V4.5c0-.231.035-.454.1-.664M6.75 7.5H4.875c-.621 0-1.125.504-1.125 1.125v12c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V16.5a9 9 0 0 0-9-9Z" />
         </svg>
       `;
-      
+
       // Tooltip ekle
       const tooltip = document.createElement('div');
       tooltip.classList.add(
@@ -1027,29 +1047,29 @@ const Calendar = () => {
         'duration-200', 'whitespace-nowrap', 'pointer-events-none', 'z-10'
       );
       tooltip.textContent = 'Bu Haftayı Kopyala';
-      
+
       // İkon tıklama işlevi
       iconElement.addEventListener('click', handleCopyWeekClick);
-      
+
       // Elementleri birleştir
       iconContainer.appendChild(iconElement);
       iconContainer.appendChild(tooltip);
-      
+
       // Başlık elementinin yanına ekle
       titleElement.appendChild(iconContainer);
     };
-    
+
     // İlk yükleme ve görünüm değişikliklerinde ikonu ekle
     addCopyWeekButton();
-    
+
     // FullCalendar görünümü değiştiğinde de ikonu tekrar ekle
     const handleViewChange = () => {
       setTimeout(addCopyWeekButton, 100);
     };
-    
+
     window.addEventListener('resize', handleViewChange);
     document.addEventListener('visibilitychange', handleViewChange);
-    
+
     // Temizleme
     return () => {
       window.removeEventListener('resize', handleViewChange);
@@ -1067,9 +1087,9 @@ const Calendar = () => {
           </h1>
         </div>
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 w-full sm:w-auto">
-          <a 
-            href="/hellokido/#/takvim" 
-            target="_blank" 
+          <a
+            href="/hellokido/#/takvim"
+            target="_blank"
             rel="noopener noreferrer"
             className="h-10 sm:h-8 px-3 bg-purple-100 dark:bg-purple-800/20 text-purple-700 dark:text-purple-300 text-sm font-medium rounded-lg hover:bg-purple-200 dark:hover:bg-purple-800/30 focus:outline-none transition-all duration-200 flex items-center justify-center gap-1.5 w-full sm:w-auto transform hover:scale-[1.02] active:scale-[0.98]"
           >
@@ -1093,7 +1113,19 @@ const Calendar = () => {
         </div>
       </div>
 
-      <div className="bg-white dark:bg-[#1a1f2e] rounded-xl overflow-hidden">
+      <div className="relative bg-white dark:bg-[#1a1f2e] rounded-xl overflow-hidden">
+        {/* Loading Overlay */}
+        {isLoading && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-white/50 dark:bg-black/50 backdrop-blur-sm">
+            <div className="flex flex-col items-center gap-3">
+              <div className="w-10 h-10 border-4 border-purple-200 border-t-purple-600 rounded-full animate-spin"></div>
+              <span className="text-sm font-medium text-purple-600 dark:text-purple-400">
+                {language === 'tr' ? 'Yükleniyor...' : 'Loading...'}
+              </span>
+            </div>
+          </div>
+        )}
+
         <FullCalendar
           ref={calendarRef}
           plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
@@ -1142,6 +1174,10 @@ const Calendar = () => {
           allDaySlot={false}
           slotDuration="00:30:00"
           slotLabelInterval="01:00"
+          datesSet={(dateInfo) => {
+            fetchEvents(dateInfo.start, dateInfo.end);
+            setCurrentWeekRange(dateInfo.start); // Update current week range for copy function
+          }}
           eventClassNames="overflow-hidden rounded-lg shadow-sm hover:shadow-md transition-shadow"
         />
       </div>
@@ -1165,13 +1201,16 @@ const Calendar = () => {
             type,
             isVisible: true
           });
-          fetchEvents();
+          if (calendarRef.current) {
+            const calendarApi = calendarRef.current.getApi();
+            fetchEvents(calendarApi.view.currentStart, calendarApi.view.currentEnd);
+          }
         }}
         eventId={selectedEvent}
       />
 
       {/* Hafta Kopyalama Modal */}
-      <CopyWeekModal 
+      <CopyWeekModal
         isOpen={isCopyWeekModalOpen}
         onClose={handleCloseCopyWeekModal}
         onConfirm={handleCopyWeek}
@@ -1188,7 +1227,7 @@ const Calendar = () => {
       />
 
       {/* Action Notification */}
-      <ActionNotification 
+      <ActionNotification
         isVisible={isActionNotificationVisible}
         message={actionNotificationMessage}
         actionText={language === 'tr' ? "Kopyalanan Haftaya Git" : "Go to Copied Week"}
