@@ -541,7 +541,7 @@ const Home = () => {
                       </h3>
                       <p className="text-[13px] text-[#6e6e73] dark:text-[#86868b] mt-0.5">
                         {language === 'en' ? 'Capacity: ' : 'Kapasite: '}
-                        {event.participants.filter(p => p.status === 'scheduled' || p.status === 'makeup' || p.status === 'attended').length}/5
+                        {event.participants.filter(p => p.status === 'scheduled' || p.status === 'makeup' || p.status === 'attended').length}/6
                       </p>
                     </div>
                     <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[13px] font-medium ${eventTypeColors[event.event_type]}`}>
@@ -751,7 +751,7 @@ HelloKido Oyun Atölyesi 🌸`)}`}
                       </h3>
                       <p className="text-[13px] text-[#6e6e73] dark:text-[#86868b] mt-0.5">
                         {language === 'en' ? 'Capacity: ' : 'Kapasite: '}
-                        {event.participants.filter(p => p.status === 'scheduled' || p.status === 'makeup' || p.status === 'attended').length}/5
+                        {event.participants.filter(p => p.status === 'scheduled' || p.status === 'makeup' || p.status === 'attended').length}/6
                       </p>
                     </div>
                     <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[13px] font-medium ${eventTypeColors[event.event_type]}`}>

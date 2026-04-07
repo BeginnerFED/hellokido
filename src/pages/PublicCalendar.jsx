@@ -348,14 +348,14 @@ const PublicCalendar = () => {
               >
                 <div className="px-4 pb-4 space-y-3">
                   {dayEvents.length === 0 ? (
-                    <div className="text-center py-3">
-                      <p className="text-gray-500 text-sm">Bugün etkinlik yok 🌈</p>
+                    <div className="text-center py-4">
+                      <p className="text-gray-400 text-sm font-medium">Atölyemiz bugün kapalıdır ✨</p>
                     </div>
                   ) : (
                     dayEvents.map(event => {
                       const typeDetails = getEventTypeDetails(event.event_type);
                       // Aktif katılımcı sayısına göre kalan kontenjanı hesapla
-                      const availableSpots = 5 - event.active_capacity;
+                      const availableSpots = 6 - event.active_capacity;
                       const hasSpots = availableSpots > 0;
                       
                       return (

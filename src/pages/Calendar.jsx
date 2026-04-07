@@ -321,7 +321,7 @@ const Calendar = () => {
             {/* Kapasite */}
             <div className="flex items-center gap-1 bg-white/15 px-2.5 py-1 rounded-md shadow-sm w-fit">
               <UserGroupIcon className="w-3 h-3 text-white/70" />
-              <span className="font-medium">{currentCapacity}/5</span>
+              <span className="font-medium">{currentCapacity}/6</span>
             </div>
           </div>
 
