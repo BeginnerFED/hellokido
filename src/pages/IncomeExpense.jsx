@@ -569,6 +569,7 @@ export default function IncomeExpense() {
           created_at,
           transaction_type,
           registration_id,
+          extension_history_id,
           payment_date,
           notes,
           registrations (
@@ -606,25 +607,26 @@ export default function IncomeExpense() {
           displayEndDate = record.registrations.initial_end_date || record.registrations.package_end_date; 
           displayPackageType = record.registrations.initial_package_type || record.registrations.package_type;
         } else { // extension_payment
-          // Uzatma işlemi için extension_history tablosundan ilgili uzatma kaydını bul
-          // Daha güvenilir eşleştirme: registration_id eşleşen ve ödeme bilgileri/paket tipi uyan EN SON kaydı bulmayı deneyelim.
-          // Not: Bu hala %100 garantili değil. İdeal olan extension_id eklemek olurdu.
+          // Öncelik: FK üzerinden direkt eşleşme; yoksa fuzzy fallback.
+          const directMatch = record.extension_history_id
+            ? extensionData.find(ext => ext.id === record.extension_history_id)
+            : null;
+
           const potentialMatches = extensionData
             .filter(ext => ext.registration_id === record.registration_id)
-            .sort((a, b) => new Date(b.created_at) - new Date(a.created_at)); // En son ekleneni başa al
+            .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
-          const extensionRecord = potentialMatches.find(ext => 
-            // Ödeme detayları (varsa) ve paket tipi gibi bilgilerle eşleştirmeyi dene
-            // Ödeme beklemede durumunu da hesaba kat
-            (record.payment_status === 'beklemede' || 
+          const fuzzyMatch = potentialMatches.find(ext =>
+            (record.payment_status === 'beklemede' ||
              (ext.payment_amount === record.amount &&
               ext.payment_method === record.payment_method &&
-              // payment_date karşılaştırması ms farklarından dolayı riskli olabilir, yakınlık kontrolü daha iyi
-              (!record.payment_date || !ext.payment_date || Math.abs(new Date(record.payment_date) - new Date(ext.payment_date)) < 60000) // 1 dakika tolerans
+              (!record.payment_date || !ext.payment_date || Math.abs(new Date(record.payment_date) - new Date(ext.payment_date)) < 60000)
              )
             ) &&
-            ext.new_package_type === record.registrations.package_type // Finansal kayıttaki anlık paket tipiyle eşleşmeli
+            ext.new_package_type === record.registrations.package_type
           );
+
+          const extensionRecord = directMatch || fuzzyMatch;
 
           if (extensionRecord && extensionRecord.new_start_date) {
             // Uzatma kaydı bulunduysa ve new_start_date varsa onu kullan

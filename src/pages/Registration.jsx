@@ -24,6 +24,7 @@ import {
   ArrowUturnUpIcon
 } from '@heroicons/react/24/outline'
 import DeleteRegisterModal from '../components/DeleteRegisterModal'
+import DeleteExtensionModal from '../components/DeleteExtensionModal'
 import Toast from '../components/ui/Toast'
 
 // Supabase istemcisini oluştur
@@ -62,6 +63,10 @@ export default function Registration() {
   const [isActivateModalOpen, setIsActivateModalOpen] = useState(false)
   const [registrationToActivate, setRegistrationToActivate] = useState(null)
   const [isActivating, setIsActivating] = useState(false)
+  const [isDeleteExtensionModalOpen, setIsDeleteExtensionModalOpen] = useState(false)
+  const [isEditExtensionModalOpen, setIsEditExtensionModalOpen] = useState(false)
+  const [selectedExtension, setSelectedExtension] = useState(null)
+  const [selectedExtensionIndex, setSelectedExtensionIndex] = useState(null)
 
   // Kayıtları getir
   const fetchRegistrations = async () => {
@@ -814,6 +819,47 @@ export default function Registration() {
         registration={selectedRegistration}
       />
 
+      {/* Edit Extension Modal */}
+      <ExtendModal
+        isOpen={isEditExtensionModalOpen}
+        onClose={() => {
+          setIsEditExtensionModalOpen(false)
+          setSelectedExtension(null)
+          setSelectedExtensionIndex(null)
+        }}
+        onSuccess={() => {
+          fetchRegistrations()
+          if (selectedHistoryRegistration) {
+            handleHistoryClick(selectedHistoryRegistration)
+          }
+        }}
+        registration={selectedHistoryRegistration}
+        isEditMode={true}
+        existingExtension={selectedExtension}
+      />
+
+      {/* Delete Extension Modal */}
+      <DeleteExtensionModal
+        isOpen={isDeleteExtensionModalOpen}
+        onClose={() => {
+          setIsDeleteExtensionModalOpen(false)
+          setSelectedExtension(null)
+          setSelectedExtensionIndex(null)
+        }}
+        onSuccess={(message, type) => {
+          showToast(message, type)
+          if (type === 'success') {
+            fetchRegistrations()
+            if (selectedHistoryRegistration) {
+              handleHistoryClick(selectedHistoryRegistration)
+            }
+          }
+        }}
+        registration={selectedHistoryRegistration}
+        extension={selectedExtension}
+        extensionIndex={selectedExtensionIndex}
+      />
+
       {/* Delete Confirmation Modal */}
       <DeleteRegisterModal
         isOpen={isDeleteModalOpen}
@@ -965,7 +1011,9 @@ export default function Registration() {
                   {/* Uzatma Kayıtları */}
                   {selectedHistoryRegistration && extensionHistory.length > 0 && (
                     <div className="space-y-8">
-                      {extensionHistory.map((history, index) => (
+                      {extensionHistory.map((history, index) => {
+                        const isLast = index === extensionHistory.length - 1
+                        return (
                         <div key={history.id}>
                           <div className="flex items-center gap-3 mb-3">
                             <div className="w-6 h-6 rounded-full bg-[#0071e3] flex items-center justify-center shrink-0 relative z-10">
@@ -978,7 +1026,35 @@ export default function Registration() {
                               {formatDate(history.created_at)}
                             </span>
                           </div>
-                          <div className="ml-9 p-4 rounded-xl bg-[#f5f5f7] dark:bg-[#1d1d1f] space-y-3">
+                          <div className="ml-9 p-4 rounded-xl bg-[#f5f5f7] dark:bg-[#1d1d1f] space-y-3 relative group">
+                            {isLast && (
+                              <div className="absolute top-3 right-3 flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedExtension(history)
+                                    setSelectedExtensionIndex(index)
+                                    setIsEditExtensionModalOpen(true)
+                                  }}
+                                  className="w-7 h-7 flex items-center justify-center rounded-md bg-white dark:bg-[#2a3241] border border-[#d2d2d7] dark:border-[#424245] text-[#424245] dark:text-[#86868b] hover:text-[#0071e3] hover:border-[#0071e3] dark:hover:text-[#0071e3] dark:hover:border-[#0071e3] shadow-sm transition-all"
+                                  title={language === 'tr' ? 'Düzenle' : 'Edit'}
+                                >
+                                  <PencilSquareIcon className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedExtension(history)
+                                    setSelectedExtensionIndex(index)
+                                    setIsDeleteExtensionModalOpen(true)
+                                  }}
+                                  className="w-7 h-7 flex items-center justify-center rounded-md bg-white dark:bg-[#2a3241] border border-[#d2d2d7] dark:border-[#424245] text-[#424245] dark:text-[#86868b] hover:text-red-600 hover:border-red-600 dark:hover:text-red-500 dark:hover:border-red-500 shadow-sm transition-all"
+                                  title={language === 'tr' ? 'Sil' : 'Delete'}
+                                >
+                                  <TrashIcon className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            )}
                             <div className="flex items-center gap-2 text-sm">
                               <CubeIcon className="w-4 h-4 text-[#86868b]" />
                               <span className="text-[#424245] dark:text-[#86868b]">
@@ -1012,7 +1088,8 @@ export default function Registration() {
                             )}
                           </div>
                         </div>
-                      ))}
+                        )
+                      })}
                     </div>
                   )}
                 </div>

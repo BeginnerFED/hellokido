@@ -23,7 +23,7 @@ const supabase = createClient(
   import.meta.env.VITE_SUPABASE_ANON_KEY
 )
 
-export default function ExtendModal({ isOpen, onClose, onSuccess, registration }) {
+export default function ExtendModal({ isOpen, onClose, onSuccess, registration, isEditMode = false, existingExtension = null }) {
   const { language } = useLanguage()
   const datePickerRef = useRef(null)
   const paymentDatePickerRef = useRef(null)
@@ -56,27 +56,43 @@ export default function ExtendModal({ isOpen, onClose, onSuccess, registration }
   // Modal açıldığında formu güncelle
   useEffect(() => {
     if (isOpen && registration) {
-      // Son paket bitişini alarak bir sonraki gün başlamasını öneriyoruz
-      const lastEndDate = new Date(registration.package_end_date)
-      const suggestedStartDate = new Date(lastEndDate)
-      
-      setDateRange([{
-        startDate: suggestedStartDate,
-        endDate: suggestedStartDate,
-        key: 'selection'
-      }])
+      if (isEditMode && existingExtension) {
+        // Edit modu: mevcut uzatma verilerini forma yükle
+        setDateRange([{
+          startDate: new Date(existingExtension.new_start_date || existingExtension.previous_end_date),
+          endDate: new Date(existingExtension.new_end_date),
+          key: 'selection'
+        }])
+        setFormData({
+          packageType: existingExtension.new_package_type,
+          paymentStatus: existingExtension.payment_status || 'odendi',
+          paymentMethod: existingExtension.payment_status === 'beklemede' ? '' : (existingExtension.payment_method || ''),
+          amount: existingExtension.payment_status === 'beklemede' ? '' : (existingExtension.payment_amount?.toString() || ''),
+          note: existingExtension.notes || '',
+          paymentDate: existingExtension.payment_date ? new Date(existingExtension.payment_date) : null
+        })
+      } else {
+        // Create modu: son paket bitişini başlangıç olarak öner
+        const lastEndDate = new Date(registration.package_end_date)
+        const suggestedStartDate = new Date(lastEndDate)
 
-      // Mevcut kayıt bilgilerini formumuza yükle
-      setFormData({
-        packageType: registration.package_type,
-        paymentStatus: 'odendi',
-        paymentMethod: '',
-        amount: '',
-        note: '',
-        paymentDate: null // Varsayılan olarak null
-      })
+        setDateRange([{
+          startDate: suggestedStartDate,
+          endDate: suggestedStartDate,
+          key: 'selection'
+        }])
+
+        setFormData({
+          packageType: registration.package_type,
+          paymentStatus: 'odendi',
+          paymentMethod: '',
+          amount: '',
+          note: '',
+          paymentDate: null
+        })
+      }
     }
-  }, [isOpen, registration])
+  }, [isOpen, registration, isEditMode, existingExtension])
 
   // Modal kapandığında formu sıfırla
   useEffect(() => {
@@ -180,84 +196,178 @@ export default function ExtendModal({ isOpen, onClose, onSuccess, registration }
 
     setIsLoading(true)
     try {
-      // Gerekli verilerimizi hazırlayalım
-      const previousEndDate = new Date(registration.package_end_date)
       const newStartDate = dateRange[0].startDate
       const newEndDate = dateRange[0].endDate
       const newPackageType = formData.packageType
 
-      // Ödeme metodunu belirle - eğer ödeme beklemedeyse "belirlenmedi" olarak kaydet
       const finalPaymentMethod = formData.paymentStatus === 'beklemede' ? 'belirlenmedi' : formData.paymentMethod
-      
-      // Ödeme tutarını belirle - eğer ödeme beklemedeyse 0 olarak kaydet
       const finalPaymentAmount = formData.paymentStatus === 'beklemede' ? 0 : parseFloat(formData.amount)
+      const finalPaymentDate = formData.paymentStatus === 'beklemede' ? null : formData.paymentDate
+      const finalNotes = formData.note.trim() || null
 
-      // 1. Uzatma tarihini ve sayacını güncelle
-      const { error: updateError } = await supabase
-        .from('registrations')
-        .update({
-          package_type: newPackageType,
-          package_start_date: newStartDate, // Yeni başlangıç tarihini kaydet
-          package_end_date: newEndDate,
-          payment_status: formData.paymentStatus,
-          payment_method: finalPaymentMethod,
-          payment_amount: finalPaymentAmount,
-          extension_count: registration.extension_count + 1,
-          last_extension_date: new Date(),
-          payment_date: formData.paymentStatus === 'beklemede' ? null : formData.paymentDate, // Ödeme beklemedeyse null, değilse seçilen tarih
-          notes: formData.note.trim() || null
+      if (isEditMode && existingExtension) {
+        // --- EDIT MODE ---
+        // 1. extension_history UPDATE (previous_* alanlarına dokunma)
+        const { error: historyError } = await supabase
+          .from('extension_history')
+          .update({
+            new_start_date: newStartDate,
+            new_end_date: newEndDate,
+            new_package_type: newPackageType,
+            payment_status: formData.paymentStatus,
+            payment_method: finalPaymentMethod,
+            payment_amount: finalPaymentAmount,
+            payment_date: finalPaymentDate,
+            notes: finalNotes
+          })
+          .eq('id', existingExtension.id)
+        if (historyError) throw historyError
+
+        // 2. registrations UPDATE (extension_count'a dokunma)
+        const { error: updateError } = await supabase
+          .from('registrations')
+          .update({
+            package_type: newPackageType,
+            package_start_date: newStartDate,
+            package_end_date: newEndDate,
+            payment_status: formData.paymentStatus,
+            payment_method: finalPaymentMethod,
+            payment_amount: finalPaymentAmount,
+            payment_date: finalPaymentDate,
+            notes: finalNotes
+          })
+          .eq('id', registration.id)
+        if (updateError) throw updateError
+
+        // 3. financial_records UPDATE (FK ile; yoksa fuzzy fallback ile ilk match)
+        const { data: finRow, error: finLookupError } = await supabase
+          .from('financial_records')
+          .select('id')
+          .eq('extension_history_id', existingExtension.id)
+          .maybeSingle()
+        if (finLookupError) throw finLookupError
+
+        if (finRow?.id) {
+          const { error: finUpdateError } = await supabase
+            .from('financial_records')
+            .update({
+              amount: finalPaymentAmount,
+              payment_method: finalPaymentMethod,
+              payment_status: formData.paymentStatus,
+              payment_date: finalPaymentDate,
+              notes: finalNotes
+            })
+            .eq('id', finRow.id)
+          if (finUpdateError) throw finUpdateError
+        } else {
+          // Legacy kayıt: FK bağı yok, fuzzy match ile en yakın extension_payment'i güncelle
+          const { data: candidates } = await supabase
+            .from('financial_records')
+            .select('id, amount, payment_method, payment_date, created_at')
+            .eq('registration_id', registration.id)
+            .eq('transaction_type', 'extension_payment')
+            .is('extension_history_id', null)
+            .order('created_at', { ascending: false })
+
+          const match = (candidates || []).find(c =>
+            Number(c.amount) === Number(existingExtension.payment_amount) &&
+            c.payment_method === existingExtension.payment_method
+          )
+          if (match) {
+            await supabase
+              .from('financial_records')
+              .update({
+                amount: finalPaymentAmount,
+                payment_method: finalPaymentMethod,
+                payment_status: formData.paymentStatus,
+                payment_date: finalPaymentDate,
+                notes: finalNotes,
+                extension_history_id: existingExtension.id
+              })
+              .eq('id', match.id)
+          } else {
+            console.warn('Financial record match not found for edit; skipping financial update')
+          }
+        }
+
+        setToast({
+          visible: true,
+          message: language === 'tr' ? 'Uzatma başarıyla güncellendi' : 'Extension has been successfully updated',
+          type: 'success'
         })
-        .eq('id', registration.id)
+      } else {
+        // --- CREATE MODE ---
+        const previousEndDate = new Date(registration.package_end_date)
 
-      if (updateError) throw updateError
+        // 1. Uzatma tarihini ve sayacını güncelle
+        const { error: updateError } = await supabase
+          .from('registrations')
+          .update({
+            package_type: newPackageType,
+            package_start_date: newStartDate,
+            package_end_date: newEndDate,
+            payment_status: formData.paymentStatus,
+            payment_method: finalPaymentMethod,
+            payment_amount: finalPaymentAmount,
+            extension_count: registration.extension_count + 1,
+            last_extension_date: new Date(),
+            payment_date: finalPaymentDate,
+            notes: finalNotes
+          })
+          .eq('id', registration.id)
+        if (updateError) throw updateError
 
-      // 2. Uzatma geçmişine kaydet
-      const { error: historyError } = await supabase
-        .from('extension_history')
-        .insert({
-          registration_id: registration.id,
-          previous_end_date: previousEndDate,
-          new_start_date: newStartDate, // Yeni başlangıç tarihini de kaydet
-          new_end_date: newEndDate,
-          previous_package_type: registration.package_type,
-          new_package_type: newPackageType,
-          payment_status: formData.paymentStatus,
-          payment_method: finalPaymentMethod,
-          payment_amount: finalPaymentAmount,
-          payment_date: formData.paymentStatus === 'beklemede' ? null : formData.paymentDate, // Ödeme beklemedeyse null, değilse seçilen tarih
-          notes: formData.note.trim() || null
+        // 2. Uzatma geçmişine kaydet ve yeni id'yi al
+        const { data: historyRow, error: historyError } = await supabase
+          .from('extension_history')
+          .insert({
+            registration_id: registration.id,
+            previous_end_date: previousEndDate,
+            new_start_date: newStartDate,
+            new_end_date: newEndDate,
+            previous_package_type: registration.package_type,
+            new_package_type: newPackageType,
+            payment_status: formData.paymentStatus,
+            payment_method: finalPaymentMethod,
+            payment_amount: finalPaymentAmount,
+            payment_date: finalPaymentDate,
+            notes: finalNotes
+          })
+          .select('id')
+          .single()
+        if (historyError) throw historyError
+
+        // 3. Finansal kayıt oluştur (FK ile bağlı)
+        const { error: financialError } = await supabase
+          .from('financial_records')
+          .insert({
+            registration_id: registration.id,
+            extension_history_id: historyRow.id,
+            transaction_type: 'extension_payment',
+            amount: finalPaymentAmount,
+            payment_method: finalPaymentMethod,
+            payment_status: formData.paymentStatus,
+            payment_date: finalPaymentDate,
+            notes: finalNotes
+          })
+        if (financialError) throw financialError
+
+        setToast({
+          visible: true,
+          message: language === 'tr' ? 'Paket başarıyla uzatıldı' : 'Package has been successfully extended',
+          type: 'success'
         })
+      }
 
-      if (historyError) throw historyError
-
-      // 3. Finansal kayıt oluştur
-      const { error: financialError } = await supabase
-        .from('financial_records')
-        .insert({
-          registration_id: registration.id,
-          transaction_type: 'extension_payment',
-          amount: finalPaymentAmount,
-          payment_method: finalPaymentMethod,
-          payment_status: formData.paymentStatus,
-          payment_date: formData.paymentStatus === 'beklemede' ? null : formData.paymentDate, // Ödeme beklemedeyse null, değilse seçilen tarih
-          notes: formData.note.trim() || null
-        })
-
-      if (financialError) throw financialError
-
-      setToast({
-        visible: true,
-        message: language === 'tr' ? 'Paket başarıyla uzatıldı' : 'Package has been successfully extended',
-        type: 'success'
-      })
-      
       onClose()
       onSuccess?.()
     } catch (error) {
       console.error('Uzatma işlemi sırasında hata:', error.message)
       setToast({
         visible: true,
-        message: language === 'tr' ? 'Uzatma işlemi sırasında bir hata oluştu' : 'An error occurred during the extension process',
+        message: isEditMode
+          ? (language === 'tr' ? 'Uzatma güncellenirken bir hata oluştu' : 'An error occurred while updating the extension')
+          : (language === 'tr' ? 'Uzatma işlemi sırasında bir hata oluştu' : 'An error occurred during the extension process'),
         type: 'error'
       })
     } finally {
@@ -299,13 +409,18 @@ export default function ExtendModal({ isOpen, onClose, onSuccess, registration }
               </div>
               <div>
                 <h2 className="text-2xl font-semibold text-[#1d1d1f] dark:text-white">
-                  {language === 'tr' ? 'Paketi Uzat' : 'Extend Package'}
+                  {isEditMode
+                    ? (language === 'tr' ? 'Uzatmayı Düzenle' : 'Edit Extension')
+                    : (language === 'tr' ? 'Paketi Uzat' : 'Extend Package')}
                 </h2>
                 <p className="text-[#6e6e73] dark:text-[#86868b]">
-                  {language === 'tr' 
-                    ? `${registration?.student_name} için paket uzatma işlemi`
-                    : `Package extension for ${registration?.student_name}`
-                  }
+                  {isEditMode
+                    ? (language === 'tr'
+                        ? `${registration?.student_name} için uzatma düzenleme`
+                        : `Editing extension for ${registration?.student_name}`)
+                    : (language === 'tr'
+                        ? `${registration?.student_name} için paket uzatma işlemi`
+                        : `Package extension for ${registration?.student_name}`)}
                 </p>
               </div>
             </div>
@@ -459,7 +574,7 @@ export default function ExtendModal({ isOpen, onClose, onSuccess, registration }
                             direction="horizontal"
                             locale={tr}
                             rangeColors={['#007AFF']}
-                            minDate={new Date(registration?.package_end_date)}
+                            minDate={new Date(isEditMode && existingExtension ? existingExtension.previous_end_date : registration?.package_end_date)}
                           />
                         </div>
                       </div>
@@ -740,10 +855,16 @@ export default function ExtendModal({ isOpen, onClose, onSuccess, registration }
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                       </svg>
-                      <span>{language === 'tr' ? 'Uzatılıyor' : 'Extending'}</span>
+                      <span>
+                        {isEditMode
+                          ? (language === 'tr' ? 'Kaydediliyor' : 'Saving')
+                          : (language === 'tr' ? 'Uzatılıyor' : 'Extending')}
+                      </span>
                     </>
                   ) : (
-                    language === 'tr' ? 'Uzat' : 'Extend'
+                    isEditMode
+                      ? (language === 'tr' ? 'Kaydet' : 'Save')
+                      : (language === 'tr' ? 'Uzat' : 'Extend')
                   )}
                 </button>
               </div>
