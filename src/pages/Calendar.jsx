@@ -5,14 +5,15 @@ import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import trLocale from '@fullcalendar/core/locales/tr';
 import enLocale from '@fullcalendar/core/locales/en-gb';
-import { PlusIcon, UserGroupIcon, ClockIcon, AcademicCapIcon, DocumentDuplicateIcon, CalendarDaysIcon, ArrowTopRightOnSquareIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, UserGroupIcon, ClockIcon, AcademicCapIcon, DocumentDuplicateIcon, CalendarDaysIcon, ArrowTopRightOnSquareIcon, BookOpenIcon } from '@heroicons/react/24/outline';
 import CreateEvent from '../components/CreateEvent';
 import UpdateEventSheet from '../components/UpdateEventSheet';
 import CopyWeekModal from '../components/CopyWeekModal';
+import WeeklyThemesModal from '../components/WeeklyThemesModal';
 import { supabase } from '../lib/supabase';
 import Toast from '../components/ui/Toast';
 import '../styles/calendar.css';
-import { addDays, format, isSameDay, parseISO } from 'date-fns';
+import { addDays, format, isSameDay, parseISO, startOfWeek } from 'date-fns';
 import tr from 'date-fns/locale/tr';
 import enUS from 'date-fns/locale/en-US';
 import { ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
@@ -76,6 +77,13 @@ const Calendar = () => {
   const [isActionNotificationVisible, setIsActionNotificationVisible] = useState(false);
   const [actionNotificationMessage, setActionNotificationMessage] = useState('');
   const [targetWeekForNavigation, setTargetWeekForNavigation] = useState(null);
+
+  // Haftalık konular (weekly themes) state'leri
+  const [isThemesModalOpen, setIsThemesModalOpen] = useState(false);
+  const [themesModalFocusWeek, setThemesModalFocusWeek] = useState(null);
+  const [weekThemes, setWeekThemes] = useState({}); // { 'yyyy-MM-dd' (Pazartesi) -> konu }
+  const [currentViewType, setCurrentViewType] = useState('timeGridWeek');
+  const themesRequestIdRef = useRef(0); // Geç gelen yanıtın günceli ezmemesi için
 
   // Get screen width
   const { width } = useWindowSize();
@@ -210,6 +218,38 @@ const Calendar = () => {
       console.error(language === 'tr' ? 'Etkinlikler getirilirken hata:' : 'Error fetching events:', error);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // Görünen aralıktaki haftalık konuları getir (week_start bir date kolonu,
+  // bu yüzden anahtarlar her zaman lokal 'yyyy-MM-dd' formatında — toISOString kullanılmaz)
+  const fetchWeekThemes = async (start, end) => {
+    try {
+      if (!start || !end) return;
+
+      const requestId = ++themesRequestIdRef.current;
+      const from = format(startOfWeek(start, { weekStartsOn: 1 }), 'yyyy-MM-dd');
+      const to = format(end, 'yyyy-MM-dd');
+
+      const { data, error } = await supabase
+        .from('weekly_themes')
+        .select('week_start, theme')
+        .gte('week_start', from)
+        .lt('week_start', to);
+
+      if (error) throw error;
+
+      // Bu arada daha yeni bir istek başladıysa bu yanıtı yok say
+      if (requestId !== themesRequestIdRef.current) return;
+
+      const themeMap = {};
+      (data || []).forEach(row => {
+        themeMap[row.week_start] = row.theme;
+      });
+      setWeekThemes(themeMap);
+    } catch (error) {
+      // Konu sorgusu başarısız olsa da takvim çalışmaya devam etmeli
+      console.error(language === 'tr' ? 'Haftalık konular getirilirken hata:' : 'Error fetching weekly themes:', error);
     }
   };
 
@@ -1077,6 +1117,13 @@ const Calendar = () => {
     };
   }, []);
 
+  // Görünen haftanın konusu (banner sadece hafta ve gün görünümlerinde gösterilir)
+  const activeWeekKey = currentWeekRange
+    ? format(startOfWeek(new Date(currentWeekRange), { weekStartsOn: 1 }), 'yyyy-MM-dd')
+    : null;
+  const activeWeekTheme = activeWeekKey ? weekThemes[activeWeekKey] : null;
+  const showThemeBanner = (currentViewType === 'timeGridWeek' || currentViewType === 'timeGridDay') && activeWeekKey;
+
   return (
     <div className="min-h-screen text-[#1d1d1f] dark:text-[#f5f5f7]">
       {/* Header */}
@@ -1099,6 +1146,16 @@ const Calendar = () => {
           </a>
           <button
             onClick={() => {
+              setThemesModalFocusWeek(null);
+              setIsThemesModalOpen(true);
+            }}
+            className="h-10 sm:h-8 px-3 bg-pink-100 dark:bg-pink-800/20 text-pink-700 dark:text-pink-300 text-sm font-medium rounded-lg hover:bg-pink-200 dark:hover:bg-pink-800/30 focus:outline-none transition-all duration-200 flex items-center justify-center gap-1.5 w-full sm:w-auto transform hover:scale-[1.02] active:scale-[0.98]"
+          >
+            <BookOpenIcon className="w-3.5 h-3.5" />
+            <span>{language === 'tr' ? 'Haftalık Konular' : 'Weekly Themes'}</span>
+          </button>
+          <button
+            onClick={() => {
               setSelectedTime({
                 hour: '',
                 minute: ''
@@ -1114,6 +1171,38 @@ const Calendar = () => {
       </div>
 
       <div className="relative bg-white dark:bg-[#1a1f2e] rounded-xl overflow-hidden">
+        {/* Haftanın Konusu (hafta ve gün görünümleri) */}
+        {showThemeBanner && (
+          <div className="flex items-center justify-between gap-4 px-6 py-2.5 border-b border-[#d2d2d7] dark:border-[#2a3241]">
+            <div className="flex items-center gap-2.5 min-w-0 text-sm">
+              <span className="text-[#6e6e73] dark:text-[#86868b] shrink-0">
+                {language === 'tr' ? 'Haftanın Konusu' : 'Weekly Theme'}
+              </span>
+              <span className="h-3.5 w-px bg-[#d2d2d7] dark:bg-[#2a3241] shrink-0"></span>
+              {activeWeekTheme ? (
+                <span className="text-base font-semibold text-[#1d1d1f] dark:text-white truncate">
+                  {activeWeekTheme}
+                </span>
+              ) : (
+                <span className="text-[#a1a1a6] dark:text-[#6e6e73]">
+                  {language === 'tr' ? 'Belirlenmedi' : 'Not set'}
+                </span>
+              )}
+            </div>
+            <button
+              onClick={() => {
+                setThemesModalFocusWeek(activeWeekKey);
+                setIsThemesModalOpen(true);
+              }}
+              className="h-7 px-3.5 rounded-full border border-[#d2d2d7] dark:border-[#2a3241] text-[13px] font-medium text-[#6e6e73] dark:text-[#86868b] hover:text-[#0071e3] dark:hover:text-[#0071e3] hover:border-[#0071e3] dark:hover:border-[#0071e3] hover:bg-[#0071e3]/[0.04] dark:hover:bg-[#0071e3]/10 active:scale-[0.96] transition-all duration-200 shrink-0"
+            >
+              {activeWeekTheme
+                ? (language === 'tr' ? 'Düzenle' : 'Edit')
+                : (language === 'tr' ? 'Konu Ekle' : 'Add Theme')}
+            </button>
+          </div>
+        )}
+
         {/* Loading Overlay */}
         {isLoading && (
           <div className="absolute inset-0 z-50 flex items-center justify-center bg-white/50 dark:bg-black/50 backdrop-blur-sm">
@@ -1177,6 +1266,8 @@ const Calendar = () => {
           datesSet={(dateInfo) => {
             fetchEvents(dateInfo.start, dateInfo.end);
             setCurrentWeekRange(dateInfo.start); // Update current week range for copy function
+            fetchWeekThemes(dateInfo.start, dateInfo.end);
+            setCurrentViewType(dateInfo.view.type);
           }}
           eventClassNames="overflow-hidden rounded-lg shadow-sm hover:shadow-md transition-shadow"
         />
@@ -1216,6 +1307,19 @@ const Calendar = () => {
         onConfirm={handleCopyWeek}
         currentWeekStart={currentWeekRange}
         hasConflicts={hasConflictsInTargetWeek}
+      />
+
+      {/* Haftalık Konular Modal */}
+      <WeeklyThemesModal
+        isOpen={isThemesModalOpen}
+        onClose={() => setIsThemesModalOpen(false)}
+        focusWeekStart={themesModalFocusWeek}
+        onSaved={() => {
+          if (calendarRef.current) {
+            const calendarApi = calendarRef.current.getApi();
+            fetchWeekThemes(calendarApi.view.activeStart, calendarApi.view.activeEnd);
+          }
+        }}
       />
 
       {/* Toast */}
