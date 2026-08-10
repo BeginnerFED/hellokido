@@ -607,7 +607,7 @@ const Home = () => {
                                 {/* WhatsApp butonu - sadece scheduled durumdaki öğrenciler için gösterilsin */}
                                 {participant.status === 'scheduled' && (
                                   <a
-                                    href={`https://wa.me/90${participant.registrations.parent_phone.replace(/\D/g, '').replace(/^0+/, '')}?text=${encodeURIComponent(`Merhaba ${participant.registrations.parent_name} Hanım 😊
+                                    href={`https://wa.me/90${participant.registrations.parent_phone.replace(/\D/g, '').replace(/^0+/, '')}?text=${encodeURIComponent(`Merhaba ${participant.registrations.parent_name} Hanım
 Çocuğunuzun etkinliğimizde bize katılacak olmasından büyük mutluluk duyuyoruz! İşte rezervasyonunuzla ilgili detaylar:
 * Etkinlik Tarihi: ${format(new Date(event.event_date), 'd MMMM yyyy', { locale: tr })} (Yarın)
 * Saat: ${format(new Date(event.event_date), 'HH:mm', { locale: tr })} 
@@ -620,7 +620,7 @@ Rezervasyonunuzun iptali için lütfen bir gün önceden bizi bilgilendiriniz. R
 Eğer herhangi bir sorunuz varsa, lütfen bize ulaşmaktan çekinmeyin.
 Sizleri ve çocuğunuzu atölyemizde görmek için sabırsızlanıyoruz!
 Sevgilerle,
-HelloKido Oyun Atölyesi 🌸`)}`}
+HelloKido Oyun Atölyesi`)}`}
                                     onClick={(e) => toggleMessageSent(participant.id, e)}
                                     target="_blank"
                                     rel="noopener noreferrer"
