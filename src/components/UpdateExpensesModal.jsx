@@ -292,9 +292,11 @@ export default function UpdateExpensesModal({ isOpen, onClose, expense, onUpdate
                       <option value="su" className="text-[#1d1d1f] dark:text-white bg-white dark:bg-[#1d1d1f]">
                         {language === 'tr' ? "Su" : "Water"}
                       </option>
-                      <option value="dogalgaz" className="text-[#1d1d1f] dark:text-white bg-white dark:bg-[#1d1d1f]">
-                        {language === 'tr' ? "Doğalgaz" : "Natural Gas"}
-                      </option>
+                      {formData.category === 'dogalgaz' && (
+                        <option value="dogalgaz" className="text-[#1d1d1f] dark:text-white bg-white dark:bg-[#1d1d1f]">
+                          {language === 'tr' ? "Doğalgaz" : "Natural Gas"}
+                        </option>
+                      )}
                       <option value="internet" className="text-[#1d1d1f] dark:text-white bg-white dark:bg-[#1d1d1f]">
                         {language === 'tr' ? "İnternet" : "Internet"}
                       </option>
@@ -306,6 +308,12 @@ export default function UpdateExpensesModal({ isOpen, onClose, expense, onUpdate
                       </option>
                       <option value="mutfak" className="text-[#1d1d1f] dark:text-white bg-white dark:bg-[#1d1d1f]">
                         {language === 'tr' ? "Mutfak" : "Kitchen"}
+                      </option>
+                      <option value="reklam" className="text-[#1d1d1f] dark:text-white bg-white dark:bg-[#1d1d1f]">
+                        {language === 'tr' ? "Reklam" : "Advertising"}
+                      </option>
+                      <option value="filament" className="text-[#1d1d1f] dark:text-white bg-white dark:bg-[#1d1d1f]">
+                        {language === 'tr' ? "Filament" : "Filament"}
                       </option>
                       <option value="diger" className="text-[#1d1d1f] dark:text-white bg-white dark:bg-[#1d1d1f]">
                         {language === 'tr' ? "Diğer" : "Other"}

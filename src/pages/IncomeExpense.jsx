@@ -748,6 +748,8 @@ export default function IncomeExpense() {
               : type === 'maas' ? '#60a5fa'
               : type === 'malzeme' ? '#fb923c'
               : type === 'mutfak' ? '#4ade80'
+              : type === 'reklam' ? '#f472b6'
+              : type === 'filament' ? '#22d3ee'
               : '#94a3b8'
           }
         }
@@ -1358,7 +1360,7 @@ export default function IncomeExpense() {
                 {language === 'tr' ? 'Gider Türü' : 'Expense Type'}
               </h3>
               <div className="grid grid-cols-3 gap-2">
-                {['kira', 'elektrik', 'su', 'dogalgaz', 'internet', 'maas', 'malzeme', 'mutfak', 'diger'].map((type) => (
+                {['kira', 'elektrik', 'su', 'internet', 'maas', 'malzeme', 'mutfak', 'reklam', 'filament', 'diger'].map((type) => (
                   <button
                     key={type}
                     onClick={() => setExpenseFilters(prev => ({ ...prev, expenseType: type }))}
@@ -1370,16 +1372,17 @@ export default function IncomeExpense() {
                       }
                     `}
                   >
-                    {language === 'tr' 
+                    {language === 'tr'
                       ? type.charAt(0).toUpperCase() + type.slice(1)
                       : type === 'kira' ? 'Rent'
                       : type === 'elektrik' ? 'Electricity'
                       : type === 'su' ? 'Water'
-                      : type === 'dogalgaz' ? 'Natural Gas'
                       : type === 'internet' ? 'Internet'
                       : type === 'maas' ? 'Salary'
                       : type === 'malzeme' ? 'Materials'
                       : type === 'mutfak' ? 'Kitchen'
+                      : type === 'reklam' ? 'Advertising'
+                      : type === 'filament' ? 'Filament'
                       : 'Other'
                     }
                   </button>
@@ -1545,16 +1548,17 @@ export default function IncomeExpense() {
                       )}
                       {expenseFilters.expenseType && (
                         <span className="ml-1 text-xs">
-                          ({language === 'tr' 
+                          ({language === 'tr'
                             ? expenseFilters.expenseType.charAt(0).toUpperCase() + expenseFilters.expenseType.slice(1)
                             : expenseFilters.expenseType === 'kira' ? 'Rent'
                             : expenseFilters.expenseType === 'elektrik' ? 'Electricity'
                             : expenseFilters.expenseType === 'su' ? 'Water'
-                            : expenseFilters.expenseType === 'dogalgaz' ? 'Natural Gas'
                             : expenseFilters.expenseType === 'internet' ? 'Internet'
                             : expenseFilters.expenseType === 'maas' ? 'Salary'
                             : expenseFilters.expenseType === 'malzeme' ? 'Materials'
                             : expenseFilters.expenseType === 'mutfak' ? 'Kitchen'
+                            : expenseFilters.expenseType === 'reklam' ? 'Advertising'
+                            : expenseFilters.expenseType === 'filament' ? 'Filament'
                             : 'Other'})
                         </span>
                       )}
@@ -1974,6 +1978,8 @@ export default function IncomeExpense() {
                           'maas': { bg: 'from-[#3b82f6]/5 to-[#60a5fa]/5', text: 'text-[#3b82f6]' },
                           'malzeme': { bg: 'from-[#f43f5e]/5 to-[#fb7185]/5', text: 'text-[#f43f5e]' },
                           'mutfak': { bg: 'from-[#14b8a6]/5 to-[#2dd4bf]/5', text: 'text-[#14b8a6]' },
+                          'reklam': { bg: 'from-[#f472b6]/5 to-[#ec4899]/5', text: 'text-[#ec4899]' },
+                          'filament': { bg: 'from-[#22d3ee]/5 to-[#06b6d4]/5', text: 'text-[#06b6d4]' },
                           'diger': { bg: 'from-[#6b7280]/5 to-[#9ca3af]/5', text: 'text-[#6b7280]' }
                         };
 
@@ -2157,7 +2163,7 @@ export default function IncomeExpense() {
                         }}
                         formatter={(value, name) => [
                           formatCurrency(value),
-                          language === 'tr' 
+                          language === 'tr'
                             ? name.charAt(0).toUpperCase() + name.slice(1)
                             : name === 'kira' ? 'Rent'
                             : name === 'elektrik' ? 'Electricity'
@@ -2167,6 +2173,8 @@ export default function IncomeExpense() {
                             : name === 'maas' ? 'Salary'
                             : name === 'malzeme' ? 'Materials'
                             : name === 'mutfak' ? 'Kitchen'
+                            : name === 'reklam' ? 'Advertising'
+                            : name === 'filament' ? 'Filament'
                             : 'Other'
                         ]}
                         labelStyle={{ 
@@ -2192,7 +2200,7 @@ export default function IncomeExpense() {
                         <div className="flex items-center gap-2">
                           <div className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }} />
                           <span className="text-sm text-[#1d1d1f] dark:text-white">
-                            {language === 'tr' 
+                            {language === 'tr'
                               ? item.name.charAt(0).toUpperCase() + item.name.slice(1)
                               : item.name === 'kira' ? 'Rent'
                               : item.name === 'elektrik' ? 'Electricity'
@@ -2202,6 +2210,8 @@ export default function IncomeExpense() {
                               : item.name === 'maas' ? 'Salary'
                               : item.name === 'malzeme' ? 'Materials'
                               : item.name === 'mutfak' ? 'Kitchen'
+                              : item.name === 'reklam' ? 'Advertising'
+                              : item.name === 'filament' ? 'Filament'
                               : 'Other'
                             }
                           </span>
