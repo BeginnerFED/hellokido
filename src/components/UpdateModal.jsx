@@ -119,14 +119,26 @@ export default function UpdateModal({ isOpen, onClose, onSuccess, registration }
     })
   }
 
+  // Ücretsiz katılım: ödeme ve paket tarihi sorulmaz
+  const isFree = formData.packageType === 'ucretsiz'
+
   const isFormValid = () => {
-    // Temel validasyon (her durumda kontrol edilecek alanlar)
-    const baseValidation = (
+    const hasIdentityFields = (
       formData.studentName.trim() !== '' &&
       formData.parentName.trim() !== '' &&
       formData.phone.trim() !== '' &&
       formData.age.trim() !== '' &&
-      formData.packageType !== '' &&
+      formData.packageType !== ''
+    )
+
+    // Ücretsiz katılımda ödeme alanları ve tarih aralığı istenmez
+    if (isFree) {
+      return hasIdentityFields
+    }
+
+    // Temel validasyon (her durumda kontrol edilecek alanlar)
+    const baseValidation = (
+      hasIdentityFields &&
       formData.paymentStatus !== '' &&
       dateRange[0].startDate !== dateRange[0].endDate
     )
@@ -148,6 +160,31 @@ export default function UpdateModal({ isOpen, onClose, onSuccess, registration }
   const handleInputChange = (e) => {
     const { name, value } = e.target
     setFormData(prev => {
+      // Ücretsiz katılım: ödeme alanları boşaltılır ve pasifleşir
+      // ('belirlenmedi'/0 dönüşümü kaydetme anında yapılır)
+      if (name === 'packageType' && value === 'ucretsiz') {
+        return {
+          ...prev,
+          [name]: value,
+          paymentStatus: 'ucretsiz',
+          paymentMethod: '',
+          amount: '',
+          paymentDate: null
+        }
+      }
+
+      // Ücretsizden ücretli pakete dönülürse ödeme alanları sıfırlanır
+      if (name === 'packageType' && prev.packageType === 'ucretsiz' && value !== 'ucretsiz') {
+        return {
+          ...prev,
+          [name]: value,
+          paymentStatus: '',
+          paymentMethod: '',
+          amount: '',
+          paymentDate: null
+        }
+      }
+
       // Eğer ödeme durumu "beklemede" olarak değiştirilirse, ödeme yeri ve tutarını temizle
       if (name === 'paymentStatus' && value === 'beklemede') {
         return {
@@ -183,9 +220,11 @@ export default function UpdateModal({ isOpen, onClose, onSuccess, registration }
 
     setIsLoading(true)
     try {
-      // Ödeme durumu beklemede ise varsayılan değerler ata
-      const paymentMethod = formData.paymentStatus === 'beklemede' ? 'belirlenmedi' : formData.paymentMethod
-      const paymentAmount = formData.paymentStatus === 'beklemede' ? 0 : parseFloat(formData.amount)
+      // Ücretsiz katılım / beklemede durumunda varsayılan değerler ata
+      const noPaymentDetails = isFree || formData.paymentStatus === 'beklemede'
+      const paymentMethod = noPaymentDetails ? 'belirlenmedi' : formData.paymentMethod
+      const paymentAmount = noPaymentDetails ? 0 : (parseFloat(formData.amount) || 0)
+      const paymentDate = noPaymentDetails ? null : formData.paymentDate
 
       // Güncellenecek ana kayıt verileri
       const updateData = {
@@ -199,7 +238,7 @@ export default function UpdateModal({ isOpen, onClose, onSuccess, registration }
         payment_status: formData.paymentStatus,
         payment_method: paymentMethod,
         payment_amount: paymentAmount,
-        payment_date: formData.paymentStatus === 'beklemede' ? null : formData.paymentDate, // Ödeme beklemedeyse null
+        payment_date: paymentDate, // Ödeme beklemede/ücretsiz ise null
         notes: formData.note.trim() || null
       }
 
@@ -232,22 +271,46 @@ export default function UpdateModal({ isOpen, onClose, onSuccess, registration }
         throw updateRegError
       }
 
-      // 2. İster ilk kayıt ister uzatma olsun, ilgili finansal kaydı güncelle
-      // Önce en son finansal kaydın ID'sini bulalım
-      const { data: latestFinancialRecord, error: findLatestError } = await supabase
-        .from('financial_records')
-        .select('id')
-        .eq('registration_id', registration.id)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single();
+      // 2. İster ilk kayıt ister uzatma olsun, ilgili finansal kaydı güncelle.
+      // Ücretsiz katılımda finansal kayda HİÇ dokunulmaz: geçmişte tahsil edilen para
+      // gerçek gelirdir, sıfırlanmamalı (ayrıca 'ucretsiz' statüsü DB kısıtını ihlal eder).
+      const { data: latestFinancialRecord, error: findLatestError } = isFree
+        ? { data: null, error: null }
+        : await supabase
+            .from('financial_records')
+            .select('id')
+            .eq('registration_id', registration.id)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single();
 
       if (findLatestError) {
         // Hata varsa ama 'PGRST116' (No rows found) değilse logla, ama devam et.
-        // Kayıt bulunamazsa garip bir durum olur ama ana kayıt güncellendi.
         if (findLatestError.code !== 'PGRST116') {
           console.error("En son finansal kayıt bulunurken hata:", findLatestError);
-          // Belki kullanıcıya bir uyarı gösterilebilir? Şimdilik devam ediyoruz.
+        } else {
+          // Finansal kayıt yok (ücretsizden ücretliye dönüşüm) → yeni kayıt oluştur,
+          // aksi halde bu gelir hiçbir yere yazılmazdı.
+          const { error: insertFinancialError } = await supabase
+            .from('financial_records')
+            .insert({
+              registration_id: registration.id,
+              transaction_type: 'initial_payment',
+              amount: paymentAmount,
+              payment_method: paymentMethod,
+              payment_status: formData.paymentStatus,
+              payment_date: paymentDate,
+              notes: formData.note.trim() || null
+            });
+
+          if (insertFinancialError) {
+            console.error("Finansal kayıt oluşturulurken hata:", insertFinancialError);
+            setToast({
+              visible: true,
+              message: language === 'tr' ? 'Finansal detaylar kaydedilirken hata oluştu.' : 'Error saving financial details.',
+              type: 'error'
+            });
+          }
         }
       } else if (latestFinancialRecord) {
         // En son finansal kayıt bulunduysa, onu güncelle
@@ -257,7 +320,7 @@ export default function UpdateModal({ isOpen, onClose, onSuccess, registration }
             amount: paymentAmount,
             payment_method: paymentMethod,
             payment_status: formData.paymentStatus,
-            payment_date: formData.paymentStatus === 'beklemede' ? null : formData.paymentDate,
+            payment_date: paymentDate,
             notes: formData.note.trim() || null
             // transaction_type DOKUNULMUYOR!
           })
@@ -476,6 +539,9 @@ export default function UpdateModal({ isOpen, onClose, onSuccess, registration }
                     <option value="hafta-4" className="text-[#1d1d1f] dark:text-white bg-white dark:bg-[#1d1d1f]">
                       {language === 'tr' ? "Haftada 4 Gün" : "4 Days Per Week"}
                     </option>
+                    <option value="ucretsiz" className="text-[#1d1d1f] dark:text-white bg-white dark:bg-[#1d1d1f]">
+                      {language === 'tr' ? "Ücretsiz Katılım" : "Free Participation"}
+                    </option>
                   </select>
                 </div>
               </div>
@@ -489,11 +555,14 @@ export default function UpdateModal({ isOpen, onClose, onSuccess, registration }
                   </div>
                   <input
                     type="text"
-                    className={`${inputClasses} cursor-pointer peer`}
+                    className={`${inputClasses} ${isFree ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer peer'}`}
                     placeholder={language === 'tr' ? "Kayıt Tarihi Seçin" : "Select Registration Date"}
-                    value={`${formatDate(dateRange[0].startDate)} - ${formatDate(dateRange[0].endDate)}`}
-                    onClick={() => setIsCalendarOpen(!isCalendarOpen)}
+                    value={isFree
+                      ? (language === 'tr' ? "Süresiz" : "Unlimited")
+                      : `${formatDate(dateRange[0].startDate)} - ${formatDate(dateRange[0].endDate)}`}
+                    onClick={() => { if (!isFree) setIsCalendarOpen(!isCalendarOpen) }}
                     readOnly
+                    disabled={isFree}
                     tabIndex={6}
                     autoComplete="off"
                   />
@@ -607,13 +676,20 @@ export default function UpdateModal({ isOpen, onClose, onSuccess, registration }
                     name="paymentStatus"
                     value={formData.paymentStatus}
                     onChange={handleInputChange}
-                    className={`${inputClasses} ${!formData.paymentStatus && 'text-[#86868b]'}`}
+                    className={`${inputClasses} ${!formData.paymentStatus && 'text-[#86868b]'} ${isFree && 'opacity-50 cursor-not-allowed'}`}
                     tabIndex={7}
                     autoComplete="off"
+                    disabled={isFree}
                   >
                     <option value="" disabled className="text-[#86868b] dark:text-[#86868b] bg-white dark:bg-[#1d1d1f]">
                       {language === 'tr' ? "Ödeme Durumu Seçin" : "Select Payment Status"}
                     </option>
+                    {/* Yalnızca ücretsiz katılımda görünür (select pasif olduğu için seçilemez) */}
+                    {isFree && (
+                      <option value="ucretsiz" className="text-[#1d1d1f] dark:text-white bg-white dark:bg-[#1d1d1f]">
+                        {language === 'tr' ? "Ücretsiz" : "Free"}
+                      </option>
+                    )}
                     <option value="odendi" className="text-[#1d1d1f] dark:text-white bg-white dark:bg-[#1d1d1f]">
                       {language === 'tr' ? "Ödendi" : "Paid"}
                     </option>
@@ -704,11 +780,13 @@ export default function UpdateModal({ isOpen, onClose, onSuccess, registration }
                     type="text"
                     className={`${inputClasses} cursor-pointer peer ${formData.paymentStatus !== 'odendi' && 'opacity-50 cursor-not-allowed'}`}
                     placeholder={language === 'tr' ? "Ödeme Yapılan Gün" : "Payment Date"}
-                    value={formData.paymentDate 
-                      ? formatDate(formData.paymentDate) 
-                      : formData.paymentStatus === 'beklemede' 
-                        ? (language === 'tr' ? "Ödeme Beklemede" : "Payment Pending")
-                        : (language === 'tr' ? "Ödeme Tarihi Seçin" : "Select Payment Date")}
+                    value={formData.paymentDate
+                      ? formatDate(formData.paymentDate)
+                      : isFree
+                        ? (language === 'tr' ? "Ödeme Alınmıyor" : "No Payment")
+                        : formData.paymentStatus === 'beklemede'
+                          ? (language === 'tr' ? "Ödeme Beklemede" : "Payment Pending")
+                          : (language === 'tr' ? "Ödeme Tarihi Seçin" : "Select Payment Date")}
                     onClick={() => formData.paymentStatus === 'odendi' && setIsPaymentDatePickerOpen(!isPaymentDatePickerOpen)}
                     readOnly
                     tabIndex={10}

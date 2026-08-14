@@ -104,14 +104,26 @@ export default function RegisterModal({ isOpen, onClose, onSuccess }) {
     })
   }
 
+  // Ücretsiz katılım: ödeme ve paket tarihi sorulmaz
+  const isFree = formData.packageType === 'ucretsiz'
+
   const isFormValid = () => {
-    // Temel validasyon (her durumda kontrol edilecek alanlar)
-    const baseValidation = (
+    const hasIdentityFields = (
       formData.studentName.trim() !== '' &&
       formData.parentName.trim() !== '' &&
       formData.phone.trim() !== '' &&
       formData.age.trim() !== '' &&
-      formData.packageType !== '' &&
+      formData.packageType !== ''
+    )
+
+    // Ücretsiz katılımda ödeme alanları ve tarih aralığı istenmez
+    if (isFree) {
+      return hasIdentityFields
+    }
+
+    // Temel validasyon (her durumda kontrol edilecek alanlar)
+    const baseValidation = (
+      hasIdentityFields &&
       formData.paymentStatus !== '' &&
       dateRange[0].startDate !== dateRange[0].endDate
     )
@@ -132,7 +144,41 @@ export default function RegisterModal({ isOpen, onClose, onSuccess }) {
 
   const handleInputChange = (e) => {
     const { name, value } = e.target
+
+    // Ücretsiz katılıma geçilirse tarih aralığını bugüne sabitle
+    // (iki ayrı Date nesnesi - aynı referans form geçerliliğini kilitler)
+    if (name === 'packageType' && value === 'ucretsiz') {
+      setDateRange([{ startDate: new Date(), endDate: new Date(), key: 'selection' }])
+      setIsCalendarOpen(false)
+    }
+
     setFormData(prev => {
+      // Ücretsiz katılım: ödeme alanları boşaltılır ve pasifleşir
+      // ('belirlenmedi'/0 dönüşümü kaydetme anında yapılır)
+      if (name === 'packageType' && value === 'ucretsiz') {
+        return {
+          ...prev,
+          [name]: value,
+          paymentStatus: 'ucretsiz',
+          paymentMethod: '',
+          amount: '',
+          paymentDate: null
+        }
+      }
+
+      // Ücretsizden ücretli pakete dönülürse ödeme alanları sıfırlanır
+      // (kullanıcı gerçek bir ödeme seçimi yapmak zorunda kalsın)
+      if (name === 'packageType' && prev.packageType === 'ucretsiz' && value !== 'ucretsiz') {
+        return {
+          ...prev,
+          [name]: value,
+          paymentStatus: '',
+          paymentMethod: '',
+          amount: '',
+          paymentDate: null
+        }
+      }
+
       // Eğer ödeme durumu "beklemede" olarak değiştirilirse, ödeme yeri ve tutarını temizle
       if (name === 'paymentStatus' && value === 'beklemede') {
         return {
@@ -168,9 +214,20 @@ export default function RegisterModal({ isOpen, onClose, onSuccess }) {
 
     setIsLoading(true)
     try {
-      // Ödeme durumu beklemede ise varsayılan değerler ata
-      const paymentMethod = formData.paymentStatus === 'beklemede' ? 'belirlenmedi' : formData.paymentMethod
-      const paymentAmount = formData.paymentStatus === 'beklemede' ? 0 : parseFloat(formData.amount)
+      // Ücretsiz katılım / beklemede durumunda varsayılan değerler ata
+      const noPaymentDetails = isFree || formData.paymentStatus === 'beklemede'
+      const paymentMethod = noPaymentDetails ? 'belirlenmedi' : formData.paymentMethod
+      const paymentAmount = noPaymentDetails ? 0 : (parseFloat(formData.amount) || 0)
+
+      // Ücretsizde paket tarihi anlamsız: kayıt gününü tam gün olarak sakla
+      let packageStartDate = dateRange[0].startDate
+      let packageEndDate = dateRange[0].endDate
+      if (isFree) {
+        packageStartDate = new Date()
+        packageStartDate.setHours(0, 0, 0, 0)
+        packageEndDate = new Date()
+        packageEndDate.setHours(23, 59, 59, 999)
+      }
 
       // 1. Yeni kayıt oluştur
       const { data, error } = await supabase
@@ -182,18 +239,18 @@ export default function RegisterModal({ isOpen, onClose, onSuccess }) {
             parent_name: formData.parentName.trim(),
             parent_phone: formData.phone.trim(),
             package_type: formData.packageType,
-            package_start_date: dateRange[0].startDate,
-            package_end_date: dateRange[0].endDate,
+            package_start_date: packageStartDate,
+            package_end_date: packageEndDate,
             payment_status: formData.paymentStatus,
             payment_method: paymentMethod,
             payment_amount: paymentAmount,
-            payment_date: formData.paymentStatus === 'beklemede' ? null : formData.paymentDate,
+            payment_date: noPaymentDetails ? null : formData.paymentDate,
             notes: formData.note.trim() || null,
             is_active: true,
             // İlk kayıt bilgileri (trigger tarafından da kaydedilecek)
             initial_package_type: formData.packageType,
-            initial_start_date: dateRange[0].startDate,
-            initial_end_date: dateRange[0].endDate,
+            initial_start_date: packageStartDate,
+            initial_end_date: packageEndDate,
             initial_payment_method: paymentMethod,
             initial_payment_amount: paymentAmount,
             initial_notes: formData.note.trim() || null
@@ -211,8 +268,8 @@ export default function RegisterModal({ isOpen, onClose, onSuccess }) {
         throw error
       }
 
-      // 2. Finansal kayıt oluştur
-      if (data && data[0]) {
+      // 2. Finansal kayıt oluştur (ücretsiz katılımda ödeme kaydı oluşturulmaz)
+      if (!isFree && data && data[0]) {
         const { error: financialError } = await supabase
           .from('financial_records')
           .insert({
@@ -484,6 +541,9 @@ export default function RegisterModal({ isOpen, onClose, onSuccess }) {
                     <option value="hafta-4" className="text-[#1d1d1f] dark:text-white bg-white dark:bg-[#1d1d1f]">
                       {language === 'tr' ? "Haftada 4 Gün" : "4 Days Per Week"}
                     </option>
+                    <option value="ucretsiz" className="text-[#1d1d1f] dark:text-white bg-white dark:bg-[#1d1d1f]">
+                      {language === 'tr' ? "Ücretsiz Katılım" : "Free Participation"}
+                    </option>
                   </select>
                 </div>
               </div>
@@ -497,11 +557,14 @@ export default function RegisterModal({ isOpen, onClose, onSuccess }) {
                   </div>
                   <input
                     type="text"
-                    className={`${inputClasses} cursor-pointer peer`}
+                    className={`${inputClasses} ${isFree ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer peer'}`}
                     placeholder={language === 'tr' ? "Kayıt Tarihi Seçin" : "Select Registration Date"}
-                    value={`${formatDate(dateRange[0].startDate)} - ${formatDate(dateRange[0].endDate)}`}
-                    onClick={() => setIsCalendarOpen(!isCalendarOpen)}
+                    value={isFree
+                      ? (language === 'tr' ? "Süresiz" : "Unlimited")
+                      : `${formatDate(dateRange[0].startDate)} - ${formatDate(dateRange[0].endDate)}`}
+                    onClick={() => { if (!isFree) setIsCalendarOpen(!isCalendarOpen) }}
                     readOnly
+                    disabled={isFree}
                     tabIndex={6}
                     autoComplete="off"
                   />
@@ -611,17 +674,24 @@ export default function RegisterModal({ isOpen, onClose, onSuccess }) {
                   <div className={iconWrapperClasses}>
                     <CreditCardIcon className={iconClasses} />
                   </div>
-                  <select 
+                  <select
                     name="paymentStatus"
                     value={formData.paymentStatus}
                     onChange={handleInputChange}
-                    className={`${inputClasses} ${!formData.paymentStatus && 'text-[#86868b]'}`}
+                    className={`${inputClasses} ${!formData.paymentStatus && 'text-[#86868b]'} ${isFree && 'opacity-50 cursor-not-allowed'}`}
                     tabIndex={7}
                     autoComplete="off"
+                    disabled={isFree}
                   >
                     <option value="" disabled className="text-[#86868b] dark:text-[#86868b] bg-white dark:bg-[#1d1d1f]">
                       {language === 'tr' ? "Ödeme Durumu Seçin" : "Select Payment Status"}
                     </option>
+                    {/* Yalnızca ücretsiz katılımda görünür (select pasif olduğu için seçilemez) */}
+                    {isFree && (
+                      <option value="ucretsiz" className="text-[#1d1d1f] dark:text-white bg-white dark:bg-[#1d1d1f]">
+                        {language === 'tr' ? "Ücretsiz" : "Free"}
+                      </option>
+                    )}
                     <option value="odendi" className="text-[#1d1d1f] dark:text-white bg-white dark:bg-[#1d1d1f]">
                       {language === 'tr' ? "Ödendi" : "Paid"}
                     </option>
@@ -712,11 +782,13 @@ export default function RegisterModal({ isOpen, onClose, onSuccess }) {
                     type="text"
                     className={`${inputClasses} cursor-pointer peer ${formData.paymentStatus !== 'odendi' && 'opacity-50 cursor-not-allowed'}`}
                     placeholder={language === 'tr' ? "Ödeme Yapılan Gün" : "Payment Date"}
-                    value={formData.paymentDate 
-                      ? formatDate(formData.paymentDate) 
-                      : formData.paymentStatus === 'beklemede' 
-                        ? (language === 'tr' ? "Ödeme Beklemede" : "Payment Pending")
-                        : (language === 'tr' ? "Ödeme Tarihi Seçin" : "Select Payment Date")}
+                    value={formData.paymentDate
+                      ? formatDate(formData.paymentDate)
+                      : isFree
+                        ? (language === 'tr' ? "Ödeme Alınmıyor" : "No Payment")
+                        : formData.paymentStatus === 'beklemede'
+                          ? (language === 'tr' ? "Ödeme Beklemede" : "Payment Pending")
+                          : (language === 'tr' ? "Ödeme Tarihi Seçin" : "Select Payment Date")}
                     onClick={() => formData.paymentStatus === 'odendi' && setIsPaymentDatePickerOpen(!isPaymentDatePickerOpen)}
                     readOnly
                     tabIndex={10}

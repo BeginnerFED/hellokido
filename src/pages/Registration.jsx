@@ -21,7 +21,8 @@ import {
   XMarkIcon,
   AdjustmentsHorizontalIcon,
   ClockIcon as HistoryIcon,
-  ArrowUturnUpIcon
+  ArrowUturnUpIcon,
+  GiftIcon
 } from '@heroicons/react/24/outline'
 import DeleteRegisterModal from '../components/DeleteRegisterModal'
 import DeleteExtensionModal from '../components/DeleteExtensionModal'
@@ -99,7 +100,8 @@ export default function Registration() {
       'hafta-1': language === 'tr' ? 'Haftada 1 Gün' : '1 Day Per Week',
       'hafta-2': language === 'tr' ? 'Haftada 2 Gün' : '2 Days Per Week',
       'hafta-3': language === 'tr' ? 'Haftada 3 Gün' : '3 Days Per Week',
-      'hafta-4': language === 'tr' ? 'Haftada 4 Gün' : '4 Days Per Week'
+      'hafta-4': language === 'tr' ? 'Haftada 4 Gün' : '4 Days Per Week',
+      'ucretsiz': language === 'tr' ? 'Ücretsiz Katılım' : 'Free Participation'
     }
     return types[type] || type
   }
@@ -108,7 +110,8 @@ export default function Registration() {
   const formatPaymentStatus = (status) => {
     const statuses = {
       'odendi': language === 'tr' ? 'Ödendi' : 'Paid',
-      'beklemede': language === 'tr' ? 'Beklemede' : 'Pending'
+      'beklemede': language === 'tr' ? 'Beklemede' : 'Pending',
+      'ucretsiz': language === 'tr' ? 'Ücretsiz' : 'Free'
     }
     return statuses[status] || status
   }
@@ -156,6 +159,15 @@ export default function Registration() {
 
   // Uzatma modalını açma fonksiyonu
   const handleExtendClick = (registration) => {
+    if (registration.package_type === 'ucretsiz') {
+      showToast(
+        language === 'tr'
+          ? 'Ücretsiz katılımlarda paket uzatma yapılmaz'
+          : 'Package extension is not available for free participation',
+        'error'
+      );
+      return;
+    }
     if (registration.payment_status === 'beklemede') {
       showToast(
         language === 'tr' 
@@ -242,9 +254,10 @@ export default function Registration() {
         .select('payment_date')
         .eq('registration_id', registration.id)
         .eq('transaction_type', 'initial_payment')
-        .single()
+        .maybeSingle()
 
-      if (paymentError) throw paymentError
+      // Ücretsiz katılımda finansal kayıt olmaz — geçmiş yine açılabilmeli
+      if (paymentError && paymentError.code !== 'PGRST116') throw paymentError
 
       // Uzatma geçmişini al
       const { data: extensionData, error: extensionError } = await supabase
@@ -496,11 +509,15 @@ export default function Registration() {
                         </div>
                         <div className={`
                           flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[13px] font-medium
-                          ${registration.payment_status === 'odendi' 
-                            ? 'bg-[#34c759]/10 text-[#1c7430] dark:bg-[#32d74b]/10 dark:text-[#32d74b] ring-1 ring-[#00390e]/20 dark:ring-[#32d74b]/20' 
+                          ${registration.payment_status === 'ucretsiz'
+                            ? 'bg-gray-400/10 text-gray-700 dark:text-gray-300 ring-1 ring-gray-500/20 dark:ring-gray-400/20'
+                            : registration.payment_status === 'odendi'
+                            ? 'bg-[#34c759]/10 text-[#1c7430] dark:bg-[#32d74b]/10 dark:text-[#32d74b] ring-1 ring-[#00390e]/20 dark:ring-[#32d74b]/20'
                             : 'bg-[#ffd60a]/10 text-[#946800] dark:text-[#ffd60a] dark:bg-[#ffd60a]/10 ring-1 ring-[#574800]/20 dark:ring-[#ffd60a]/20'}
                         `}>
-                          {registration.payment_status === 'odendi' ? (
+                          {registration.payment_status === 'ucretsiz' ? (
+                            <GiftIcon className="w-4 h-4" />
+                          ) : registration.payment_status === 'odendi' ? (
                             <CheckCircleIcon className="w-4 h-4" />
                           ) : (
                             <ClockIcon className="w-4 h-4" />
@@ -542,16 +559,24 @@ export default function Registration() {
                         <div className="flex items-center gap-2.5 text-[#424245] dark:text-[#86868b]">
                           <CalendarDaysIcon className="w-[18px] h-[18px] shrink-0" />
                           <span className="text-[12px]">
-                            {formatDate(registration.package_start_date)} - {formatDate(registration.package_end_date)}
+                            {registration.package_type === 'ucretsiz'
+                              ? (language === 'tr' ? 'Süresiz' : 'Unlimited')
+                              : `${formatDate(registration.package_start_date)} - ${formatDate(registration.package_end_date)}`}
                           </span>
                         </div>
 
                         <div className="flex items-center gap-2.5 text-[#424245] dark:text-[#86868b]">
                           <CreditCardIcon className="w-[18px] h-[18px] shrink-0" />
                           <span>
-                            {formatPaymentMethod(registration.payment_method)} - {registration.payment_amount} ₺
-                            {registration.payment_status === 'odendi' && registration.payment_date && (
-                              <> - {formatDate(registration.payment_date)}</>
+                            {registration.package_type === 'ucretsiz' ? (
+                              language === 'tr' ? 'Ücretsiz' : 'Free'
+                            ) : (
+                              <>
+                                {formatPaymentMethod(registration.payment_method)} - {registration.payment_amount} ₺
+                                {registration.payment_status === 'odendi' && registration.payment_date && (
+                                  <> - {formatDate(registration.payment_date)}</>
+                                )}
+                              </>
                             )}
                           </span>
                         </div>
@@ -587,13 +612,15 @@ export default function Registration() {
                           <span>{language === 'tr' ? 'Güncelle' : 'Update'}</span>
                         </button>
 
-                        <button
-                          onClick={() => handleExtendClick(registration)}
-                          className="flex-1 h-11 flex items-center justify-center gap-2 font-medium transition-colors text-sm text-[#424245] dark:text-[#86868b] hover:text-[#34c759] dark:hover:text-[#32d74b] hover:bg-[#34c759]/5 dark:hover:bg-[#32d74b]/10"
-                        >
-                          <ArrowPathIcon className="w-4 h-4" />
-                          <span>{language === 'tr' ? 'Uzat' : 'Extend'}</span>
-                        </button>
+                        {registration.package_type !== 'ucretsiz' && (
+                          <button
+                            onClick={() => handleExtendClick(registration)}
+                            className="flex-1 h-11 flex items-center justify-center gap-2 font-medium transition-colors text-sm text-[#424245] dark:text-[#86868b] hover:text-[#34c759] dark:hover:text-[#32d74b] hover:bg-[#34c759]/5 dark:hover:bg-[#32d74b]/10"
+                          >
+                            <ArrowPathIcon className="w-4 h-4" />
+                            <span>{language === 'tr' ? 'Uzat' : 'Extend'}</span>
+                          </button>
+                        )}
 
                         <button
                           onClick={() => handleDeleteClick(registration)}
@@ -662,7 +689,7 @@ export default function Registration() {
               <h3 className="text-sm font-medium text-[#1d1d1f] dark:text-white">
                 {language === 'tr' ? 'Ödeme Durumu' : 'Payment Status'}
               </h3>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 <button
                   onClick={() => setFilters(prev => ({ ...prev, paymentStatus: 'odendi' }))}
                   className={`
@@ -686,6 +713,18 @@ export default function Registration() {
                   `}
                 >
                   {language === 'tr' ? 'Beklemede' : 'Pending'}
+                </button>
+                <button
+                  onClick={() => setFilters(prev => ({ ...prev, paymentStatus: 'ucretsiz' }))}
+                  className={`
+                    h-9 px-4 rounded-lg text-sm font-medium transition-colors
+                    ${filters.paymentStatus === 'ucretsiz'
+                      ? 'bg-[#1d1d1f] dark:bg-[#0071e3] text-white'
+                      : 'bg-white dark:bg-[#1d1d1f] text-[#1d1d1f] dark:text-white border border-[#d2d2d7] dark:border-[#2a3241] hover:border-[#0071e3] dark:hover:border-[#0071e3]'
+                    }
+                  `}
+                >
+                  {language === 'tr' ? 'Ücretsiz' : 'Free'}
                 </button>
               </div>
             </div>
@@ -755,6 +794,18 @@ export default function Registration() {
                   `}
                 >
                   {language === 'tr' ? 'Haftada 4 Gün' : '4 Days Per Week'}
+                </button>
+                <button
+                  onClick={() => setFilters(prev => ({ ...prev, packageType: 'ucretsiz' }))}
+                  className={`
+                    h-9 px-4 rounded-lg text-sm font-medium transition-colors text-left
+                    ${filters.packageType === 'ucretsiz'
+                      ? 'bg-[#1d1d1f] dark:bg-[#0071e3] text-white'
+                      : 'bg-white dark:bg-[#1d1d1f] text-[#1d1d1f] dark:text-white border border-[#d2d2d7] dark:border-[#2a3241] hover:border-[#0071e3] dark:hover:border-[#0071e3]'
+                    }
+                  `}
+                >
+                  {language === 'tr' ? 'Ücretsiz Katılım' : 'Free Participation'}
                 </button>
               </div>
             </div>
