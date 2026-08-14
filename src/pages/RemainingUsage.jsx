@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useLanguage } from '../context/LanguageContext';
 import { supabase } from '../lib/supabase';
+import { fetchLessonUsageMap } from '../lib/lessonUsage';
 import { format } from 'date-fns';
 import { tr, enUS } from 'date-fns/locale';
 import { MagnifyingGlassIcon, AdjustmentsHorizontalIcon, XMarkIcon, ChevronLeftIcon } from '@heroicons/react/24/outline';
@@ -47,45 +48,13 @@ const RemainingUsage = () => {
       
       // If registrations found, fetch additional data to calculate usage statistics
       if (registrationsData && registrationsData.length > 0) {
-        const studentIds = registrationsData.map(reg => reg.id);
-        
-        // Get event participants data for these registrations to calculate attendance stats
-        const { data: participantsData, error: participantsError } = await supabase
-          .from('event_participants')
-          .select('*')
-          .in('registration_id', studentIds);
-        
-        if (participantsError) throw participantsError;
-        
-        // Process data to construct student_usage_summary for each registration
+        // Ders kullanımı ortak util'den: kullanılan = katıldı + gelmedi,
+        // sayım güncel paket döneminden itibaren (bkz. src/lib/lessonUsage.js)
+        const usageMap = await fetchLessonUsageMap(registrationsData);
+
         const processedStudents = registrationsData.map(registration => {
-          // Get all participants for this registration
-          const studentParticipants = participantsData.filter(p => 
-            p.registration_id === registration.id
-          );
-          
-          // Calculate statistics
-          const attendedLessons = studentParticipants.filter(p => p.status === 'attended').length;
-          const noShowLessons = studentParticipants.filter(p => p.status === 'no_show').length;
-          const makeupCompleted = studentParticipants.filter(p => p.status === 'makeup').length;
-          const scheduledLessons = studentParticipants.filter(p => p.status === 'scheduled').length;
-          const postponedLessons = studentParticipants.filter(p => p.status === 'postponed').length;
-          
-          // Calculate remaining lessons (total lessons - (attended + scheduled + no_show + makeup))
-          let totalLessons = 0;
-          switch(registration.package_type) {
-            case 'hafta-1': totalLessons = 4; break;
-            case 'hafta-2': totalLessons = 8; break;
-            case 'hafta-3': totalLessons = 12; break;
-            case 'hafta-4': totalLessons = 16; break;
-            case 'tek-seferlik': totalLessons = 1; break;
-            default: totalLessons = 0;
-          }
-          
-          // Count these lesson statuses as "used" lessons
-          const usedLessons = attendedLessons + scheduledLessons + noShowLessons + makeupCompleted;
-          const remainingLessons = Math.max(totalLessons - usedLessons, 0);
-          
+          const usage = usageMap[registration.id];
+
           return {
             registration_id: registration.id,
             student_name: registration.student_name,
@@ -95,14 +64,15 @@ const RemainingUsage = () => {
             package_end_date: registration.package_end_date,
             payment_status: registration.payment_status,
             is_active: registration.is_active,
-            remaining_lessons: remainingLessons,
-            attended_lessons: attendedLessons,
-            no_show_lessons: noShowLessons,
-            makeup_completed: makeupCompleted,
-            postponed_lessons: postponedLessons
+            is_free: usage.isFree,
+            remaining_lessons: usage.remaining,
+            attended_lessons: usage.attended,
+            no_show_lessons: usage.noShow,
+            makeup_completed: usage.makeup,
+            postponed_lessons: usage.postponed
           };
         });
-        
+
         setStudents(processedStudents);
       } else {
         setStudents([]);
@@ -125,36 +95,10 @@ const RemainingUsage = () => {
       
       if (registrationError) throw registrationError;
       
-      // Get event participants for this registration to calculate stats
-      const { data: participantsData, error: participantsError } = await supabase
-        .from('event_participants')
-        .select('*')
-        .eq('registration_id', registrationId);
-      
-      if (participantsError) throw participantsError;
-      
-      // Calculate statistics
-      const attendedLessons = participantsData.filter(p => p.status === 'attended').length;
-      const noShowLessons = participantsData.filter(p => p.status === 'no_show').length;
-      const makeupCompleted = participantsData.filter(p => p.status === 'makeup').length;
-      const scheduledLessons = participantsData.filter(p => p.status === 'scheduled').length;
-      const postponedLessons = participantsData.filter(p => p.status === 'postponed').length;
-      
-      // Calculate remaining lessons based on package type
-      let totalLessons = 0;
-      switch(registrationData.package_type) {
-        case 'hafta-1': totalLessons = 4; break;
-        case 'hafta-2': totalLessons = 8; break;
-        case 'hafta-3': totalLessons = 12; break;
-        case 'hafta-4': totalLessons = 16; break;
-        case 'tek-seferlik': totalLessons = 1; break;
-        default: totalLessons = 0;
-      }
-      
-      // Count these lesson statuses as "used" lessons
-      const usedLessons = attendedLessons + scheduledLessons + noShowLessons + makeupCompleted;
-      const remainingLessons = Math.max(totalLessons - usedLessons, 0);
-      
+      // Ders kullanımı ortak util'den (kullanılan = katıldı + gelmedi, dönem-kapsamlı)
+      const usageMap = await fetchLessonUsageMap([registrationData]);
+      const usage = usageMap[registrationData.id];
+
       // Construct student details object
       const studentDetails = {
         registration_id: registrationData.id,
@@ -165,13 +109,14 @@ const RemainingUsage = () => {
         package_end_date: registrationData.package_end_date,
         payment_status: registrationData.payment_status,
         is_active: registrationData.is_active,
-        remaining_lessons: remainingLessons,
-        attended_lessons: attendedLessons,
-        no_show_lessons: noShowLessons,
-        makeup_completed: makeupCompleted,
-        postponed_lessons: postponedLessons
+        is_free: usage.isFree,
+        remaining_lessons: usage.remaining,
+        attended_lessons: usage.attended,
+        no_show_lessons: usage.noShow,
+        makeup_completed: usage.makeup,
+        postponed_lessons: usage.postponed
       };
-      
+
       setStudentDetails(studentDetails);
     } catch (error) {
       console.error('Error fetching student details:', error);
@@ -304,13 +249,15 @@ const RemainingUsage = () => {
   // Translate package type
   const translatePackageType = (type) => {
     if (language === 'tr') {
-      return type === 'hafta-1' ? 'Haftada 1'
+      return type === 'ucretsiz' ? 'Ücretsiz Katılım'
+        : type === 'hafta-1' ? 'Haftada 1'
         : type === 'hafta-2' ? 'Haftada 2'
         : type === 'hafta-3' ? 'Haftada 3'
         : type === 'hafta-4' ? 'Haftada 4'
         : 'Tek Seferlik';
     } else {
-      return type === 'hafta-1' ? '1 Day/Week'
+      return type === 'ucretsiz' ? 'Free Participation'
+        : type === 'hafta-1' ? '1 Day/Week'
         : type === 'hafta-2' ? '2 Days/Week'
         : type === 'hafta-3' ? '3 Days/Week'
         : type === 'hafta-4' ? '4 Days/Week'
@@ -321,9 +268,9 @@ const RemainingUsage = () => {
   // Translate payment status
   const translatePaymentStatus = (status) => {
     if (language === 'tr') {
-      return status === 'odendi' ? 'Ödendi' : 'Beklemede';
+      return status === 'ucretsiz' ? 'Ücretsiz' : status === 'odendi' ? 'Ödendi' : 'Beklemede';
     } else {
-      return status === 'odendi' ? 'Paid' : 'Pending';
+      return status === 'ucretsiz' ? 'Free' : status === 'odendi' ? 'Paid' : 'Pending';
     }
   };
 
@@ -533,23 +480,31 @@ const RemainingUsage = () => {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className="text-sm text-[#424245] dark:text-[#86868b]">
-                          {formatDate(student.package_end_date)}
+                          {student.is_free
+                            ? (language === 'tr' ? 'Süresiz' : 'Unlimited')
+                            : formatDate(student.package_end_date)}
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-center">
                         <span className={`inline-flex items-center justify-center min-w-[2rem] px-3 py-1.5 rounded-lg text-xs font-medium ring-1 ring-inset ${
-                          student.remaining_lessons <= 0 
+                          student.is_free
+                            ? 'bg-gray-400/10 text-gray-700 ring-gray-500/20 dark:bg-gray-400/10 dark:text-gray-300 dark:ring-gray-400/20'
+                            : student.remaining_lessons <= 0
                             ? 'bg-red-400/10 text-red-700 ring-red-500/20 dark:bg-red-400/10 dark:text-red-300 dark:ring-red-400/20'
                             : student.remaining_lessons <= 2
                             ? 'bg-amber-400/10 text-amber-700 ring-amber-500/20 dark:bg-amber-400/10 dark:text-amber-300 dark:ring-amber-400/20'
                             : 'bg-emerald-400/10 text-emerald-700 ring-emerald-500/20 dark:bg-emerald-400/10 dark:text-emerald-300 dark:ring-emerald-400/20'
                         }`}>
-                          {student.remaining_lessons}
+                          {student.is_free
+                            ? (language === 'tr' ? 'Ücretsiz' : 'Free')
+                            : student.remaining_lessons}
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-center">
                         <span className={`inline-flex items-center justify-center px-3 py-1.5 rounded-lg text-xs font-medium ring-1 ring-inset ${
-                          student.payment_status === 'odendi'
+                          student.payment_status === 'ucretsiz'
+                            ? 'bg-gray-400/10 text-gray-700 ring-gray-500/20 dark:bg-gray-400/10 dark:text-gray-300 dark:ring-gray-400/20'
+                            : student.payment_status === 'odendi'
                             ? 'bg-emerald-400/10 text-emerald-700 ring-emerald-500/20 dark:bg-emerald-400/10 dark:text-emerald-300 dark:ring-emerald-400/20'
                             : 'bg-amber-400/10 text-amber-700 ring-amber-500/20 dark:bg-amber-400/10 dark:text-amber-300 dark:ring-amber-400/20'
                         }`}>
@@ -659,6 +614,18 @@ const RemainingUsage = () => {
                   `}
                 >
                   {language === 'tr' ? 'Tek Seferlik' : 'One Time'}
+                </button>
+                <button
+                  onClick={() => setPackageFilter('ucretsiz')}
+                  className={`
+                    h-9 px-4 rounded-lg text-sm font-medium
+                    ${packageFilter === 'ucretsiz'
+                      ? 'bg-[#1d1d1f] dark:bg-[#0071e3] text-white'
+                      : 'bg-white dark:bg-[#1d1d1f] text-[#1d1d1f] dark:text-white border border-[#d2d2d7] dark:border-[#2a3241] hover:border-[#0071e3] dark:hover:border-[#0071e3]'
+                    }
+                  `}
+                >
+                  {language === 'tr' ? 'Ücretsiz' : 'Free'}
                 </button>
               </div>
             </div>
@@ -777,7 +744,9 @@ const RemainingUsage = () => {
                         {language === 'tr' ? 'Bitiş Tarihi' : 'End Date'}
                       </label>
                       <span className="block text-sm font-medium text-[#1d1d1f] dark:text-white">
-                        {formatDate(selectedStudent.package_end_date)}
+                        {selectedStudent.is_free
+                          ? (language === 'tr' ? 'Süresiz' : 'Unlimited')
+                          : formatDate(selectedStudent.package_end_date)}
                       </span>
                     </div>
                   </div>
@@ -960,14 +929,18 @@ const RemainingUsage = () => {
                       <label className="block text-xs text-[#6e6e73] dark:text-[#86868b] uppercase tracking-wider mb-1">
                         {language === 'tr' ? 'Kalan Ders' : 'Remaining Lessons'}
                       </label>
-                      <span className={`text-2xl font-medium ${
-                          studentDetails?.remaining_lessons <= 0 
-                          ? 'text-red-700 dark:text-red-400'
+                      <span className={`font-medium ${
+                          studentDetails?.is_free
+                          ? 'text-base text-gray-700 dark:text-gray-300'
+                            : studentDetails?.remaining_lessons <= 0
+                          ? 'text-2xl text-red-700 dark:text-red-400'
                             : studentDetails?.remaining_lessons <= 2
-                          ? 'text-amber-700 dark:text-amber-400'
-                          : 'text-emerald-700 dark:text-emerald-400'
+                          ? 'text-2xl text-amber-700 dark:text-amber-400'
+                          : 'text-2xl text-emerald-700 dark:text-emerald-400'
                       }`}>
-                          {studentDetails?.remaining_lessons}
+                          {studentDetails?.is_free
+                            ? (language === 'tr' ? 'Ücretsiz' : 'Free')
+                            : studentDetails?.remaining_lessons}
                       </span>
                     </div>
                     </div>
@@ -977,7 +950,9 @@ const RemainingUsage = () => {
                             {language === 'tr' ? 'Ödeme Durumu' : 'Payment Status'}
                           </label>
                         <span className={`inline-flex w-auto items-center px-3 py-1.5 rounded-lg text-xs font-medium ${
-                          studentDetails?.payment_status === 'odendi'
+                          studentDetails?.payment_status === 'ucretsiz'
+                              ? 'bg-gray-400/10 text-gray-700 ring-1 ring-gray-500/20 dark:bg-gray-400/10 dark:text-gray-300 dark:ring-gray-400/20'
+                              : studentDetails?.payment_status === 'odendi'
                               ? 'bg-emerald-400/10 text-emerald-700 ring-1 ring-emerald-500/20 dark:bg-emerald-400/10 dark:text-emerald-300 dark:ring-emerald-400/20'
                               : 'bg-amber-400/10 text-amber-700 ring-1 ring-amber-500/20 dark:bg-amber-400/10 dark:text-amber-300 dark:ring-amber-400/20'
                           }`}>

@@ -3,6 +3,7 @@ import { FiClock, FiUsers, FiCalendar, FiInfo, FiPhone, FiDollarSign, FiPackage 
 import { FaWhatsapp, FaLiraSign, FaCheck } from 'react-icons/fa';
 import { useLanguage } from '../context/LanguageContext';
 import { supabase } from '../lib/supabase';
+import { fetchLessonUsageMap } from '../lib/lessonUsage';
 import { format } from 'date-fns';
 import { tr, enUS } from 'date-fns/locale';
 import Masonry from 'react-masonry-css';
@@ -23,6 +24,7 @@ const Home = () => {
   const [isLoadingPackages, setIsLoadingPackages] = useState(true);
   const [sentMessages, setSentMessages] = useState({});
   const [updatingLessonId, setUpdatingLessonId] = useState(null);
+  const [lessonUsage, setLessonUsage] = useState({}); // registration_id -> kalan ders bilgisi
 
   // LocalStorage'dan verileri yükle ve eski tarihleri temizle
   const cleanupOldData = () => {
@@ -149,7 +151,7 @@ const Home = () => {
         // 3. Bu registration_id'ler için registrations tablosundan bilgileri çek
         const { data: registrations, error: registrationsError } = await supabase
           .from('registrations')
-          .select('id, student_name, student_age, parent_name, parent_phone')
+          .select('id, student_name, student_age, parent_name, parent_phone, package_type, package_start_date')
           .in('id', registrationIds);
 
         if (registrationsError) throw registrationsError;
@@ -170,6 +172,7 @@ const Home = () => {
       }));
 
       setTomorrowEvents(eventsWithParticipants);
+      await refreshLessonUsageForEvents(eventsWithParticipants);
     } catch (error) {
       console.error('Yarınki dersler çekilirken hata oluştu:', error);
     } finally {
@@ -227,7 +230,7 @@ const Home = () => {
         // 3. Bu registration_id'ler için registrations tablosundan bilgileri çek
         const { data: registrations, error: registrationsError } = await supabase
           .from('registrations')
-          .select('id, student_name, student_age, parent_name, parent_phone')
+          .select('id, student_name, student_age, parent_name, parent_phone, package_type, package_start_date')
           .in('id', registrationIds);
 
         if (registrationsError) throw registrationsError;
@@ -248,6 +251,7 @@ const Home = () => {
       }));
 
       setTodayEvents(eventsWithParticipants);
+      await refreshLessonUsageForEvents(eventsWithParticipants);
     } catch (error) {
       console.error('Bugünkü dersler çekilirken hata oluştu:', error);
     } finally {
@@ -265,6 +269,7 @@ const Home = () => {
         .from('registrations')
         .select('*')
         .eq('payment_status', 'beklemede')
+        .neq('package_type', 'ucretsiz') // Ücretsiz katılımlarda ödeme beklenmez
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -292,6 +297,7 @@ const Home = () => {
         .select('*')
         .lte('package_end_date', cutoffDate.toISOString())
         .gte('package_end_date', today.toISOString()) // Bugün ve sonrası (zaten bitmiş olanları gösterme)
+        .neq('package_type', 'ucretsiz') // Ücretsiz katılımda paket bitiş tarihi uygulanmaz
         .order('package_end_date', { ascending: true });
 
       if (error) throw error;
@@ -304,8 +310,63 @@ const Home = () => {
     }
   };
 
+  // Etkinliklerdeki benzersiz kayıtlar için kalan ders haritasını günceller (tek toplu sorgu)
+  const refreshLessonUsageForEvents = async (eventsWithParticipants) => {
+    try {
+      const uniqueRegistrations = [];
+      const seenIds = new Set();
+      eventsWithParticipants.forEach(event => {
+        event.participants.forEach(participant => {
+          const registration = participant.registrations;
+          if (registration && registration.id && !seenIds.has(registration.id)) {
+            seenIds.add(registration.id);
+            uniqueRegistrations.push(registration);
+          }
+        });
+      });
+
+      if (uniqueRegistrations.length === 0) return;
+
+      const usageMap = await fetchLessonUsageMap(uniqueRegistrations);
+      setLessonUsage(prev => ({ ...prev, ...usageMap }));
+    } catch (error) {
+      // Rozet gösterilemese de ders listeleri çalışmaya devam etmeli
+      console.error('Kalan ders bilgisi getirilirken hata oluştu:', error);
+    }
+  };
+
+  // Kalan ders rozeti (kullanılan = katıldı + gelmedi, güncel paket dönemi — bkz. src/lib/lessonUsage.js)
+  const renderRemainingBadge = (participant) => {
+    const usage = lessonUsage[participant.registration_id];
+    if (!usage) return null;
+
+    // Ücretsiz katılımda kota yok — eşik kontrollerinden ÖNCE (null <= 0 true döner)
+    if (usage.isFree) {
+      return (
+        <span className="inline-flex items-center w-fit mt-1 px-2 py-0.5 rounded-full text-[10px] font-medium ring-1 ring-inset bg-gray-400/10 text-gray-700 ring-gray-500/20 dark:bg-gray-400/10 dark:text-gray-300 dark:ring-gray-400/20">
+          {language === 'en' ? 'Free' : 'Ücretsiz'}
+        </span>
+      );
+    }
+
+    const colorClass = usage.remaining <= 0
+      ? 'bg-red-400/10 text-red-700 ring-red-500/20 dark:bg-red-400/10 dark:text-red-300 dark:ring-red-400/20'
+      : usage.remaining <= 2
+        ? 'bg-amber-400/10 text-amber-700 ring-amber-500/20 dark:bg-amber-400/10 dark:text-amber-300 dark:ring-amber-400/20'
+        : 'bg-emerald-400/10 text-emerald-700 ring-emerald-500/20 dark:bg-emerald-400/10 dark:text-emerald-300 dark:ring-emerald-400/20';
+
+    return (
+      <span className={`inline-flex items-center w-fit mt-1 px-2 py-0.5 rounded-full text-[10px] font-medium ring-1 ring-inset ${colorClass}`}>
+        {language === 'en'
+          ? `${usage.remaining} lessons left`
+          : `${usage.remaining} ders kaldı`}
+      </span>
+    );
+  };
+
   // Ders statüsünü güncelleyen fonksiyon
-  const updateLessonStatus = async (lessonId, newStatus) => {
+  const updateLessonStatus = async (participant, newStatus) => {
+    const lessonId = participant.id;
     try {
       setUpdatingLessonId(lessonId);
 
@@ -337,6 +398,11 @@ const Home = () => {
         // Hata durumunda, eski verileri geri getirmek için fetchTodayEvents() çağrılabilir
         console.error('Ders statüsü güncellenirken hata oluştu:', error);
         fetchTodayEvents(); // Sadece hata durumunda yeniden verileri çek
+      } else if (participant.registrations) {
+        // Katıldı/Gelmedi kalan dersi etkiler — sadece bu kaydın kullanımını yenile
+        // (delta yerine hedefli refetch: kota aşımındaki 0'a sabitleme delta ile yanlış sonuç verir)
+        const usageMap = await fetchLessonUsageMap([participant.registrations]);
+        setLessonUsage(prev => ({ ...prev, ...usageMap }));
       }
 
     } catch (error) {
@@ -595,6 +661,7 @@ const Home = () => {
                                     <p className="text-[11px] text-[#6e6e73] dark:text-[#86868b]">
                                       {language === 'en' ? 'Parent: ' : 'Veli: '}{participant.registrations.parent_name}
                                     </p>
+                                    {renderRemainingBadge(participant)}
                                   </div>
                                 </div>
                               </div>
@@ -806,6 +873,7 @@ HelloKido Oyun Atölyesi`)}`}
                                       <p className="text-[11px] text-[#6e6e73] dark:text-[#86868b]">
                                         {language === 'en' ? 'Parent: ' : 'Veli: '}{participant.registrations.parent_name}
                                       </p>
+                                      {renderRemainingBadge(participant)}
                                     </div>
                                   </div>
                                 </div>
@@ -818,7 +886,7 @@ HelloKido Oyun Atölyesi`)}`}
                               {/* Statü Butonları - Planlandı butonu kaldırıldı */}
                               <div className="grid grid-cols-2 sm:flex sm:flex-row items-center justify-center gap-2 mt-1 w-full">
                                 <button
-                                  onClick={() => updateLessonStatus(participant.id, 'attended')}
+                                  onClick={() => updateLessonStatus(participant, 'attended')}
                                   disabled={updatingLessonId === participant.id}
                                   className={`flex-1 px-3 py-1 text-[11px] font-medium rounded-full border transition ${participant.status === 'attended'
                                       ? 'bg-green-100 text-green-800 border-green-300 dark:bg-green-900/30 dark:text-green-300 dark:border-green-800/50'
@@ -828,7 +896,7 @@ HelloKido Oyun Atölyesi`)}`}
                                   {language === 'en' ? 'Joined' : 'Katıldı'}
                                 </button>
                                 <button
-                                  onClick={() => updateLessonStatus(participant.id, 'no_show')}
+                                  onClick={() => updateLessonStatus(participant, 'no_show')}
                                   disabled={updatingLessonId === participant.id}
                                   className={`flex-1 px-3 py-1 text-[11px] font-medium rounded-full border transition ${participant.status === 'no_show'
                                       ? 'bg-red-100 text-red-800 border-red-300 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800/50'
@@ -838,7 +906,7 @@ HelloKido Oyun Atölyesi`)}`}
                                   {language === 'en' ? 'Absent' : 'Gelmedi'}
                                 </button>
                                 <button
-                                  onClick={() => updateLessonStatus(participant.id, 'postponed')}
+                                  onClick={() => updateLessonStatus(participant, 'postponed')}
                                   disabled={updatingLessonId === participant.id}
                                   className={`flex-1 px-3 py-1 text-[11px] font-medium rounded-full border transition ${participant.status === 'postponed'
                                       ? 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800/50'
@@ -848,7 +916,7 @@ HelloKido Oyun Atölyesi`)}`}
                                   {language === 'en' ? 'Delayed' : 'Ertelendi'}
                                 </button>
                                 <button
-                                  onClick={() => updateLessonStatus(participant.id, 'makeup')}
+                                  onClick={() => updateLessonStatus(participant, 'makeup')}
                                   disabled={updatingLessonId === participant.id}
                                   className={`flex-1 px-3 py-1 text-[11px] font-medium rounded-full border transition ${participant.status === 'makeup'
                                       ? 'bg-purple-100 text-purple-800 border-purple-300 dark:bg-purple-900/30 dark:text-purple-300 dark:border-purple-800/50'
