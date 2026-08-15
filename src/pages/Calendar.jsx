@@ -10,7 +10,9 @@ import CreateEvent from '../components/CreateEvent';
 import UpdateEventSheet from '../components/UpdateEventSheet';
 import CopyWeekModal from '../components/CopyWeekModal';
 import WeeklyThemesModal from '../components/WeeklyThemesModal';
+import ExtendModal from '../components/ExtendModal';
 import { supabase } from '../lib/supabase';
+import { fetchLessonUsageMap } from '../lib/lessonUsage';
 import Toast from '../components/ui/Toast';
 import '../styles/calendar.css';
 import { addDays, format, isSameDay, parseISO, startOfWeek } from 'date-fns';
@@ -72,6 +74,12 @@ const Calendar = () => {
   const [hasConflictsInTargetWeek, setHasConflictsInTargetWeek] = useState(false);
   const [copyWeekLoading, setCopyWeekLoading] = useState(false);
   const [currentWeekEvents, setCurrentWeekEvents] = useState([]);
+
+  // Hafta kopyalama ön kontrolü: kopyalanan haftadaki ders hakkı bitmiş öğrenciler
+  const [precheckStudents, setPrecheckStudents] = useState([]);
+  const [precheckLoading, setPrecheckLoading] = useState(false);
+  const [extendTargetRegistration, setExtendTargetRegistration] = useState(null);
+  const [isExtendModalOpen, setIsExtendModalOpen] = useState(false);
 
   // Action notification state variables
   const [isActionNotificationVisible, setIsActionNotificationVisible] = useState(false);
@@ -642,6 +650,100 @@ const Calendar = () => {
     }
   };
 
+  // Kopyalanan haftadaki derslerde yer alan benzersiz kayıt id'lerini çıkarır.
+  // NOT: currentWeekEvents KULLANILMAZ — enjekte edilen kopyalama butonu ilk render'ın
+  // closure'ını tuttuğu için o state modal açılırken güvenilir değil. Buradaki `events`
+  // her zaman güncel (fonksiyon render sırasında yeniden oluşuyor).
+  const getWeekRegistrationIds = (weekStart) => {
+    if (!weekStart) return [];
+    const start = new Date(weekStart);
+    const end = addDays(start, 7);
+
+    const ids = new Set();
+    events.forEach(event => {
+      const eventDate = new Date(event.start);
+      if (eventDate < start || eventDate >= end) return;
+
+      const participants = event.extendedProps?.originalEvent?.event_participants || [];
+      participants.forEach(participant => {
+        if (participant.registration_id) ids.add(participant.registration_id);
+      });
+    });
+
+    return [...ids];
+  };
+
+  // Ön kontrol: haftadaki öğrencilerden ders hakkı bitmiş olanları getirir.
+  // Kopyalamayı ASLA engellemez; hata durumunda liste boş kalır.
+  const fetchCopyWeekPrecheck = async (registrationIds) => {
+    if (!registrationIds || registrationIds.length === 0) {
+      setPrecheckStudents([]);
+      return;
+    }
+
+    try {
+      setPrecheckLoading(true);
+
+      const { data: registrations, error } = await supabase
+        .from('registrations')
+        .select('*')
+        .in('id', registrationIds)
+        .eq('is_active', true);
+
+      if (error) throw error;
+
+      const usageMap = await fetchLessonUsageMap(registrations || []);
+
+      const exhausted = (registrations || [])
+        // isFree kontrolü eşikten ÖNCE: ücretsizde remaining null ve null <= 0 true döner
+        .filter(registration => {
+          const usage = usageMap[registration.id];
+          return usage && !usage.isFree && usage.remaining === 0;
+        })
+        .map(registration => ({ ...registration, usage: usageMap[registration.id] }))
+        .sort((a, b) => new Date(a.package_end_date) - new Date(b.package_end_date));
+
+      setPrecheckStudents(exhausted);
+    } catch (error) {
+      console.error('Hafta kopyalama ön kontrolü yapılırken hata:', error);
+      setPrecheckStudents([]);
+    } finally {
+      setPrecheckLoading(false);
+    }
+  };
+
+  // Ön kontrol listesinden uzatma modalını aç (Registration.jsx'teki guard'ların aynısı)
+  const handleExtendFromPrecheck = (registration) => {
+    if (registration.package_type === 'ucretsiz') {
+      showToast(
+        language === 'tr'
+          ? 'Ücretsiz katılımlarda paket uzatma yapılmaz'
+          : 'Package extension is not available for free participation',
+        'error'
+      );
+      return;
+    }
+    if (registration.payment_status === 'beklemede') {
+      showToast(
+        language === 'tr'
+          ? "Uzatma işlemi için ödeme durumu 'Beklemede' olamaz"
+          : "Payment status cannot be 'Pending' for extension",
+        'error'
+      );
+      return;
+    }
+    setExtendTargetRegistration(registration);
+    setIsExtendModalOpen(true);
+  };
+
+  // Ön kontrolü modal açılınca çalıştır. Effect kullanılıyor çünkü handleCopyWeekClick
+  // enjekte edilen butondan bayat closure ile çağrılıyor (orada `events` boş görünür).
+  useEffect(() => {
+    if (!isCopyWeekModalOpen || !currentWeekRange) return;
+    fetchCopyWeekPrecheck(getWeekRegistrationIds(currentWeekRange));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isCopyWeekModalOpen, currentWeekRange, events]);
+
   // Haftayı kopyalama işlevi
   const handleCopyWeekClick = () => {
     if (calendarRef.current) {
@@ -719,7 +821,9 @@ const Calendar = () => {
   };
 
   // Haftayı kopyalama işlemini gerçekleştir
-  const handleCopyWeek = async (targetWeekStart) => {
+  // excludedRegistrationIds: ön kontrol listesinden "Hariç Tut" denen öğrenciler.
+  // Dersler yine kopyalanır, sadece bu öğrenciler katılımcı olarak eklenmez.
+  const handleCopyWeek = async (targetWeekStart, excludedRegistrationIds = []) => {
     try {
       setCopyWeekLoading(true);
 
@@ -835,18 +939,22 @@ const Calendar = () => {
 
                 if (newEventError) throw newEventError;
 
-                // Katılımcıları kopyala
+                // Katılımcıları kopyala (hariç tutulanlar atlanır)
                 if (originalEvent.event_participants && originalEvent.event_participants.length > 0) {
-                  const participantInserts = originalEvent.event_participants.map(participant => ({
-                    event_id: newEvent.id,
-                    registration_id: participant.registration_id
-                  }));
+                  const participantInserts = originalEvent.event_participants
+                    .filter(participant => !excludedRegistrationIds.includes(participant.registration_id))
+                    .map(participant => ({
+                      event_id: newEvent.id,
+                      registration_id: participant.registration_id
+                    }));
 
-                  const { error: participantError } = await supabase
-                    .from('event_participants')
-                    .insert(participantInserts);
+                  if (participantInserts.length > 0) {
+                    const { error: participantError } = await supabase
+                      .from('event_participants')
+                      .insert(participantInserts);
 
-                  if (participantError) throw participantError;
+                    if (participantError) throw participantError;
+                  }
                 }
 
                 successCount++;
@@ -968,18 +1076,22 @@ const Calendar = () => {
 
         if (newEventError) throw newEventError;
 
-        // Katılımcıları kopyala
+        // Katılımcıları kopyala (hariç tutulanlar atlanır)
         if (originalEvent.event_participants && originalEvent.event_participants.length > 0) {
-          const participantInserts = originalEvent.event_participants.map(participant => ({
-            event_id: newEvent.id,
-            registration_id: participant.registration_id
-          }));
+          const participantInserts = originalEvent.event_participants
+            .filter(participant => !excludedRegistrationIds.includes(participant.registration_id))
+            .map(participant => ({
+              event_id: newEvent.id,
+              registration_id: participant.registration_id
+            }));
 
-          const { error: participantError } = await supabase
-            .from('event_participants')
-            .insert(participantInserts);
+          if (participantInserts.length > 0) {
+            const { error: participantError } = await supabase
+              .from('event_participants')
+              .insert(participantInserts);
 
-          if (participantError) throw participantError;
+            if (participantError) throw participantError;
+          }
         }
 
         successCount++;
@@ -1307,6 +1419,23 @@ const Calendar = () => {
         onConfirm={handleCopyWeek}
         currentWeekStart={currentWeekRange}
         hasConflicts={hasConflictsInTargetWeek}
+        precheckStudents={precheckStudents}
+        precheckLoading={precheckLoading}
+        onExtendStudent={handleExtendFromPrecheck}
+      />
+
+      {/* Paket Uzatma Modal — CopyWeekModal'ın KARDEŞİ olarak monte edilir.
+          İçine konulsaydı her tıklama CopyWeekModal'ın overlay'ine sızıp onu kapatırdı.
+          z-50 (ExtendModal) > z-40 (CopyWeekModal) olduğu için üstte çıkar. */}
+      <ExtendModal
+        isOpen={isExtendModalOpen}
+        onClose={() => setIsExtendModalOpen(false)}
+        onSuccess={() => {
+          // ExtendModal onClose'u onSuccess'ten ÖNCE çağırdığı için kaydı burada
+          // null'lamıyoruz. Uzatma sonrası liste yenilenir (uzatılan öğrenci düşer).
+          fetchCopyWeekPrecheck(getWeekRegistrationIds(currentWeekRange));
+        }}
+        registration={extendTargetRegistration}
       />
 
       {/* Haftalık Konular Modal */}
