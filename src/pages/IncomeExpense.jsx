@@ -1779,6 +1779,8 @@ export default function IncomeExpense() {
                         <td className="py-4 px-6">
                           <span className="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-medium bg-gradient-to-r from-[#0071e3]/5 to-[#34d399]/5 dark:from-[#0071e3]/10 dark:to-[#34d399]/10 text-[#0071e3] group-hover:from-[#0071e3]/10 group-hover:to-[#34d399]/10 dark:group-hover:from-[#0071e3]/20 dark:group-hover:to-[#34d399]/20 transition-all">
                             {item.package === 'ucretsiz' ? 'Ücretsiz'
+                              : item.package === '3ay-hafta-1' ? '3 Aylık - 12 Atölye'
+                              : item.package === '3ay-hafta-2' ? '3 Aylık - 24 Atölye'
                               : item.package === 'hafta-1' ? 'Haftada 1'
                               : item.package === 'hafta-2' ? 'Haftada 2'
                               : item.package === 'hafta-3' ? 'Haftada 3'

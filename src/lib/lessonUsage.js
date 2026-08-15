@@ -6,11 +6,14 @@ export const FREE_PACKAGE_TYPE = 'ucretsiz';
 export const isFreePackage = (packageType) => packageType === FREE_PACKAGE_TYPE;
 
 // Paket tipine göre toplam ders hakkı
+// 3ay-* paketleri 12 haftalık uzun dönem paketleridir (haftada 1 → 12, haftada 2 → 24 atölye)
 export const PACKAGE_LESSON_TOTALS = {
   'hafta-1': 4,
   'hafta-2': 8,
   'hafta-3': 12,
   'hafta-4': 16,
+  '3ay-hafta-1': 12,
+  '3ay-hafta-2': 24,
   'tek-seferlik': 1
 };
 

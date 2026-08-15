@@ -250,6 +250,8 @@ const RemainingUsage = () => {
   const translatePackageType = (type) => {
     if (language === 'tr') {
       return type === 'ucretsiz' ? 'Ücretsiz Katılım'
+        : type === '3ay-hafta-1' ? '3 Aylık - 12 Atölye'
+        : type === '3ay-hafta-2' ? '3 Aylık - 24 Atölye'
         : type === 'hafta-1' ? 'Haftada 1'
         : type === 'hafta-2' ? 'Haftada 2'
         : type === 'hafta-3' ? 'Haftada 3'
@@ -257,6 +259,8 @@ const RemainingUsage = () => {
         : 'Tek Seferlik';
     } else {
       return type === 'ucretsiz' ? 'Free Participation'
+        : type === '3ay-hafta-1' ? '3 Months - 12 Workshops'
+        : type === '3ay-hafta-2' ? '3 Months - 24 Workshops'
         : type === 'hafta-1' ? '1 Day/Week'
         : type === 'hafta-2' ? '2 Days/Week'
         : type === 'hafta-3' ? '3 Days/Week'
@@ -607,6 +611,30 @@ const RemainingUsage = () => {
                   `}
                 >
                   {language === 'tr' ? 'Haftada 4' : '4 Days/Week'}
+                </button>
+                <button
+                  onClick={() => setPackageFilter('3ay-hafta-1')}
+                  className={`
+                    h-9 px-4 rounded-lg text-sm font-medium
+                    ${packageFilter === '3ay-hafta-1'
+                      ? 'bg-[#1d1d1f] dark:bg-[#0071e3] text-white'
+                      : 'bg-white dark:bg-[#1d1d1f] text-[#1d1d1f] dark:text-white border border-[#d2d2d7] dark:border-[#2a3241] hover:border-[#0071e3] dark:hover:border-[#0071e3]'
+                    }
+                  `}
+                >
+                  {language === 'tr' ? '3 Ay - 12 Atölye' : '3 Mo - 12 Wks'}
+                </button>
+                <button
+                  onClick={() => setPackageFilter('3ay-hafta-2')}
+                  className={`
+                    h-9 px-4 rounded-lg text-sm font-medium
+                    ${packageFilter === '3ay-hafta-2'
+                      ? 'bg-[#1d1d1f] dark:bg-[#0071e3] text-white'
+                      : 'bg-white dark:bg-[#1d1d1f] text-[#1d1d1f] dark:text-white border border-[#d2d2d7] dark:border-[#2a3241] hover:border-[#0071e3] dark:hover:border-[#0071e3]'
+                    }
+                  `}
+                >
+                  {language === 'tr' ? '3 Ay - 24 Atölye' : '3 Mo - 24 Wks'}
                 </button>
                 <button
                   onClick={() => setPackageFilter('tek-seferlik')}

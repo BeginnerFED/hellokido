@@ -415,6 +415,12 @@ export default function UpdateWaitlistModal({ isOpen, onClose, onSuccess, entry 
                     <option value="hafta-4" className="text-[#1d1d1f] dark:text-white bg-white dark:bg-[#121621]">
                       {language === 'tr' ? "Haftada 4 Gün" : "4 Days Per Week"}
                     </option>
+                    <option value="3ay-hafta-1" className="text-[#1d1d1f] dark:text-white bg-white dark:bg-[#121621]">
+                      {language === 'tr' ? "3 Aylık - 12 Atölye" : "3 Months - 12 Workshops"}
+                    </option>
+                    <option value="3ay-hafta-2" className="text-[#1d1d1f] dark:text-white bg-white dark:bg-[#121621]">
+                      {language === 'tr' ? "3 Aylık - 24 Atölye" : "3 Months - 24 Workshops"}
+                    </option>
                   </select>
                 </div>
 

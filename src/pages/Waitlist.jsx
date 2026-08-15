@@ -115,7 +115,9 @@ export default function Waitlist() {
       'hafta-1': language === 'tr' ? 'Haftada 1 Gün' : '1 Day Per Week',
       'hafta-2': language === 'tr' ? 'Haftada 2 Gün' : '2 Days Per Week',
       'hafta-3': language === 'tr' ? 'Haftada 3 Gün' : '3 Days Per Week',
-      'hafta-4': language === 'tr' ? 'Haftada 4 Gün' : '4 Days Per Week'
+      'hafta-4': language === 'tr' ? 'Haftada 4 Gün' : '4 Days Per Week',
+      '3ay-hafta-1': language === 'tr' ? '3 Aylık - 12 Atölye' : '3 Months - 12 Workshops',
+      '3ay-hafta-2': language === 'tr' ? '3 Aylık - 24 Atölye' : '3 Months - 24 Workshops'
     }
     return types[type] || type
   }
@@ -532,6 +534,30 @@ export default function Waitlist() {
                   `}
                 >
                   {language === 'tr' ? 'Haftada 4 Gün' : '4 Days Per Week'}
+                </button>
+                <button
+                  onClick={() => setFilters(prev => ({ ...prev, packageType: '3ay-hafta-1' }))}
+                  className={`
+                    h-9 px-4 rounded-lg text-sm font-medium transition-colors text-left
+                    ${filters.packageType === '3ay-hafta-1'
+                      ? 'bg-[#1d1d1f] dark:bg-[#0071e3] text-white'
+                      : 'bg-white dark:bg-[#1d1d1f] text-[#1d1d1f] dark:text-white border border-[#d2d2d7] dark:border-[#2a3241] hover:border-[#0071e3] dark:hover:border-[#0071e3]'
+                    }
+                  `}
+                >
+                  {language === 'tr' ? '3 Aylık - 12 Atölye' : '3 Months - 12 Workshops'}
+                </button>
+                <button
+                  onClick={() => setFilters(prev => ({ ...prev, packageType: '3ay-hafta-2' }))}
+                  className={`
+                    h-9 px-4 rounded-lg text-sm font-medium transition-colors text-left
+                    ${filters.packageType === '3ay-hafta-2'
+                      ? 'bg-[#1d1d1f] dark:bg-[#0071e3] text-white'
+                      : 'bg-white dark:bg-[#1d1d1f] text-[#1d1d1f] dark:text-white border border-[#d2d2d7] dark:border-[#2a3241] hover:border-[#0071e3] dark:hover:border-[#0071e3]'
+                    }
+                  `}
+                >
+                  {language === 'tr' ? '3 Aylık - 24 Atölye' : '3 Months - 24 Workshops'}
                 </button>
               </div>
             </div>
