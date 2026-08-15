@@ -149,17 +149,25 @@ const PublicCalendar = () => {
       const weekStart = startOfWeek(currentWeek, { weekStartsOn: 1 });
       const weekEnd = endOfWeek(currentWeek, { weekStartsOn: 1 });
 
-      // Haftanın konusunu etkinliklerle PARALEL getir (Promise.resolve sorguyu hemen başlatır;
-      // reject etmez, hata sonuç objesinde döner — başarısız olsa da takvim çalışmaya devam eder)
+      // Haftanın konusu SADECE içinde bulunduğumuz hafta için gösterilir.
+      // Diğer haftalarda sorgu hiç atılmaz — sadece arayüzde gizlemek yetmezdi,
+      // veri yine ağ isteğinde gider ve dışarıdan okunabilirdi.
       const themeWeekKey = format(weekStart, 'yyyy-MM-dd');
+      const currentWeekKey = format(startOfWeek(new Date(), { weekStartsOn: 1 }), 'yyyy-MM-dd');
+      const isCurrentWeek = themeWeekKey === currentWeekKey;
       latestThemeWeekRef.current = themeWeekKey;
-      const themePromise = Promise.resolve(
-        supabase
-          .from('weekly_themes')
-          .select('theme')
-          .eq('week_start', themeWeekKey)
-          .maybeSingle()
-      ).catch(err => ({ data: null, error: err }));
+
+      // Promise.resolve sorguyu hemen başlatır; reject etmez, hata sonuç objesinde döner
+      // — başarısız olsa da takvim çalışmaya devam eder
+      const themePromise = isCurrentWeek
+        ? Promise.resolve(
+            supabase
+              .from('weekly_themes')
+              .select('theme')
+              .eq('week_start', themeWeekKey)
+              .maybeSingle()
+          ).catch(err => ({ data: null, error: err }))
+        : Promise.resolve({ data: null, error: null });
 
       let query = supabase
         .from('events')
@@ -252,6 +260,10 @@ const PublicCalendar = () => {
   const selectedDate = weekDays.find(day => format(day, 'yyyy-MM-dd') === selectedDay) || weekDays[0];
   const selectedDayEvents = getEventsForDay(selectedDate);
   const isSelectedToday = format(selectedDate, 'yyyy-MM-dd') === todayKey;
+  // Haftanın konusu yalnızca içinde bulunulan haftada gösterilir (diğer haftalarda
+  // sorgu bile atılmıyor) — bu yüzden iskelet de sadece o haftada anlamlı
+  const viewedWeekKey = format(weekDays[0], 'yyyy-MM-dd');
+  const isViewingCurrentWeek = viewedWeekKey === format(startOfWeek(new Date(), { weekStartsOn: 1 }), 'yyyy-MM-dd');
   const hasActiveFilters = Boolean(filters.ageGroup || filters.eventType);
   const activeFilterCount = (filters.ageGroup ? 1 : 0) + (filters.eventType ? 1 : 0);
 
@@ -374,6 +386,12 @@ const PublicCalendar = () => {
           0%, 100% { transform: scale(1); opacity: 1; }
           50% { transform: scale(1.3); opacity: 0.85; }
         }
+        /* Tek bir yavaş dönüş: atomun tamamı birlikte döner (halkalar birbirine göre
+           sabit kalır). Her parçayı ayrı ayrı oynatmak görsel kaosa yol açıyordu. */
+        @keyframes pcAtomSpin {
+          from { transform: rotate(0deg); }
+          to   { transform: rotate(360deg); }
+        }
       `}</style>
 
       {/* Logo (iframe'de gizli, site zaten markayı gösteriyor) */}
@@ -458,9 +476,11 @@ const PublicCalendar = () => {
             </div>
           </div>
 
-          {/* Haftanın Konusu — vitrin kartı. Yüklü konu görünen haftaya ait değilse
-              (hafta yeni değişti, veri henüz gelmedi) eski konu bir an bile gösterilmez */}
-          {loading || themeWeekLoaded !== format(weekDays[0], 'yyyy-MM-dd') ? (
+          {/* Haftanın Konusu — vitrin kartı. Sadece içinde bulunulan haftada; diğer
+              haftalarda iskelet de gösterilmez (orada zaten hiç konu gelmeyecek).
+              Yüklü konu görünen haftaya ait değilse (hafta yeni değişti, veri henüz
+              gelmedi) eski konu bir an bile gösterilmez. */}
+          {!isViewingCurrentWeek ? null : loading || themeWeekLoaded !== viewedWeekKey ? (
             <div className="pc-skeleton pc-fade-in mt-5 h-[84px] rounded-2xl"></div>
           ) : weekTheme ? (
             <div
@@ -480,28 +500,29 @@ const PublicCalendar = () => {
               <div className="pc-shine pointer-events-none absolute inset-y-0 -left-1/4 w-1/3 bg-white/25 blur-md"></div>
 
               {/* Dönen atom animasyonu */}
-              <div className="relative w-14 h-14 shrink-0" aria-hidden="true">
-                {/* Yörünge halkaları */}
-                <span className="absolute left-1/2 top-1/2 w-[52px] h-[20px] -translate-x-1/2 -translate-y-1/2 border border-white/30 rounded-[50%]"></span>
-                <span className="absolute left-1/2 top-1/2 w-[52px] h-[20px] -translate-x-1/2 -translate-y-1/2 border border-white/30 rounded-[50%] rotate-[60deg]"></span>
-                <span className="absolute left-1/2 top-1/2 w-[52px] h-[20px] -translate-x-1/2 -translate-y-1/2 border border-white/30 rounded-[50%] rotate-[-60deg]"></span>
+              <div
+                className="relative w-14 h-14 shrink-0"
+                aria-hidden="true"
+                style={{ animation: 'pcAtomSpin 24s linear infinite' }}
+              >
+                {/* Yörünge halkaları — birbirine göre sabit, hepsi birlikte döner */}
+                <span className="absolute left-1/2 top-1/2 w-[52px] h-[20px] -translate-x-1/2 -translate-y-1/2 border border-white/35 rounded-[50%]"></span>
+                <span className="absolute left-1/2 top-1/2 w-[52px] h-[20px] -translate-x-1/2 -translate-y-1/2 border border-white/35 rounded-[50%] rotate-[60deg]"></span>
+                <span className="absolute left-1/2 top-1/2 w-[52px] h-[20px] -translate-x-1/2 -translate-y-1/2 border border-white/35 rounded-[50%] rotate-[-60deg]"></span>
                 {/* Çekirdek */}
-                <span
-                  className="absolute left-1/2 top-1/2 -ml-[5px] -mt-[5px] w-2.5 h-2.5 rounded-full bg-white shadow-[0_0_12px_rgba(255,255,255,0.95)]"
-                  style={{ animation: 'pcPulse 2s ease-in-out infinite' }}
-                ></span>
-                {/* Elektronlar */}
+                <span className="absolute left-1/2 top-1/2 -ml-[5px] -mt-[5px] w-2.5 h-2.5 rounded-full bg-white shadow-[0_0_10px_rgba(255,255,255,0.9)]"></span>
+                {/* Elektronlar — sakin hızlarda */}
                 <span
                   className="absolute left-1/2 top-1/2 -ml-[3px] -mt-[3px] w-1.5 h-1.5 rounded-full bg-yellow-300 shadow-[0_0_6px_rgba(253,224,71,0.9)]"
-                  style={{ '--r': '22px', animation: 'pcOrbit 2.4s linear infinite' }}
+                  style={{ '--r': '22px', animation: 'pcOrbit 4.5s linear infinite' }}
                 ></span>
                 <span
                   className="absolute left-1/2 top-1/2 -ml-[3px] -mt-[3px] w-1.5 h-1.5 rounded-full bg-pink-300 shadow-[0_0_6px_rgba(249,168,212,0.9)]"
-                  style={{ '--r': '19px', animation: 'pcOrbitReverse 3.2s linear infinite' }}
+                  style={{ '--r': '18px', animation: 'pcOrbitReverse 6s linear infinite' }}
                 ></span>
                 <span
-                  className="absolute left-1/2 top-1/2 -ml-[3px] -mt-[3px] w-1.5 h-1.5 rounded-full bg-white shadow-[0_0_6px_rgba(255,255,255,0.9)]"
-                  style={{ '--r': '15px', animation: 'pcOrbit 4s linear infinite' }}
+                  className="absolute left-1/2 top-1/2 -ml-[3px] -mt-[3px] w-1.5 h-1.5 rounded-full bg-emerald-300 shadow-[0_0_6px_rgba(110,231,183,0.9)]"
+                  style={{ '--r': '13px', animation: 'pcOrbit 7.5s linear infinite' }}
                 ></span>
               </div>
               <div className="min-w-0 relative">
