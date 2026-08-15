@@ -454,9 +454,14 @@ const RemainingUsage = () => {
                   </tr>
                 ) : (
                   filteredStudents.map((student) => (
-                    <tr 
-                      key={student.registration_id} 
-                      className="group hover:bg-[#f5f5f7] dark:hover:bg-[#161922]"
+                    <tr
+                      key={student.registration_id}
+                      // Detay paneli açık olan öğrencinin satırı vurgulanır
+                      className={`group ${
+                        showDetailView && selectedStudent?.registration_id === student.registration_id
+                          ? 'bg-[#0071e3]/[0.07] dark:bg-[#0071e3]/10 shadow-[inset_3px_0_0_0_#0071e3]'
+                          : 'hover:bg-[#f5f5f7] dark:hover:bg-[#161922]'
+                      }`}
                     >
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex flex-col">
