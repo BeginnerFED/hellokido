@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useLanguage } from '../context/LanguageContext'
 import { supabase } from '../lib/supabase'
-import { 
+import { AGE_GROUPS } from '../lib/ageGroups'
+import {
   XMarkIcon,
   CalendarDaysIcon,
   ClockIcon,
@@ -38,10 +39,6 @@ export default function CreateEvent({ isOpen, onClose, onSuccess, selectedDate, 
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedStudents, setSelectedStudents] = useState([])
   const dropdownRef = useRef(null)
-
-  // Yaş grupları - Aylık gruplar üstte, yaş grupları altta
-  const monthlyGroups = ['12-18 Aylık', '18-24 Aylık', '24-36 Aylık']
-  const yearlyGroups = ['3+ Yaş', '4+ Yaş', '5+ Yaş']
 
   // Saat ve dakika seçenekleri
   const hours = ['09', '10', '11', '12', '13', '14', '15', '16', '17', '18']
@@ -463,45 +460,24 @@ export default function CreateEvent({ isOpen, onClose, onSuccess, selectedDate, 
                     <label className="block text-sm font-medium text-[#1d1d1f] dark:text-white">
                       {language === 'tr' ? 'Yaş Grubu' : 'Age Group'}
                     </label>
-                    <div className="space-y-2">
-                      {/* Aylık gruplar */}
-                      <div className="grid grid-cols-3 gap-2">
-                        {monthlyGroups.map((age) => (
-                          <button
-                            key={age}
-                            type="button"
-                            onClick={() => setFormData(prev => ({ ...prev, ageGroup: age }))}
-                            className={`
-                              h-9 rounded-lg text-sm font-medium transition-colors
-                              ${formData.ageGroup === age
-                                ? 'bg-[#1d1d1f] dark:bg-[#0071e3] text-white'
-                                : 'bg-white dark:bg-[#121621] text-[#1d1d1f] dark:text-white border border-[#d2d2d7] dark:border-[#2a3241] hover:border-[#0071e3] dark:hover:border-[#0071e3]'
-                              }
-                            `}
-                          >
-                            {age}
-                          </button>
-                        ))}
-                      </div>
-                      {/* Yaş grupları */}
-                      <div className="grid grid-cols-3 gap-2">
-                        {yearlyGroups.map((age) => (
-                          <button
-                            key={age}
-                            type="button"
-                            onClick={() => setFormData(prev => ({ ...prev, ageGroup: age }))}
-                            className={`
-                              h-9 rounded-lg text-sm font-medium transition-colors
-                              ${formData.ageGroup === age
-                                ? 'bg-[#1d1d1f] dark:bg-[#0071e3] text-white'
-                                : 'bg-white dark:bg-[#121621] text-[#1d1d1f] dark:text-white border border-[#d2d2d7] dark:border-[#2a3241] hover:border-[#0071e3] dark:hover:border-[#0071e3]'
-                              }
-                            `}
-                          >
-                            {age}
-                          </button>
-                        ))}
-                      </div>
+                    {/* 3 sütun: 6 grup tam iki satır, ortada yalnız buton kalmıyor */}
+                    <div className="grid grid-cols-3 gap-2">
+                      {AGE_GROUPS.map((age) => (
+                        <button
+                          key={age}
+                          type="button"
+                          onClick={() => setFormData(prev => ({ ...prev, ageGroup: age }))}
+                          className={`
+                            h-9 rounded-lg text-sm font-medium transition-colors
+                            ${formData.ageGroup === age
+                              ? 'bg-[#1d1d1f] dark:bg-[#0071e3] text-white'
+                              : 'bg-white dark:bg-[#121621] text-[#1d1d1f] dark:text-white border border-[#d2d2d7] dark:border-[#2a3241] hover:border-[#0071e3] dark:hover:border-[#0071e3]'
+                            }
+                          `}
+                        >
+                          {age}
+                        </button>
+                      ))}
                     </div>
                   </div>
 

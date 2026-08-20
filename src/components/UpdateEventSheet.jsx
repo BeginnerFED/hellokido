@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useLanguage } from '../context/LanguageContext'
 import { supabase } from '../lib/supabase'
-import { 
+import { AGE_GROUPS } from '../lib/ageGroups'
+import {
   XMarkIcon,
   CalendarDaysIcon,
   ClockIcon,
@@ -45,10 +46,6 @@ export default function UpdateEventSheet({ isOpen, onClose, onSuccess, eventId }
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedStudents, setSelectedStudents] = useState([])
   const dropdownRef = useRef(null)
-
-  // Yaş grupları - Aylık gruplar üstte, yaş grupları altta
-  const monthlyGroups = ['12-18 Aylık', '18-24 Aylık', '24-36 Aylık']
-  const yearlyGroups = ['3+ Yaş', '4+ Yaş', '5+ Yaş']
 
   // Saat ve dakika seçenekleri
   const hours = ['09', '10', '11', '12', '13', '14', '15', '16', '17', '18']
@@ -780,10 +777,7 @@ export default function UpdateEventSheet({ isOpen, onClose, onSuccess, eventId }
                       onChange={handleInputChange}
                       className="w-full h-[45px] sm:h-[50px] pl-12 pr-4 rounded-xl border border-[#d2d2d7] dark:border-[#2a3241] bg-white dark:bg-[#121621] text-[#1d1d1f] dark:text-white focus:ring-2 focus:ring-[#0071e3] focus:border-transparent transition-all text-sm sm:text-base appearance-none cursor-pointer"
                     >
-                      {monthlyGroups.map(group => (
-                        <option key={group} value={group}>{group}</option>
-                      ))}
-                      {yearlyGroups.map(group => (
+                      {AGE_GROUPS.map(group => (
                         <option key={group} value={group}>{group}</option>
                       ))}
                     </select>

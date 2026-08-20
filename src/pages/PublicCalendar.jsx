@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
+import { AGE_GROUPS } from '../lib/ageGroups';
 import { format, startOfWeek, endOfWeek, addWeeks, subWeeks, addDays, eachDayOfInterval } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import { ChevronLeftIcon, ChevronRightIcon, AdjustmentsHorizontalIcon, MoonIcon, XMarkIcon } from '@heroicons/react/24/outline';
@@ -7,8 +8,6 @@ import { ChevronLeftIcon, ChevronRightIcon, AdjustmentsHorizontalIcon, MoonIcon,
 // Kart gölgesi (tek yerden yönetilsin)
 const CARD_SHADOW = 'shadow-[0_1px_2px_rgba(23,19,31,0.04),0_8px_24px_-8px_rgba(23,19,31,0.1)]';
 
-// Filtrede gösterilen yaş grupları (5+ Yaş bilinçli olarak filtre dışı)
-const AGE_GROUPS = ['12-18 Aylık', '18-24 Aylık', '24-36 Aylık', '3+ Yaş', '4+ Yaş'];
 const EVENT_TYPES = [
   { value: 'ingilizce', label: 'İngilizce', color: '#8b5cf6' },
   { value: 'duyusal', label: 'Duyusal', color: '#f97316' },
