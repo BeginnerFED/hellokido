@@ -681,7 +681,7 @@ const Home = () => {
 * Etkinlik: ${eventTypeLabels[event.event_type]} 
 * Yer: Ritim İstanbul B blok Kat:1 Ofis 237
 * Adres: https://maps.app.goo.gl/rb2m4migY24gA8GMA
-* Süre: 45-60 dk
+* Süre: 75-90 dk
 Etkinlik sırasında çocuklarınızı güvende tutmak için gerekli tüm önlemleri aldık. Lütfen çocuğunuzun rahat kıyafetlerle gelmesini sağlayın ve yanlarına bir su şişesi ve küçük bir atıştırmalık getirmeyi unutmayın. Yedek kıyafet yada aktivite önlüğü getirmenizi tavsiye ederiz.
 Rezervasyonunuzun iptali için lütfen bir gün önceden bizi bilgilendiriniz. Rezervasyonunuza saatinde gelmenizi rica ederiz. 
 Eğer herhangi bir sorunuz varsa, lütfen bize ulaşmaktan çekinmeyin.
