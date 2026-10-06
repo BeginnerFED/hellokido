@@ -10,14 +10,14 @@ export default [
     files: ['**/*.{js,jsx}'],
     languageOptions: {
       ecmaVersion: 2020,
-      globals: globals.browser,
+      globals: { ...globals.browser, __BUILD_DATE__: 'readonly' },
       parserOptions: {
         ecmaVersion: 'latest',
         ecmaFeatures: { jsx: true },
         sourceType: 'module',
       },
     },
-    settings: { react: { version: '18.3' } },
+    settings: { react: { version: 'detect' } },
     plugins: {
       react,
       'react-hooks': reactHooks,
@@ -29,6 +29,10 @@ export default [
       ...react.configs['jsx-runtime'].rules,
       ...reactHooks.configs.recommended.rules,
       'react/jsx-no-target-blank': 'off',
+      // Projede prop-types hiç kullanılmıyor; kural yalnızca gürültü üretiyordu
+      'react/prop-types': 'off',
+      // Yeni JSX dönüşümünde "import React" gerekmez ama dosyalarda duruyor; hata sayılmaz
+      'no-unused-vars': ['error', { varsIgnorePattern: '^React$' }],
       'react-refresh/only-export-components': [
         'warn',
         { allowConstantExport: true },

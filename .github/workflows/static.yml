@@ -35,17 +35,29 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '19'
+          node-version: '22'
       
       - name: Install dependencies
-        run: npm install --legacy-peer-deps
+        run: npm ci --legacy-peer-deps
       
+      # Ayarlar boşsa derleme yine "başarılı" olur ama yayınlanan site bomboş açılır; baştan durdur
+      - name: Check build settings
+        run: |
+          test -n "$VITE_SUPABASE_URL" && test -n "$VITE_SUPABASE_ANON_KEY" || { echo "::error::Supabase build secrets are empty"; exit 1; }
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+
       - name: Build
         run: npm run build
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-          VITE_OPENROUTER_API_KEY: ${{ secrets.VITE_OPENROUTER_API_KEY }}
+
+      # Herkese açık pakete gizli bir anahtar girdiyse yayınlama
+      - name: Refuse to publish secrets
+        run: |
+          if grep -rIlE 'sk-or-v1-|sb_secret_|service_role' dist; then echo "::error::A secret key was found in the build output"; exit 1; fi
       
       - name: Setup Pages
         uses: actions/configure-pages@v4
