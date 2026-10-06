@@ -1,39 +1,55 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ArrowRightIcon, XMarkIcon } from '@heroicons/react/24/outline';
 
-export default function ActionNotification({ isVisible, message, actionText, onAction, onClose }) {
+// Kendiliğinden kapanma süresi
+const AUTO_CLOSE_MS = 15000;
+
+// autoClose false verilirse bildirim kullanıcı kapatana kadar ekranda kalır
+// (okunması gereken bir uyarı içerdiğinde).
+export default function ActionNotification({ isVisible, title, message, actionText, onAction, onClose, autoClose = true }) {
   const [isShown, setIsShown] = useState(false);
 
+  // onClose çoğu yerde her render'da yeni bir fonksiyon olarak geliyor; sayaç bu yüzden
+  // yeniden başlamasın diye son hali ref'te tutulur.
+  const onCloseRef = useRef(onClose);
   useEffect(() => {
-    if (isVisible) {
-      setIsShown(true);
-      // Automatically close after 15 seconds
-      const timer = setTimeout(() => {
-        setIsShown(false);
-        if (onClose) onClose();
-      }, 15000);
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
-      return () => clearTimeout(timer);
-    } else {
+  useEffect(() => {
+    if (!isVisible) {
       setIsShown(false);
+      return;
     }
-  }, [isVisible, onClose]);
+
+    setIsShown(true);
+    if (!autoClose) return;
+
+    // Automatically close after 15 seconds
+    const timer = setTimeout(() => {
+      setIsShown(false);
+      onCloseRef.current?.();
+    }, AUTO_CLOSE_MS);
+
+    return () => clearTimeout(timer);
+    // Yeni bir mesaj geldiğinde süre baştan başlar
+  }, [isVisible, message, autoClose]);
 
   // Animation to slide out before completely removing
   const handleClose = () => {
     setIsShown(false);
     // Small delay to allow animation to complete
     setTimeout(() => {
-      if (onClose) onClose();
+      onCloseRef.current?.();
     }, 300);
   };
 
   if (!isVisible && !isShown) return null;
 
   return (
-    <div 
+    <div
       className={`fixed bottom-6 right-6 z-50 backdrop-blur-md bg-white/90 dark:bg-[#1d2535]/90 rounded-xl shadow-2xl dark:shadow-[0_0_25px_rgba(0,0,0,0.5)] transition-all duration-300 transform ${isShown ? 'translate-y-0 opacity-100' : 'translate-y-10 opacity-0'} ring-1 ring-gray-200 dark:ring-gray-700`}
-      style={{ 
+      style={{
         maxWidth: '320px',
         boxShadow: '0 20px 30px -10px rgba(0,0,0,0.3), 0 10px 20px -5px rgba(0,0,0,0.2), 0 0 0 1px rgba(0,0,0,0.05)'
       }}
@@ -41,21 +57,23 @@ export default function ActionNotification({ isVisible, message, actionText, onA
       <div className="py-3 px-4">
         <div className="flex justify-between items-center mb-2">
           <h3 className="text-sm font-medium text-[#1d1d1f] dark:text-white">
-            Kopyalama Tamamlandı
+            {title || 'Kopyalama Tamamlandı'}
           </h3>
-          <button 
+          <button
+            type="button"
             onClick={handleClose}
             className="p-1 rounded-full text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-[#2a3241]/60 transition-colors"
           >
             <XMarkIcon className="w-3.5 h-3.5" />
           </button>
         </div>
-        
+
         <div className="text-xs text-gray-600 dark:text-gray-300 mb-3">
           {message}
         </div>
-        
+
         <button
+          type="button"
           onClick={() => {
             if (onAction) onAction();
             handleClose();
@@ -68,4 +86,4 @@ export default function ActionNotification({ isVisible, message, actionText, onA
       </div>
     </div>
   );
-} 
+}

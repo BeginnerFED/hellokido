@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from 'react'
-import { createClient } from '@supabase/supabase-js'
+import React, { useState, useEffect, useRef } from 'react'
+import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
+import { matchesSearch } from '../lib/text'
+import { phoneDigits } from '../lib/phone'
 import Masonry from 'react-masonry-css'
 import { 
   UserPlusIcon,
@@ -22,16 +24,11 @@ import CreateWaitlistModal from '../components/CreateWaitlistModal'
 import UpdateWaitlistModal from '../components/UpdateWaitlistModal'
 import DeleteWaitlistModal from '../components/DeleteWaitlistModal'
 
-// Supabase istemcisini oluştur
-const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY
-)
-
 export default function Waitlist() {
   const { language } = useLanguage()
   const [waitlist, setWaitlist] = useState([])
   const [isLoading, setIsLoading] = useState(true)
+  const [loadFailed, setLoadFailed] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false)
   const [filters, setFilters] = useState({
@@ -48,9 +45,12 @@ export default function Waitlist() {
   const [selectedEntry, setSelectedEntry] = useState(null)
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
   const [entryToDelete, setEntryToDelete] = useState(null)
+  // Art arda gönderilen liste isteklerinden yalnızca sonuncusunun yanıtı kullanılır
+  const requestRef = useRef(0)
 
   // Bekleme listesini getir
   const fetchWaitlist = async () => {
+    const requestId = ++requestRef.current
     setIsLoading(true)
     try {
       let query = supabase
@@ -70,10 +70,19 @@ export default function Waitlist() {
 
       const { data, error } = await query
 
+      // Bu sırada yeni bir istek gönderildiyse eski yanıt yok sayılır
+      if (requestId !== requestRef.current) return
+
       if (error) throw error
       setWaitlist(data)
+      setLoadFailed(false)
     } catch (error) {
+      if (requestId !== requestRef.current) return
+
       console.error('Bekleme listesi getirilirken hata:', error.message)
+      // Eski satırlar ekranda kalmasın; liste yerine "yüklenemedi" durumu gösterilir
+      setWaitlist([])
+      setLoadFailed(true)
       showToast(
         language === 'tr'
           ? 'Bekleme listesi getirilirken bir hata oluştu.'
@@ -81,7 +90,9 @@ export default function Waitlist() {
         'error'
       )
     } finally {
-      setIsLoading(false)
+      if (requestId === requestRef.current) {
+        setIsLoading(false)
+      }
     }
   }
 
@@ -132,23 +143,21 @@ export default function Waitlist() {
   }
 
   // Tarihi formatla
+  // contact_date saat içermeyen bir gündür (YYYY-AA-GG); Date'e çevrilirse saat dilimine göre bir gün kayabilir
   const formatDate = (date) => {
-    return new Date(date).toLocaleDateString('tr-TR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric'
-    })
+    if (!date) return ''
+    const [year, month, day] = String(date).slice(0, 10).split('-')
+    return `${day}.${month}.${year}`
   }
 
   // Filtrelenmiş listeyi al
-  const filteredWaitlist = waitlist.filter(entry => {
-    const searchLower = searchTerm.toLowerCase()
-    return (
-      entry.student_name.toLowerCase().includes(searchLower) ||
-      entry.parent_name.toLowerCase().includes(searchLower) ||
-      entry.parent_phone.toLowerCase().includes(searchLower)
-    )
-  })
+  // Yalnızca rakam, boşluk ve + ( ) - içeren arama telefon sayılır: "0532 123" yazılsa da numara bulunur
+  const searchDigits = /^[\d\s+()-]+$/.test(searchTerm) ? phoneDigits(searchTerm) : ''
+  const filteredWaitlist = waitlist.filter(entry => (
+    matchesSearch(entry.student_name, searchTerm) ||
+    matchesSearch(entry.parent_name, searchTerm) ||
+    (searchDigits !== '' && phoneDigits(entry.parent_phone).includes(searchDigits))
+  ))
 
   return (
     <div>
@@ -279,6 +288,23 @@ export default function Waitlist() {
               </div>
             ))}
           </Masonry>
+        ) : loadFailed ? (
+          // Yükleme Hatası State
+          <div className="text-center py-12">
+            <UserIcon className="w-12 h-12 mx-auto text-[#86868b] mb-4" />
+            <h3 className="text-lg font-medium text-[#1d1d1f] dark:text-white mb-1">
+              {language === 'tr' ? 'Liste Yüklenemedi' : 'The List Could Not Be Loaded'}
+            </h3>
+            <p className="text-sm text-[#6e6e73] dark:text-[#86868b]">
+              {language === 'tr' ? 'Bağlantınızı kontrol edip tekrar deneyin.' : 'Check your connection and try again.'}
+            </p>
+            <button
+              onClick={() => fetchWaitlist()}
+              className="mt-4 h-10 sm:h-8 px-4 bg-[#1d1d1f] dark:bg-[#0071e3] text-white text-sm font-medium rounded-lg hover:bg-black dark:hover:bg-[#0077ed] focus:outline-none transition-colors"
+            >
+              {language === 'tr' ? 'Tekrar Dene' : 'Try Again'}
+            </button>
+          </div>
         ) : filteredWaitlist.length === 0 ? (
           // Boş State
           <div className="text-center py-12">
@@ -287,9 +313,11 @@ export default function Waitlist() {
               {language === 'tr' ? 'Kayıt Bulunamadı' : 'No Records Found'}
             </h3>
             <p className="text-sm text-[#6e6e73] dark:text-[#86868b]">
-              {searchTerm 
+              {searchTerm.trim()
                 ? (language === 'tr' ? 'Arama kriterlerinize uygun kayıt bulunamadı.' : 'No records match your search criteria.')
-                : (language === 'tr' ? 'Henüz kayıt eklenmemiş.' : 'No records have been added yet.')}
+                : (filters.status || filters.packageType)
+                  ? (language === 'tr' ? 'Seçili filtrelere uygun kayıt yok.' : 'No records match the selected filters.')
+                  : (language === 'tr' ? 'Henüz kayıt eklenmemiş.' : 'No records have been added yet.')}
             </p>
           </div>
         ) : (
@@ -431,7 +459,7 @@ export default function Waitlist() {
               </h3>
               <div className="grid grid-cols-2 gap-2">
                 <button
-                  onClick={() => setFilters(prev => ({ ...prev, status: 'beklemede' }))}
+                  onClick={() => setFilters(prev => ({ ...prev, status: prev.status === 'beklemede' ? '' : 'beklemede' }))}
                   className={`
                     h-9 px-4 rounded-lg text-sm font-medium transition-colors
                     ${filters.status === 'beklemede'
@@ -443,7 +471,7 @@ export default function Waitlist() {
                   {language === 'tr' ? 'Beklemede' : 'Waiting'}
                 </button>
                 <button
-                  onClick={() => setFilters(prev => ({ ...prev, status: 'iletisime-gecildi' }))}
+                  onClick={() => setFilters(prev => ({ ...prev, status: prev.status === 'iletisime-gecildi' ? '' : 'iletisime-gecildi' }))}
                   className={`
                     h-9 px-4 rounded-lg text-sm font-medium transition-colors
                     ${filters.status === 'iletisime-gecildi'
@@ -464,7 +492,7 @@ export default function Waitlist() {
               </h3>
               <div className="grid grid-cols-1 gap-2">
                 <button
-                  onClick={() => setFilters(prev => ({ ...prev, packageType: 'belirsiz' }))}
+                  onClick={() => setFilters(prev => ({ ...prev, packageType: prev.packageType === 'belirsiz' ? '' : 'belirsiz' }))}
                   className={`
                     h-9 px-4 rounded-lg text-sm font-medium transition-colors text-left
                     ${filters.packageType === 'belirsiz'
@@ -476,7 +504,7 @@ export default function Waitlist() {
                   {language === 'tr' ? 'Belirsiz' : 'Uncertain'}
                 </button>
                 <button
-                  onClick={() => setFilters(prev => ({ ...prev, packageType: 'tek-seferlik' }))}
+                  onClick={() => setFilters(prev => ({ ...prev, packageType: prev.packageType === 'tek-seferlik' ? '' : 'tek-seferlik' }))}
                   className={`
                     h-9 px-4 rounded-lg text-sm font-medium transition-colors text-left
                     ${filters.packageType === 'tek-seferlik'
@@ -488,7 +516,7 @@ export default function Waitlist() {
                   {language === 'tr' ? 'Tek Seferlik Katılım' : 'One Time Participation'}
                 </button>
                 <button
-                  onClick={() => setFilters(prev => ({ ...prev, packageType: 'hafta-1' }))}
+                  onClick={() => setFilters(prev => ({ ...prev, packageType: prev.packageType === 'hafta-1' ? '' : 'hafta-1' }))}
                   className={`
                     h-9 px-4 rounded-lg text-sm font-medium transition-colors text-left
                     ${filters.packageType === 'hafta-1'
@@ -500,7 +528,7 @@ export default function Waitlist() {
                   {language === 'tr' ? 'Haftada 1 Gün' : '1 Day Per Week'}
                 </button>
                 <button
-                  onClick={() => setFilters(prev => ({ ...prev, packageType: 'hafta-2' }))}
+                  onClick={() => setFilters(prev => ({ ...prev, packageType: prev.packageType === 'hafta-2' ? '' : 'hafta-2' }))}
                   className={`
                     h-9 px-4 rounded-lg text-sm font-medium transition-colors text-left
                     ${filters.packageType === 'hafta-2'
@@ -512,7 +540,7 @@ export default function Waitlist() {
                   {language === 'tr' ? 'Haftada 2 Gün' : '2 Days Per Week'}
                 </button>
                 <button
-                  onClick={() => setFilters(prev => ({ ...prev, packageType: 'hafta-3' }))}
+                  onClick={() => setFilters(prev => ({ ...prev, packageType: prev.packageType === 'hafta-3' ? '' : 'hafta-3' }))}
                   className={`
                     h-9 px-4 rounded-lg text-sm font-medium transition-colors text-left
                     ${filters.packageType === 'hafta-3'
@@ -524,7 +552,7 @@ export default function Waitlist() {
                   {language === 'tr' ? 'Haftada 3 Gün' : '3 Days Per Week'}
                 </button>
                 <button
-                  onClick={() => setFilters(prev => ({ ...prev, packageType: 'hafta-4' }))}
+                  onClick={() => setFilters(prev => ({ ...prev, packageType: prev.packageType === 'hafta-4' ? '' : 'hafta-4' }))}
                   className={`
                     h-9 px-4 rounded-lg text-sm font-medium transition-colors text-left
                     ${filters.packageType === 'hafta-4'
@@ -536,7 +564,7 @@ export default function Waitlist() {
                   {language === 'tr' ? 'Haftada 4 Gün' : '4 Days Per Week'}
                 </button>
                 <button
-                  onClick={() => setFilters(prev => ({ ...prev, packageType: '3ay-hafta-1' }))}
+                  onClick={() => setFilters(prev => ({ ...prev, packageType: prev.packageType === '3ay-hafta-1' ? '' : '3ay-hafta-1' }))}
                   className={`
                     h-9 px-4 rounded-lg text-sm font-medium transition-colors text-left
                     ${filters.packageType === '3ay-hafta-1'
@@ -548,7 +576,7 @@ export default function Waitlist() {
                   {language === 'tr' ? '3 Aylık - 12 Atölye' : '3 Months - 12 Workshops'}
                 </button>
                 <button
-                  onClick={() => setFilters(prev => ({ ...prev, packageType: '3ay-hafta-2' }))}
+                  onClick={() => setFilters(prev => ({ ...prev, packageType: prev.packageType === '3ay-hafta-2' ? '' : '3ay-hafta-2' }))}
                   className={`
                     h-9 px-4 rounded-lg text-sm font-medium transition-colors text-left
                     ${filters.packageType === '3ay-hafta-2'
@@ -594,33 +622,39 @@ export default function Waitlist() {
         />
       )}
 
-      {/* Create Modal */}
-      <CreateWaitlistModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onSuccess={(message, type) => {
-          showToast(message, type)
-          if (type === 'success') {
-            fetchWaitlist()
-          }
-        }}
-      />
+      {/* Create Modal: yalnızca açıkken oluşturulur; her açılışta boş form ve bugünün tarihiyle başlar */}
+      {isModalOpen && (
+        <CreateWaitlistModal
+          isOpen={isModalOpen}
+          onClose={() => setIsModalOpen(false)}
+          onSuccess={(message, type) => {
+            showToast(message, type)
+            if (type === 'success') {
+              fetchWaitlist()
+            }
+          }}
+        />
+      )}
 
-      {/* Update Modal */}
-      <UpdateWaitlistModal
-        isOpen={isUpdateModalOpen}
-        onClose={() => {
-          setIsUpdateModalOpen(false)
-          setSelectedEntry(null)
-        }}
-        onSuccess={(message, type) => {
-          showToast(message, type)
-          if (type === 'success') {
-            fetchWaitlist()
-          }
-        }}
-        entry={selectedEntry}
-      />
+      {/* Update Modal: her kayıt için yeniden oluşturulur; form doğrudan o kaydın değerleriyle başlar */}
+      {selectedEntry && (
+        <UpdateWaitlistModal
+          key={selectedEntry.id}
+          isOpen={isUpdateModalOpen}
+          onClose={() => {
+            setIsUpdateModalOpen(false)
+            setSelectedEntry(null)
+          }}
+          onSuccess={(message, type, options) => {
+            showToast(message, type)
+            // Kayıt bu sırada silinmişse de liste yenilenir
+            if (type === 'success' || options?.refresh) {
+              fetchWaitlist()
+            }
+          }}
+          entry={selectedEntry}
+        />
+      )}
 
       {/* Delete Modal */}
       <DeleteWaitlistModal
@@ -629,9 +663,10 @@ export default function Waitlist() {
           setIsDeleteModalOpen(false)
           setEntryToDelete(null)
         }}
-        onSuccess={(message, type) => {
+        onSuccess={(message, type, options) => {
           showToast(message, type)
-          if (type === 'success') {
+          // Kayıt bu sırada silinmişse de liste yenilenir
+          if (type === 'success' || options?.refresh) {
             fetchWaitlist()
           }
         }}

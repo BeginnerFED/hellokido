@@ -2,28 +2,28 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useLanguage } from '../context/LanguageContext'
 import { supabase } from '../lib/supabase'
 import { AGE_GROUPS } from '../lib/ageGroups'
+import { matchesSearch } from '../lib/text'
 import {
   XMarkIcon,
   CalendarDaysIcon,
   ClockIcon,
-  UserGroupIcon,
   UsersIcon,
-  ChartBarIcon,
-  AcademicCapIcon,
   MagnifyingGlassIcon
 } from '@heroicons/react/24/outline'
 import DatePicker, { registerLocale } from 'react-datepicker'
-import { tr } from 'date-fns/locale'
+import { tr, enUS } from 'date-fns/locale'
 import 'react-datepicker/dist/react-datepicker.css'
-import Select from 'react-select'
 
-// Türkçe lokalizasyonu kaydet
+// Tarih seçici lokalizasyonlarını kaydet
 registerLocale('tr', tr)
+registerLocale('en', enUS)
 
 export default function CreateEvent({ isOpen, onClose, onSuccess, selectedDate, selectedTime }) {
   const { language } = useLanguage()
   const [isLoading, setIsLoading] = useState(false)
   const [students, setStudents] = useState([])
+  // Liste yüklenemezse boş liste "hiç öğrenci yok" gibi görünmesin
+  const [studentsLoadFailed, setStudentsLoadFailed] = useState(false)
   const [formData, setFormData] = useState({
     date: selectedDate ? new Date(selectedDate) : new Date(),
     time: {
@@ -39,36 +39,40 @@ export default function CreateEvent({ isOpen, onClose, onSuccess, selectedDate, 
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedStudents, setSelectedStudents] = useState([])
   const dropdownRef = useRef(null)
+  const [pinnedIds, setPinnedIds] = useState([]) // açılırken seçili olanlar üstte kalır
 
   // Saat ve dakika seçenekleri
   const hours = ['09', '10', '11', '12', '13', '14', '15', '16', '17', '18']
   const minutes = ['00', '15', '30', '45']
 
   // Aktif öğrencileri getir
-  useEffect(() => {
-    const fetchStudents = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('registrations')
-          .select('id, student_name, student_age, parent_name')
-          .eq('is_active', true)
-          .order('student_name')
+  const fetchStudents = async () => {
+    try {
+      setStudentsLoadFailed(false)
 
-        if (error) throw error
+      const { data, error } = await supabase
+        .from('registrations')
+        .select('id, student_name, student_age, parent_name')
+        .eq('is_active', true)
+        .order('student_name')
 
-        const formattedStudents = data.map(student => ({
-          value: student.id,
-          label: student.student_name,
-          parent: student.parent_name,
-          age: student.student_age
-        }))
+      if (error) throw error
 
-        setStudents(formattedStudents)
-      } catch (error) {
-        console.error('Öğrenciler getirilirken hata:', error.message)
-      }
+      const formattedStudents = data.map(student => ({
+        value: student.id,
+        label: student.student_name,
+        parent: student.parent_name,
+        age: student.student_age
+      }))
+
+      setStudents(formattedStudents)
+    } catch (error) {
+      console.error('Öğrenciler getirilirken hata:', error.message)
+      setStudentsLoadFailed(true)
     }
+  }
 
+  useEffect(() => {
     if (isOpen) {
       fetchStudents()
     }
@@ -102,16 +106,16 @@ export default function CreateEvent({ isOpen, onClose, onSuccess, selectedDate, 
 
   // Arama filtrelemesi ve sıralama
   const filteredStudents = students.filter(student =>
-    student.label.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    student.parent.toLowerCase().includes(searchTerm.toLowerCase())
+    matchesSearch(student.label, searchTerm) ||
+    matchesSearch(student.parent, searchTerm)
   ).sort((a, b) => {
     // Seçili öğrencileri üste taşı
-    const aSelected = selectedStudents.some(s => s.value === a.value)
-    const bSelected = selectedStudents.some(s => s.value === b.value)
+    const aSelected = pinnedIds.includes(a.value)
+    const bSelected = pinnedIds.includes(b.value)
     if (aSelected && !bSelected) return -1
     if (!aSelected && bSelected) return 1
     // Seçili değillerse alfabetik sırala
-    return a.label.localeCompare(b.label)
+    return (a.label || '').localeCompare(b.label || '', 'tr')
   })
 
   // Custom Dropdown Component
@@ -119,12 +123,15 @@ export default function CreateEvent({ isOpen, onClose, onSuccess, selectedDate, 
     <div className="relative" ref={dropdownRef}>
       <button
         type="button"
-        onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+        onClick={() => {
+          if (!isDropdownOpen) setPinnedIds(selectedStudents.map(s => s.value))
+          setIsDropdownOpen(!isDropdownOpen)
+        }}
         className="relative w-full h-[45px] sm:h-[50px] pl-12 pr-4 flex items-center justify-between rounded-xl border border-[#d2d2d7] dark:border-[#2a3241] bg-white dark:bg-[#121621] text-[#1d1d1f] dark:text-white focus:ring-2 focus:ring-[#0071e3] focus:border-transparent transition-all text-sm sm:text-base"
       >
         <span className="truncate">
           {selectedStudents.length > 0 
-            ? `${selectedStudents.length} öğrenci seçildi` 
+            ? (language === 'tr' ? `${selectedStudents.length} öğrenci seçildi` : `${selectedStudents.length} student${selectedStudents.length === 1 ? '' : 's'} selected`)
             : language === 'tr' ? 'Öğrenci seç...' : 'Select students...'}
         </span>
         <svg className="shrink-0 size-3.5 text-gray-500 dark:text-gray-400" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -147,7 +154,12 @@ export default function CreateEvent({ isOpen, onClose, onSuccess, selectedDate, 
                   e.stopPropagation()
                   e.preventDefault()
                 }}
-                onKeyDown={(e) => e.stopPropagation()}
+                onKeyDown={(e) => {
+                  e.stopPropagation()
+                  // Arama kutusunda Enter formu göndermesin: öğrenci ararken etkinlik,
+                  // o ana kadar seçilenlerle oluşturuluyordu
+                  if (e.key === 'Enter') e.preventDefault()
+                }}
                 onFocus={(e) => e.stopPropagation()}
                 autoFocus
                 placeholder={language === 'tr' ? 'Ara...' : 'Search...'}
@@ -158,6 +170,11 @@ export default function CreateEvent({ isOpen, onClose, onSuccess, selectedDate, 
 
           {/* Options List */}
           <div className="overflow-y-auto max-h-[calc(18rem-48px)] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-track]:bg-gray-100 [&::-webkit-scrollbar-thumb]:bg-gray-300 dark:[&::-webkit-scrollbar-track]:bg-neutral-700 dark:[&::-webkit-scrollbar-thumb]:bg-neutral-500">
+            {filteredStudents.length === 0 && !studentsLoadFailed && (
+              <div className="px-4 py-3 text-sm text-[#6e6e73] dark:text-[#86868b]">
+                {language === 'tr' ? 'Öğrenci bulunamadı' : 'No students found'}
+              </div>
+            )}
             {filteredStudents.map((student) => {
               const isSelected = selectedStudents.some(s => s.value === student.value)
               return (
@@ -274,8 +291,8 @@ export default function CreateEvent({ isOpen, onClose, onSuccess, selectedDate, 
   // Form validasyonu
   const isFormValid = () => {
     if (!formData.date || 
-        !formData.time.hour || 
-        !formData.time.minute || 
+        !hours.includes(formData.time.hour) || 
+        !minutes.includes(formData.time.minute) || 
         !formData.ageGroup || 
         !formData.eventType) {
       return false
@@ -451,8 +468,20 @@ export default function CreateEvent({ isOpen, onClose, onSuccess, selectedDate, 
                   </label>
                   <div className="relative">
                     <UsersIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[#6e6e73] dark:text-[#86868b] z-10" />
-                    <CustomDropdown />
+                    {CustomDropdown()}
                     </div>
+                    {studentsLoadFailed && (
+                      <div className="flex items-center justify-between gap-3 text-xs text-red-600 dark:text-red-400">
+                        <span>{language === 'tr' ? 'Öğrenci listesi yüklenemedi.' : 'The student list could not be loaded.'}</span>
+                        <button
+                          type="button"
+                          onClick={fetchStudents}
+                          className="shrink-0 font-medium text-[#0071e3] hover:underline"
+                        >
+                          {language === 'tr' ? 'Tekrar Dene' : 'Try Again'}
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   {/* Yaş Grubu */}

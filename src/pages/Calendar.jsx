@@ -5,7 +5,7 @@ import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import trLocale from '@fullcalendar/core/locales/tr';
 import enLocale from '@fullcalendar/core/locales/en-gb';
-import { PlusIcon, UserGroupIcon, ClockIcon, AcademicCapIcon, DocumentDuplicateIcon, CalendarDaysIcon, ArrowTopRightOnSquareIcon, BookOpenIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, UserGroupIcon, ClockIcon, AcademicCapIcon, CalendarDaysIcon, ArrowTopRightOnSquareIcon, BookOpenIcon } from '@heroicons/react/24/outline';
 import CreateEvent from '../components/CreateEvent';
 import UpdateEventSheet from '../components/UpdateEventSheet';
 import CopyWeekModal from '../components/CopyWeekModal';
@@ -13,14 +13,25 @@ import WeeklyThemesModal from '../components/WeeklyThemesModal';
 import ExtendModal from '../components/ExtendModal';
 import { supabase } from '../lib/supabase';
 import { fetchLessonUsageMap } from '../lib/lessonUsage';
+import { attendanceStatusLabel, holdsSeat, isAttendanceOverdue, isRecordedAttendance } from '../lib/attendance';
+import { weeksBetween } from '../lib/dates';
 import Toast from '../components/ui/Toast';
 import '../styles/calendar.css';
-import { addDays, format, isSameDay, parseISO, startOfWeek } from 'date-fns';
+import { addDays, format, startOfDay, startOfWeek } from 'date-fns';
 import tr from 'date-fns/locale/tr';
 import enUS from 'date-fns/locale/en-US';
-import { ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
 import ActionNotification from '../components/ActionNotification';
 import { useLanguage } from '../context/LanguageContext';
+
+// Ön kontrol bu sürede yanıt vermezse beklenmez; kopyalama düğmesi kilitli kalmasın
+const PRECHECK_TIMEOUT_MS = 15000;
+
+// Kopyalama özetinde tek tek sayılan atlanmış ders sayısı
+const SKIPPED_SLOTS_VISIBLE_LIMIT = 6;
+
+// Kullanıcıya olduğu gibi gösterilecek (çevrilmiş) mesajı taşıyan hata. Veritabanı ve ağ
+// hatalarının ham İngilizce metni ekrana yazılmaz; onlar için genel bir mesaj gösterilir.
+const userError = (message) => Object.assign(new Error(message), { isUserMessage: true });
 
 // Custom hook to monitor screen width
 const useWindowSize = () => {
@@ -71,19 +82,28 @@ const Calendar = () => {
 
   // States for Copy Week Modal
   const [isCopyWeekModalOpen, setIsCopyWeekModalOpen] = useState(false);
-  const [hasConflictsInTargetWeek, setHasConflictsInTargetWeek] = useState(false);
   const [copyWeekLoading, setCopyWeekLoading] = useState(false);
-  const [currentWeekEvents, setCurrentWeekEvents] = useState([]);
+  // Kopyalanacak hafta (Pazartesi 00:00); modal açılırken takvimde görünen haftadır
+  const [copySourceWeekStart, setCopySourceWeekStart] = useState(null);
+  // Aynı anda ikinci bir kopyalama başlamasın (modal kapatılıp yeniden açılsa bile)
+  const copyWeekInFlightRef = useRef(false);
+  // Başlıktaki kopyalama ikonu DOM'a bir kez eklenir; tıklama bu ref üzerinden güncel işleyiciye gider
+  const copyWeekClickRef = useRef(null);
 
-  // Hafta kopyalama ön kontrolü: kopyalanan haftadaki ders hakkı bitmiş öğrenciler
+  // Hafta kopyalama ön kontrolü: kopyalanan haftadaki ders hakkı bitmiş ve arşivlenmiş öğrenciler
   const [precheckStudents, setPrecheckStudents] = useState([]);
+  const [precheckArchived, setPrecheckArchived] = useState([]);
   const [precheckLoading, setPrecheckLoading] = useState(false);
+  const [precheckFailed, setPrecheckFailed] = useState(false);
+  const precheckRequestIdRef = useRef(0); // Geç gelen yanıtın günceli ezmemesi için
   const [extendTargetRegistration, setExtendTargetRegistration] = useState(null);
   const [isExtendModalOpen, setIsExtendModalOpen] = useState(false);
 
   // Action notification state variables
   const [isActionNotificationVisible, setIsActionNotificationVisible] = useState(false);
   const [actionNotificationMessage, setActionNotificationMessage] = useState('');
+  // Atlanan ders varsa özet kendiliğinden kapanmaz (kullanıcı okuyup kapatır)
+  const [actionNotificationSticky, setActionNotificationSticky] = useState(false);
   const [targetWeekForNavigation, setTargetWeekForNavigation] = useState(null);
 
   // Haftalık konular (weekly themes) state'leri
@@ -92,30 +112,61 @@ const Calendar = () => {
   const [weekThemes, setWeekThemes] = useState({}); // { 'yyyy-MM-dd' (Pazartesi) -> konu }
   const [currentViewType, setCurrentViewType] = useState('timeGridWeek');
   const themesRequestIdRef = useRef(0); // Geç gelen yanıtın günceli ezmemesi için
+  const eventsRequestIdRef = useRef(0); // Aynı koruma takvimdeki dersler için
+
+  // Takvimin kapsayıcısı, pencere boyutu değişmeden daralıp genişleyebilir (kenar çubuğu,
+  // sayfanın kaydırma çubuğu, geç yüklenen stil). FullCalendar yalnızca pencere boyutunu izlediği
+  // için ızgara eski genişlikte kalır ve son gün sütunu kesilir. Genişlik değişince ölçüm yenilenir.
+  const calendarWrapperRef = useRef(null);
+  useEffect(() => {
+    const wrapper = calendarWrapperRef.current;
+    if (!wrapper || typeof ResizeObserver === 'undefined') return;
+
+    let lastWidth = wrapper.clientWidth;
+    let frame = null;
+    const observer = new ResizeObserver(() => {
+      const currentWidth = wrapper.clientWidth;
+      if (currentWidth === lastWidth) return;
+
+      lastWidth = currentWidth;
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        if (calendarRef.current) calendarRef.current.getApi().updateSize();
+      });
+    });
+    observer.observe(wrapper);
+
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
+  }, []);
 
   // Get screen width
   const { width } = useWindowSize();
 
   // Helper function to format age group text
   const formatAgeGroup = (ageGroup) => {
+    const value = ageGroup || '';
+
     // If screen width is less than 1700px or zoomed
     if (width < 1700) {
-      // Remove "Aylık" or "Yaş" words for Turkish, "Month" or "Year" for English
-      if (language === 'tr') {
-        return ageGroup
-          .replace('Aylık', '')
-          .replace('Yaş', '')
-          .trim();
-      } else {
-        return ageGroup
-          .replace('Month', '')
-          .replace('Year', '')
-          .trim();
-      }
+      // Yaş grupları veritabanında Türkçe tutulur ('16-24 Aylık', '3+ Yaş'); dar ekranda
+      // dil ne olursa olsun yalnızca sayı kısmı gösterilir
+      return value
+        .replace('Aylık', '')
+        .replace('Yaş', '')
+        .trim();
     }
 
     // Normal view
-    return ageGroup;
+    if (language !== 'tr') {
+      return value
+        .replace('Aylık', 'Months')
+        .replace('Yaş', 'Years');
+    }
+
+    return value;
   };
 
   // Format date with the correct locale
@@ -155,25 +206,34 @@ const Calendar = () => {
 
   // Fetch events
   const fetchEvents = async (start, end) => {
-    try {
-      if (!start || !end) return;
+    if (!start || !end) return;
 
+    // Art arda gönderilen isteklerden yalnızca sonuncusunun yanıtı kullanılır: yavaş gelen
+    // eski yanıt, ekranda görünen haftanın derslerini silmesin
+    const requestId = ++eventsRequestIdRef.current;
+    const isStale = () => requestId !== eventsRequestIdRef.current;
+
+    try {
       setIsLoading(true);
 
       const { data: eventsData, error: eventsError } = await supabase
         .from('events')
-        .select('*, event_participants(registration_id)')
+        .select('*, event_participants(registration_id, status)')
         .eq('is_active', true)
         .gte('event_date', start.toISOString())
         .lt('event_date', end.toISOString())
         .order('event_date', { ascending: true });
 
+      if (isStale()) return;
       if (eventsError) throw eventsError;
 
-      // Get registered students
-      const registrationIds = eventsData
-        .flatMap(event => event.event_participants)
-        .map(participant => participant.registration_id);
+      // Get registered students (her kayıt bir kez sorulur: ay görünümünde aynı öğrenci
+      // onlarca derste yer alır ve tekrarlı liste adres uzunluğu sınırına dayanıyordu)
+      const registrationIds = [...new Set(
+        eventsData
+          .flatMap(event => event.event_participants)
+          .map(participant => participant.registration_id)
+      )];
 
       // registrationIds boş ise boşuna sorgu atma
       let studentMap = {};
@@ -183,6 +243,7 @@ const Calendar = () => {
           .select('id, student_name')
           .in('id', registrationIds);
 
+        if (isStale()) return;
         if (studentsError) throw studentsError;
 
         // Match student names with IDs
@@ -191,29 +252,44 @@ const Calendar = () => {
         );
       }
 
+      const now = new Date();
+      const todayStart = startOfDay(now);
+
       // Convert events to FullCalendar format
       const formattedEvents = eventsData.map(event => {
         const typeDetails = getEventTypeDetails(event.event_type);
+        const eventDate = new Date(event.event_date);
         const students = event.event_participants
-          .map(participant => studentMap[participant.registration_id])
-          .filter(Boolean);
+          .map(participant => ({
+            name: studentMap[participant.registration_id],
+            status: participant.status,
+            holdsSeat: holdsSeat(participant.status)
+          }))
+          .filter(student => student.name);
+
+        // Geçmiş dersler ve yoklaması işlenmiş dersler sürüklenemez: yanlışlıkla kaydırılan
+        // ders, işlenmiş yoklamayı başka bir güne taşırdı. Tarih düzenleme panelinden değiştirilebilir.
+        const hasRecordedAttendance = event.event_participants.some(participant => isRecordedAttendance(participant.status));
+        const isLocked = eventDate < todayStart || hasRecordedAttendance;
 
         return {
           id: event.id,
           title: event.event_type,
           start: event.event_date,
-          end: new Date(new Date(event.event_date).getTime() + 60 * 60 * 1000),
+          end: new Date(eventDate.getTime() + 60 * 60 * 1000),
           backgroundColor: typeDetails.color,
           borderColor: typeDetails.color,
+          ...(isLocked ? { editable: false } : {}),
           extendedProps: {
             ageGroup: event.age_group,
             description: event.custom_description,
             eventType: event.event_type,
-            currentCapacity: students.length,
-            maxCapacity: event.max_capacity,
+            // Ana sayfa ve herkese açık takvimle aynı sayı: yalnızca derste yer tutan öğrenciler
+            currentCapacity: students.filter(student => student.holdsSeat).length,
             typeDetails,
             students,
-            originalEvent: event // Store original event data for copying
+            // Günü geçmiş bir derste hâlâ "planlandı" duran öğrenci: yoklaması unutulmuş
+            unmarkedCount: students.filter(student => isAttendanceOverdue(student.status, eventDate, now)).length
           }
         };
       });
@@ -223,9 +299,19 @@ const Calendar = () => {
       // Group events by day and type
       groupEventsByDayAndType(formattedEvents);
     } catch (error) {
+      if (isStale()) return;
+
       console.error(language === 'tr' ? 'Etkinlikler getirilirken hata:' : 'Error fetching events:', error);
+      showToast(
+        language === 'tr'
+          ? 'Takvim yüklenemedi. Bağlantınızı kontrol edip tekrar deneyin.'
+          : 'The calendar could not be loaded. Check your connection and try again.',
+        'error'
+      );
     } finally {
-      setIsLoading(false);
+      if (!isStale()) {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -326,7 +412,7 @@ const Calendar = () => {
 
   // Render event content
   const renderEventContent = (eventInfo) => {
-    const { typeDetails, currentCapacity, maxCapacity, ageGroup, students, description, isGrouped, count } = eventInfo.event.extendedProps;
+    const { typeDetails, currentCapacity, ageGroup, students, description, isGrouped, count, unmarkedCount } = eventInfo.event.extendedProps;
 
     // Ay görünümünde ve gruplandırılmış etkinlik ise
     if (eventInfo.view.type === 'dayGridMonth' && isGrouped) {
@@ -370,6 +456,15 @@ const Calendar = () => {
             <div className="flex items-center gap-1 bg-white/15 px-2.5 py-1 rounded-md shadow-sm w-fit">
               <UserGroupIcon className="w-3 h-3 text-white/70" />
               <span className="font-medium">{currentCapacity}/6</span>
+              {/* Geçmiş derste yoklaması işaretlenmemiş öğrenci varsa küçük bir işaret */}
+              {unmarkedCount > 0 && (
+                <span
+                  className="attendance-missing-dot"
+                  title={language === 'tr'
+                    ? `${unmarkedCount} öğrencinin yoklaması işaretlenmemiş`
+                    : `Attendance not marked for ${unmarkedCount} student${unmarkedCount === 1 ? '' : 's'}`}
+                ></span>
+              )}
             </div>
           </div>
 
@@ -385,9 +480,14 @@ const Calendar = () => {
             <div className="student-list mt-1 pt-1 border-t border-white/20 text-xs">
               <div className="student-list-items space-y-0.5 max-h-20 overflow-y-auto pr-1 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-white/30">
                 {students.map((student, index) => (
-                  <div key={index} className="flex items-center gap-1.5">
-                    <div className="w-1.5 h-1.5 rounded-full bg-white/50"></div>
-                    <span className="truncate">{student}</span>
+                  // Erteleyen / gelmeyen öğrenci listede kalır ama üstü çizili görünür
+                  <div
+                    key={index}
+                    className={`flex items-center gap-1.5 ${student.holdsSeat ? '' : 'opacity-60'}`}
+                    title={student.holdsSeat ? undefined : attendanceStatusLabel(student.status, language)}
+                  >
+                    <div className="w-1.5 h-1.5 rounded-full bg-white/50 shrink-0"></div>
+                    <span className={`truncate ${student.holdsSeat ? '' : 'line-through'}`}>{student.name}</span>
                   </div>
                 ))}
               </div>
@@ -398,10 +498,19 @@ const Calendar = () => {
     );
   };
 
+  // Görünen aralığın tamamını yeniden yükler. activeStart/activeEnd kullanılır: ay görünümünde
+  // komşu ayların gri günlerindeki dersler de ekranda olduğu için onlar da yenilenmeli.
+  const refreshEvents = () => {
+    if (!calendarRef.current) return Promise.resolve();
+
+    const { activeStart, activeEnd } = calendarRef.current.getApi().view;
+    return fetchEvents(activeStart, activeEnd);
+  };
+
   // Tarih seçildiğinde
   const handleDateSelect = (selectInfo) => {
     // Seçilen tarih ve saati al
-    const selectedDateTime = new Date(selectInfo.startStr);
+    const selectedDateTime = selectInfo.start; // yerel saatli Date (ay görünümünde yerel gece yarısı)
     const selectedHour = selectedDateTime.getHours().toString().padStart(2, '0');
     const selectedMinute = selectedDateTime.getMinutes().toString().padStart(2, '0');
 
@@ -409,14 +518,14 @@ const Calendar = () => {
     const roundedMinute = Math.round(selectedMinute / 15) * 15;
     const formattedMinute = (roundedMinute === 60 ? 0 : roundedMinute).toString().padStart(2, '0');
 
-    setSelectedDate(selectInfo.startStr);
+    setSelectedDate(selectInfo.start);
 
     // Ay görünümünde (dayGridMonth) ise dakika seçilmesin
     const isMonthView = selectInfo.view.type === 'dayGridMonth';
 
     // Seçilen saat bilgisini de sakla
     setSelectedTime({
-      hour: selectedHour,
+      hour: isMonthView ? '' : selectedHour,
       minute: isMonthView ? '' : formattedMinute
     });
 
@@ -454,40 +563,32 @@ const Calendar = () => {
   const handleCreateEvent = async (formData) => {
     try {
       if (!formData || !formData.date) {
-        throw new Error(language === 'tr' ? 'Geçersiz form verisi' : 'Invalid form data');
+        throw userError(language === 'tr' ? 'Geçersiz form verisi' : 'Invalid form data');
       }
 
       // Tarih ve saat bilgisini birleştir
       const eventDateTime = new Date(formData.date);
       if (isNaN(eventDateTime.getTime())) {
-        throw new Error(language === 'tr' ? 'Geçersiz tarih formatı' : 'Invalid date format');
+        throw userError(language === 'tr' ? 'Geçersiz tarih formatı' : 'Invalid date format');
       }
 
-      eventDateTime.setHours(parseInt(formData.time.hour) || 0);
-      eventDateTime.setMinutes(parseInt(formData.time.minute) || 0);
+      eventDateTime.setHours(parseInt(formData.time.hour, 10) || 0, parseInt(formData.time.minute, 10) || 0, 0, 0);
 
-      // Aynı saatte başka etkinlik var mı kontrol et
-      const { data: existingEvents, error: checkError } = await supabase
+      // Aynı dakikada başka etkinlik var mı? Yalnızca o dakika sorgulanır (tüm tablo 1000 satır sınırına takılıyordu)
+      const slotEnd = new Date(eventDateTime.getTime() + 60 * 1000);
+      const { data: conflictingEvents, error: checkError } = await supabase
         .from('events')
-        .select('id, event_date')
-        .eq('is_active', true);
+        .select('id')
+        .eq('is_active', true)
+        .gte('event_date', eventDateTime.toISOString())
+        .lt('event_date', slotEnd.toISOString())
+        .limit(1);
 
       if (checkError) throw checkError;
-
-      // Aynı tarih ve saatte etkinlik var mı kontrol et
-      const conflictingEvent = existingEvents.find(event => {
-        const existingDate = new Date(event.event_date);
-        return (
-          existingDate.getFullYear() === eventDateTime.getFullYear() &&
-          existingDate.getMonth() === eventDateTime.getMonth() &&
-          existingDate.getDate() === eventDateTime.getDate() &&
-          existingDate.getHours() === eventDateTime.getHours() &&
-          existingDate.getMinutes() === eventDateTime.getMinutes()
-        );
-      });
+      const conflictingEvent = conflictingEvents && conflictingEvents.length > 0;
 
       if (conflictingEvent) {
-        throw new Error(
+        throw userError(
           language === 'tr'
             ? 'Bu tarih ve saatte başka bir etkinlik zaten mevcut. Lütfen farklı bir saat seçin.'
             : 'There is already another event at this date and time. Please select a different time.'
@@ -506,7 +607,15 @@ const Calendar = () => {
 
       // Zorunlu alanları kontrol et
       if (!eventData.age_group || !eventData.event_type) {
-        throw new Error(language === 'tr' ? 'Zorunlu alanlar eksik' : 'Required fields are missing');
+        throw userError(language === 'tr' ? 'Zorunlu alanlar eksik' : 'Required fields are missing');
+      }
+
+      // Veritabanı bir derste en fazla max_capacity katılımcıya izin verir; ders oluşmadan önce kontrol et
+      const selectedCount = Array.isArray(formData.students) ? formData.students.length : 0;
+      if (selectedCount > eventData.max_capacity) {
+        throw userError(language === 'tr'
+          ? `Bir derse en fazla ${eventData.max_capacity} öğrenci eklenebilir (seçilen: ${selectedCount}).`
+          : `A lesson can have at most ${eventData.max_capacity} students (selected: ${selectedCount}).`);
       }
 
       // Supabase'e etkinlik kaydetme işlemi
@@ -519,7 +628,7 @@ const Calendar = () => {
       if (eventError) throw eventError;
 
       if (!eventResult) {
-        throw new Error(language === 'tr' ? 'Etkinlik oluşturma başarısız' : 'Event creation failed');
+        throw userError(language === 'tr' ? 'Etkinlik oluşturma başarısız' : 'Event creation failed');
       }
 
       // Katılımcıları ekle
@@ -533,7 +642,11 @@ const Calendar = () => {
           .from('event_participants')
           .insert(participantInserts);
 
-        if (participantError) throw participantError;
+        if (participantError) {
+          // Katılımcılar yazılamadıysa boş kalan dersi geri al (tekrar denemede çift ders oluşmasın)
+          await supabase.from('events').delete().eq('id', eventResult.id);
+          throw participantError;
+        }
       }
 
       // Başarı mesajı göster
@@ -543,14 +656,18 @@ const Calendar = () => {
       );
 
       // Etkinlikleri yeniden yükle - mevcut görünüm aralığında
-      if (calendarRef.current) {
-        const calendarApi = calendarRef.current.getApi();
-        await fetchEvents(calendarApi.view.currentStart, calendarApi.view.currentEnd);
-      }
+      await refreshEvents();
       handleCloseModal();
     } catch (error) {
       console.error(language === 'tr' ? 'Etkinlik oluşturulurken hata:' : 'Error creating event:', error);
-      showToast(error.message, 'error');
+      showToast(
+        error.isUserMessage
+          ? error.message
+          : (language === 'tr'
+            ? 'Etkinlik oluşturulamadı. Bağlantınızı kontrol edip tekrar deneyin.'
+            : 'The event could not be created. Check your connection and try again.'),
+        'error'
+      );
     }
   };
 
@@ -572,48 +689,30 @@ const Calendar = () => {
     }
   };
 
-  // Görünüm değiştiğinde
-  const handleViewDidMount = (viewInfo) => {
-    const calendar = viewInfo.view.calendar;
-
-    // Mevcut görünümün başlangıç tarihini sakla (hafta kopyalama için)
-    setCurrentWeekRange(viewInfo.view.currentStart);
-
-    // Ay görünümünde gruplandırılmış etkinlikleri göster ve sürüklemeyi devre dışı bırak
-    if (viewInfo.view.type === 'dayGridMonth') {
-      calendar.removeAllEventSources();
-      calendar.addEventSource(groupedEvents);
-      calendar.setOption('editable', false);
-    } else {
-      // Diğer görünümlerde normal etkinlikleri göster ve sürüklemeyi etkinleştir
-      calendar.removeAllEventSources();
-      calendar.addEventSource(events);
-      calendar.setOption('editable', true);
-    }
-
-    // Mevcut görünümdeki etkinlikleri sakla (hafta kopyalama için)
-    if (viewInfo.view.type === 'timeGridWeek') {
-      const start = viewInfo.view.currentStart;
-      const end = viewInfo.view.currentEnd;
-
-      // Geçerli hafta içindeki etkinlikleri filtrele - düzeltilmiş sürüm
-      const eventsInCurrentWeek = events.filter(event => {
-        const eventDate = new Date(event.start);
-
-        // Date.getTime() kullanarak milisaniye cinsinden karşılaştırma
-        return eventDate.getTime() >= start.getTime() &&
-          eventDate.getTime() < end.getTime();
-      });
-
-      setCurrentWeekEvents(eventsInCurrentWeek);
-    }
-  };
-
   // Etkinlik sürüklendiğinde
   const handleEventDrop = async (dropInfo) => {
     try {
       const event = dropInfo.event;
-      const newDate = event.start;
+      // Saniyeler sıfırlanır: aynı dakikadaki ders kontrolü tam dakika üzerinden yapılır
+      const newDate = new Date(event.start);
+      newDate.setSeconds(0, 0);
+
+      // Hedef dakikada başka ders varsa taşımayı geri al
+      const dropSlotEnd = new Date(newDate.getTime() + 60 * 1000);
+      const { data: clash, error: clashError } = await supabase
+        .from('events')
+        .select('id')
+        .eq('is_active', true)
+        .neq('id', event.id)
+        .gte('event_date', newDate.toISOString())
+        .lt('event_date', dropSlotEnd.toISOString())
+        .limit(1);
+      if (clashError) throw clashError;
+      if (clash && clash.length > 0) {
+        dropInfo.revert();
+        showToast(language === 'tr' ? 'Bu tarih ve saatte başka bir etkinlik zaten mevcut.' : 'There is already another event at this date and time.', 'error');
+        return;
+      }
 
       // Update event in Supabase
       const { error } = await supabase
@@ -633,10 +732,7 @@ const Calendar = () => {
       );
 
       // Reload events - mevcut görünüm aralığında
-      if (calendarRef.current) {
-        const calendarApi = calendarRef.current.getApi();
-        await fetchEvents(calendarApi.view.currentStart, calendarApi.view.currentEnd);
-      }
+      await refreshEvents();
     } catch (error) {
       console.error(
         language === 'tr' ? 'Etkinlik taşınırken hata:' : 'Error moving event:',
@@ -650,51 +746,50 @@ const Calendar = () => {
     }
   };
 
-  // Kopyalanan haftadaki derslerde yer alan benzersiz kayıt id'lerini çıkarır.
-  // NOT: currentWeekEvents KULLANILMAZ — enjekte edilen kopyalama butonu ilk render'ın
-  // closure'ını tuttuğu için o state modal açılırken güvenilir değil. Buradaki `events`
-  // her zaman güncel (fonksiyon render sırasında yeniden oluşuyor).
-  const getWeekRegistrationIds = (weekStart) => {
-    if (!weekStart) return [];
-    const start = new Date(weekStart);
-    const end = addDays(start, 7);
+  // Kopyalanacak haftanın ön kontrolü: ders hakkı bitmiş ve arşivlenmiş öğrenciler.
+  // Öğrenciler veritabanından okunur; ekrandaki takvim o an başka bir aralığı gösteriyor ya da
+  // eski veriyi tutuyor olabilir. Kopyalamayı ASLA engellemez: hata ya da zaman aşımında
+  // modalda bir uyarı satırı gösterilir.
+  const fetchCopyWeekPrecheck = async (weekStart) => {
+    if (!weekStart) return;
 
-    const ids = new Set();
-    events.forEach(event => {
-      const eventDate = new Date(event.start);
-      if (eventDate < start || eventDate >= end) return;
+    const requestId = ++precheckRequestIdRef.current;
+    const isStale = () => requestId !== precheckRequestIdRef.current;
 
-      const participants = event.extendedProps?.originalEvent?.event_participants || [];
-      participants.forEach(participant => {
-        if (participant.registration_id) ids.add(participant.registration_id);
-      });
-    });
+    const loadPrecheck = async () => {
+      const { data: weekEvents, error: eventsError } = await supabase
+        .from('events')
+        .select('id, event_participants(registration_id)')
+        .eq('is_active', true)
+        .gte('event_date', weekStart.toISOString())
+        .lt('event_date', addDays(weekStart, 7).toISOString());
 
-    return [...ids];
-  };
+      if (eventsError) throw eventsError;
 
-  // Ön kontrol: haftadaki öğrencilerden ders hakkı bitmiş olanları getirir.
-  // Kopyalamayı ASLA engellemez; hata durumunda liste boş kalır.
-  const fetchCopyWeekPrecheck = async (registrationIds) => {
-    if (!registrationIds || registrationIds.length === 0) {
-      setPrecheckStudents([]);
-      return;
-    }
+      const registrationIds = [...new Set(
+        (weekEvents || [])
+          .flatMap(event => event.event_participants || [])
+          .map(participant => participant.registration_id)
+      )];
 
-    try {
-      setPrecheckLoading(true);
+      if (registrationIds.length === 0) return { exhausted: [], archived: [] };
 
-      const { data: registrations, error } = await supabase
+      // Arşivlenmiş kayıtlar da okunur: yeni haftaya taşınmayacakları modalda belirtilir
+      const { data: registrations, error: registrationsError } = await supabase
         .from('registrations')
         .select('*')
-        .in('id', registrationIds)
-        .eq('is_active', true);
+        .in('id', registrationIds);
 
-      if (error) throw error;
+      if (registrationsError) throw registrationsError;
 
-      const usageMap = await fetchLessonUsageMap(registrations || []);
+      const activeRegistrations = (registrations || []).filter(registration => registration.is_active);
+      const archived = (registrations || [])
+        .filter(registration => !registration.is_active)
+        .sort((a, b) => (a.student_name || '').localeCompare(b.student_name || '', 'tr'));
 
-      const exhausted = (registrations || [])
+      const usageMap = await fetchLessonUsageMap(activeRegistrations);
+
+      const exhausted = activeRegistrations
         // isFree kontrolü eşikten ÖNCE: ücretsizde remaining null ve null <= 0 true döner
         .filter(registration => {
           const usage = usageMap[registration.id];
@@ -703,12 +798,37 @@ const Calendar = () => {
         .map(registration => ({ ...registration, usage: usageMap[registration.id] }))
         .sort((a, b) => new Date(a.package_end_date) - new Date(b.package_end_date));
 
-      setPrecheckStudents(exhausted);
+      return { exhausted, archived };
+    };
+
+    let timeoutId;
+    const timeout = new Promise((_, reject) => {
+      timeoutId = setTimeout(() => reject(new Error('precheck_timeout')), PRECHECK_TIMEOUT_MS);
+    });
+
+    try {
+      setPrecheckLoading(true);
+      setPrecheckFailed(false);
+
+      const result = await Promise.race([loadPrecheck(), timeout]);
+
+      // Bu arada daha yeni bir kontrol başladıysa ya da modal kapandıysa bu yanıt yok sayılır
+      if (isStale()) return;
+
+      setPrecheckStudents(result.exhausted);
+      setPrecheckArchived(result.archived);
     } catch (error) {
+      if (isStale()) return;
+
       console.error('Hafta kopyalama ön kontrolü yapılırken hata:', error);
       setPrecheckStudents([]);
+      setPrecheckArchived([]);
+      setPrecheckFailed(true);
     } finally {
-      setPrecheckLoading(false);
+      clearTimeout(timeoutId);
+      if (!isStale()) {
+        setPrecheckLoading(false);
+      }
     }
   };
 
@@ -736,411 +856,158 @@ const Calendar = () => {
     setIsExtendModalOpen(true);
   };
 
-  // Ön kontrolü modal açılınca çalıştır. Effect kullanılıyor çünkü handleCopyWeekClick
-  // enjekte edilen butondan bayat closure ile çağrılıyor (orada `events` boş görünür).
+  // Ön kontrol modal açılınca çalışır; modal kapanınca bekleyen yanıt yok sayılır ve liste temizlenir
   useEffect(() => {
-    if (!isCopyWeekModalOpen || !currentWeekRange) return;
-    fetchCopyWeekPrecheck(getWeekRegistrationIds(currentWeekRange));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isCopyWeekModalOpen, currentWeekRange, events]);
+    if (!isCopyWeekModalOpen || !copySourceWeekStart) return;
 
-  // Haftayı kopyalama işlevi
+    fetchCopyWeekPrecheck(copySourceWeekStart);
+
+    return () => {
+      precheckRequestIdRef.current += 1;
+      setPrecheckStudents([]);
+      setPrecheckArchived([]);
+      setPrecheckFailed(false);
+      setPrecheckLoading(false);
+    };
+  }, [isCopyWeekModalOpen, copySourceWeekStart]);
+
+  // "Bu Haftayı Kopyala": kaynak hafta, modal açılırken takvimde görünen haftadır
   const handleCopyWeekClick = () => {
-    if (calendarRef.current) {
-      const calendarApi = calendarRef.current.getApi();
-      const view = calendarApi.view;
+    if (!calendarRef.current || copyWeekInFlightRef.current) return;
 
-      // Hafta görünümünde değilse, hafta görünümüne geç
-      if (view.type !== 'timeGridWeek') {
-        calendarApi.changeView('timeGridWeek');
+    const calendarApi = calendarRef.current.getApi();
 
-        // Görünüm değiştikten sonra modalı açmak için kısa bir gecikme ekle
-        setTimeout(() => {
-
-          // Gecikme sonrası yeni görünümdeki etkinlikleri kontrol et
-          const updatedView = calendarApi.view;
-          const start = updatedView.currentStart;
-          const end = updatedView.currentEnd;
-
-          // Geçerli hafta içindeki etkinlikleri filtrele - düzeltilmiş sürüm
-          const updatedCurrentWeekEvents = events.filter(event => {
-            const eventDate = new Date(event.start);
-
-            // Date.getTime() kullanarak milisaniye cinsinden karşılaştırma
-            return eventDate.getTime() >= start.getTime() &&
-              eventDate.getTime() < end.getTime();
-          });
-
-          console.log(`Kopyalanacak etkinlikler: ${updatedCurrentWeekEvents.length} adet`);
-          setCurrentWeekEvents(updatedCurrentWeekEvents);
-          setCurrentWeekRange(start);
-          setIsCopyWeekModalOpen(true);
-        }, 500); // 300 yerine 500ms daha güvenli olabilir
-        return;
-      }
-
-      // Güncellenen mevcut hafta etkinliklerini kontrol et - düzeltilmiş sürüm
-      const start = view.currentStart;
-      const end = view.currentEnd;
-
-      const updatedCurrentWeekEvents = events.filter(event => {
-        const eventDate = new Date(event.start);
-
-        // Date.getTime() kullanarak milisaniye cinsinden karşılaştırma
-        return eventDate.getTime() >= start.getTime() &&
-          eventDate.getTime() < end.getTime();
-      });
-
-      console.log(`Kopyalanacak etkinlikler: ${updatedCurrentWeekEvents.length} adet. Hafta: ${format(start, 'yyyy-MM-dd')} - ${format(end, 'yyyy-MM-dd')}`);
-
-      // events dizisinin boş olup olmadığını kontrol et
-      if (events.length === 0) {
-        console.warn('DİKKAT: Genel etkinlik listesi boş!');
-      }
-
-      // Debug: Tüm etkinliklerin tarihlerini kontrol et
-      if (updatedCurrentWeekEvents.length === 0 && events.length > 0) {
-        console.log('Neden etkinlik bulunamadı? Tüm etkinlik tarihleri:');
-        events.forEach((event, index) => {
-          console.log(`Etkinlik ${index}: ${new Date(event.start).toISOString()} (${event.extendedProps.eventType})`);
-        });
-
-        console.log(`Aranan tarih aralığı: ${start.toISOString()} - ${end.toISOString()}`);
-      }
-
-      setCurrentWeekEvents(updatedCurrentWeekEvents);
-      setCurrentWeekRange(start);
-      setIsCopyWeekModalOpen(true);
+    // Hafta görünümünde değilse önce hafta görünümüne geçilir: hangi haftanın kopyalanacağı
+    // takvimde de görünsün
+    if (calendarApi.view.type !== 'timeGridWeek') {
+      calendarApi.changeView('timeGridWeek');
     }
+
+    // getDate() takvimin "geçerli tarihi"dir; görünüm değişse de aynı kalır ve gösterilen
+    // hafta her zaman onu içerir
+    setCopySourceWeekStart(startOfWeek(calendarApi.getDate(), { weekStartsOn: 1 }));
+    setIsCopyWeekModalOpen(true);
   };
 
-  // Kopya modalını kapat
+  // İkonun tıklaması her render'da güncel işleyiciye bağlanır (ikon DOM'a bir kez ekleniyor)
+  useEffect(() => {
+    copyWeekClickRef.current = handleCopyWeekClick;
+  });
+
+  // Kopya modalını kapat. Kopyalama sürerken kapatılamaz: kapanıp yeniden açılan modal,
+  // süren işlemin üstüne ikinci bir kopyalama başlatabiliyordu.
   const handleCloseCopyWeekModal = () => {
+    if (copyWeekInFlightRef.current) return;
     setIsCopyWeekModalOpen(false);
-    setHasConflictsInTargetWeek(false);
   };
 
-  // Haftayı kopyalama işlemini gerçekleştir
+  // Kopyalama hatasını kullanıcının anlayacağı bir mesaja çevirir
+  const getCopyWeekErrorMessage = (error) => {
+    const text = String(error?.message || '');
+
+    if (text.includes('invalid_target_week')) {
+      return language === 'tr' ? 'Geçerli bir hedef hafta seçin' : 'Select a valid target week';
+    }
+    if (error?.code === '42501') {
+      return language === 'tr' ? 'Bu işlem için yönetici yetkisi gerekir' : 'This action requires admin access';
+    }
+    return language === 'tr'
+      ? 'Hafta kopyalanamadı, hiçbir ders eklenmedi. Bağlantınızı kontrol edip tekrar deneyin.'
+      : 'The week could not be copied and nothing was added. Check your connection and try again.';
+  };
+
+  // Atlanan derslerin gün ve saatleri ("Sal 14:45, Çar 14:45 …")
+  const formatSkippedSlots = (slots) => {
+    const labels = (slots || [])
+      .slice(0, SKIPPED_SLOTS_VISIBLE_LIMIT)
+      .map(slot => formatDate(slot, 'EEE HH:mm'));
+    const hiddenCount = (slots || []).length - labels.length;
+
+    if (hiddenCount > 0) {
+      labels.push(language === 'tr' ? `+${hiddenCount} ders daha` : `+${hiddenCount} more`);
+    }
+    return labels.join(', ');
+  };
+
+  // Haftayı kopyalar. Kopyalama veritabanında tek işlem olarak yapılır (copy_week fonksiyonu):
+  // ya bütün dersler katılımcılarıyla birlikte oluşur ya da hiçbiri; yarım kalmış hafta oluşmaz.
+  // Kopyalanan dersler, takvimde o an görünenler değil veritabanındaki güncel derslerdir.
   // excludedRegistrationIds: ön kontrol listesinden "Hariç Tut" denen öğrenciler.
   // Dersler yine kopyalanır, sadece bu öğrenciler katılımcı olarak eklenmez.
   const handleCopyWeek = async (targetWeekStart, excludedRegistrationIds = []) => {
+    if (copyWeekInFlightRef.current) return;
+
+    const weeks = weeksBetween(copySourceWeekStart, targetWeekStart);
+    if (!copySourceWeekStart || !weeks) {
+      showToast(getCopyWeekErrorMessage({ message: 'invalid_target_week' }), 'error');
+      return;
+    }
+
+    copyWeekInFlightRef.current = true;
+    setCopyWeekLoading(true);
+
     try {
-      setCopyWeekLoading(true);
+      const { data: result, error } = await supabase.rpc('copy_week', {
+        p_source_start: copySourceWeekStart.toISOString(),
+        p_weeks: weeks,
+        p_excluded: excludedRegistrationIds
+      });
 
-      console.log(`Kopyalama başlıyor. Etkinlik sayısı: ${currentWeekEvents.length}`);
-      console.log(`Mevcut hafta: ${currentWeekRange ? new Date(currentWeekRange).toISOString() : 'undefined'}`);
-      console.log(`Hedef hafta: ${targetWeekStart.toISOString()}`);
+      if (error) throw error;
 
-      // Kopyalanacak hafta boşsa, komple events'tan kontrol edelim
-      if (!currentWeekEvents || currentWeekEvents.length === 0) {
-        // Son bir kurtarma denemesi - mevcut takvim görünümünü manuel olarak kontrol et
-        if (calendarRef.current) {
-          const calendarApi = calendarRef.current.getApi();
-          const view = calendarApi.view;
+      const copied = result?.copied || 0;
+      const skipped = result?.skipped || 0;
+      const isTr = language === 'tr';
 
-          if (view.type === 'timeGridWeek') {
-            const start = view.currentStart;
-            const end = view.currentEnd;
-
-            // Geçerli hafta içindeki etkinlikleri filtrele - son deneme
-            const rescueEvents = events.filter(event => {
-              const eventDate = new Date(event.start);
-
-              // Sadece gün, ay, yıl karşılaştırması yapalım
-              const eventDay = eventDate.getDate();
-              const eventMonth = eventDate.getMonth();
-              const eventYear = eventDate.getFullYear();
-
-              // Tarih aralığındaki günleri kontrol et
-              for (let d = new Date(start); d < end; d.setDate(d.getDate() + 1)) {
-                if (d.getDate() === eventDay &&
-                  d.getMonth() === eventMonth &&
-                  d.getFullYear() === eventYear) {
-                  return true;
-                }
-              }
-              return false;
-            });
-
-            console.log(`Son deneme kurtarma: ${rescueEvents.length} etkinlik bulundu`);
-
-            if (rescueEvents.length > 0) {
-              // Kurtarma başarılı, bu etkinlikleri kullan
-              setCurrentWeekEvents(rescueEvents);
-
-              // Bu değişkeni kullanarak devam et
-              const currentWeekEventsToUse = rescueEvents;
-
-              // Hedef haftanın bitiş tarihini hesapla
-              const targetWeekEnd = addDays(new Date(targetWeekStart), 7);
-
-              // Hedef haftadaki mevcut etkinlikleri getir
-              const { data: existingEventsInTargetWeek, error: existingEventsError } = await supabase
-                .from('events')
-                .select('event_date')
-                .eq('is_active', true)
-                .gte('event_date', targetWeekStart.toISOString())
-                .lt('event_date', targetWeekEnd.toISOString());
-
-              if (existingEventsError) throw existingEventsError;
-
-              // Günlerin farkını hesapla (bir hafta sonra olacak)
-              const daysDiff = Math.round((targetWeekStart - new Date(currentWeekRange)) / (1000 * 60 * 60 * 24));
-
-              // Başarıyla kopyalanan etkinlik sayacı
-              let successCount = 0;
-              let conflictCount = 0;
-
-              // Her etkinlik için kopyalama işlemi
-              for (const event of currentWeekEventsToUse) {
-                // Etkinliğin yeni tarihini hesapla
-                const eventDate = new Date(event.start);
-                const newEventDate = addDays(eventDate, daysDiff);
-
-                // Hedef tarihte zaten etkinlik var mı kontrol et (saat ve dakika bazında)
-                const hasConflict = existingEventsInTargetWeek.some(existingEvent => {
-                  const existingEventDate = new Date(existingEvent.event_date);
-                  return (
-                    existingEventDate.getFullYear() === newEventDate.getFullYear() &&
-                    existingEventDate.getMonth() === newEventDate.getMonth() &&
-                    existingEventDate.getDate() === newEventDate.getDate() &&
-                    existingEventDate.getHours() === newEventDate.getHours() &&
-                    existingEventDate.getMinutes() === newEventDate.getMinutes()
-                  );
-                });
-
-                // Çakışma varsa bu etkinliği atla
-                if (hasConflict) {
-                  conflictCount++;
-                  continue;
-                }
-
-                // Orijinal etkinlik verisini al
-                const originalEvent = event.extendedProps.originalEvent;
-
-                if (!originalEvent) continue;
-
-                // Yeni etkinlik verisi oluştur
-                const newEventData = {
-                  event_date: newEventDate.toISOString(),
-                  age_group: originalEvent.age_group,
-                  event_type: originalEvent.event_type,
-                  custom_description: originalEvent.custom_description,
-                  max_capacity: originalEvent.max_capacity,
-                  current_capacity: 0 // Başlangıçta 0 olmalı, trigger katılımcılar eklendiğinde bu değeri arttıracak
-                };
-
-                // Etkinliği veritabanına ekle
-                const { data: newEvent, error: newEventError } = await supabase
-                  .from('events')
-                  .insert([newEventData])
-                  .select()
-                  .single();
-
-                if (newEventError) throw newEventError;
-
-                // Katılımcıları kopyala (hariç tutulanlar atlanır)
-                if (originalEvent.event_participants && originalEvent.event_participants.length > 0) {
-                  const participantInserts = originalEvent.event_participants
-                    .filter(participant => !excludedRegistrationIds.includes(participant.registration_id))
-                    .map(participant => ({
-                      event_id: newEvent.id,
-                      registration_id: participant.registration_id
-                    }));
-
-                  if (participantInserts.length > 0) {
-                    const { error: participantError } = await supabase
-                      .from('event_participants')
-                      .insert(participantInserts);
-
-                    if (participantError) throw participantError;
-                  }
-                }
-
-                successCount++;
-              }
-
-              // Tüm etkinlikler kopyalandı
-              setCopyWeekLoading(false);
-              setIsCopyWeekModalOpen(false);
-
-              // Başarı mesajı göster
-              if (successCount > 0) {
-                let message = `${successCount} etkinlik başarıyla kopyalandı`;
-                if (conflictCount > 0) {
-                  message += `, ${conflictCount} etkinlik çakışma nedeniyle atlandı`;
-                }
-                setToast({
-                  message,
-                  type: 'success',
-                  isVisible: true
-                });
-
-                // Etkinlikleri yeniden yükle
-                await fetchEvents();
-
-                // Takvim görünümünü kopyalanan haftaya çevirme işlemi yerine bildirim göster
-                setTargetWeekForNavigation(targetWeekStart);
-                setActionNotificationMessage(`Etkinlikler ${format(targetWeekStart, 'dd MMMM yyyy', { locale: tr })} - ${format(addDays(targetWeekStart, 6), 'dd MMMM yyyy', { locale: tr })} tarihlerine kopyalandı.`);
-                setIsActionNotificationVisible(true);
-              } else if (conflictCount > 0) {
-                setToast({
-                  message: `Kopyalama tamamlandı, ancak ${conflictCount} etkinlik çakışma nedeniyle kopyalanamadı`,
-                  type: 'warning',
-                  isVisible: true
-                });
-              } else {
-                setToast({
-                  message: 'Kopyalanacak etkinlik bulunamadı',
-                  type: 'error',
-                  isVisible: true
-                });
-              }
-
-              return; // Kurtarma başarılı, işlemi tamamla ve çık
-            }
-          }
-        }
-
-        showToast('Bu haftada kopyalanacak etkinlik bulunamadı', 'error');
-        setCopyWeekLoading(false);
-        setIsCopyWeekModalOpen(false);
-        return;
-      }
-
-      // Hedef haftanın bitiş tarihini hesapla
-      const targetWeekEnd = addDays(new Date(targetWeekStart), 7);
-
-      // Hedef haftadaki mevcut etkinlikleri getir
-      const { data: existingEventsInTargetWeek, error: existingEventsError } = await supabase
-        .from('events')
-        .select('event_date')
-        .eq('is_active', true)
-        .gte('event_date', targetWeekStart.toISOString())
-        .lt('event_date', targetWeekEnd.toISOString());
-
-      if (existingEventsError) throw existingEventsError;
-
-      // Günlerin farkını hesapla (bir hafta sonra olacak)
-      const daysDiff = Math.round((targetWeekStart - new Date(currentWeekRange)) / (1000 * 60 * 60 * 24));
-
-      // Başarıyla kopyalanan etkinlik sayacı
-      let successCount = 0;
-      let conflictCount = 0;
-
-      // Her etkinlik için kopyalama işlemi
-      for (const event of currentWeekEvents) {
-        // Etkinliğin yeni tarihini hesapla
-        const eventDate = new Date(event.start);
-        const newEventDate = addDays(eventDate, daysDiff);
-
-        // Hedef tarihte zaten etkinlik var mı kontrol et (saat ve dakika bazında)
-        const hasConflict = existingEventsInTargetWeek.some(existingEvent => {
-          const existingEventDate = new Date(existingEvent.event_date);
-          return (
-            existingEventDate.getFullYear() === newEventDate.getFullYear() &&
-            existingEventDate.getMonth() === newEventDate.getMonth() &&
-            existingEventDate.getDate() === newEventDate.getDate() &&
-            existingEventDate.getHours() === newEventDate.getHours() &&
-            existingEventDate.getMinutes() === newEventDate.getMinutes()
-          );
-        });
-
-        // Çakışma varsa bu etkinliği atla
-        if (hasConflict) {
-          conflictCount++;
-          continue;
-        }
-
-        // Orijinal etkinlik verisini al
-        const originalEvent = event.extendedProps.originalEvent;
-
-        if (!originalEvent) continue;
-
-        // Yeni etkinlik verisi oluştur
-        const newEventData = {
-          event_date: newEventDate.toISOString(),
-          age_group: originalEvent.age_group,
-          event_type: originalEvent.event_type,
-          custom_description: originalEvent.custom_description,
-          max_capacity: originalEvent.max_capacity,
-          current_capacity: 0 // Başlangıçta 0 olmalı, trigger katılımcılar eklendiğinde bu değeri arttıracak
-        };
-
-        // Etkinliği veritabanına ekle
-        const { data: newEvent, error: newEventError } = await supabase
-          .from('events')
-          .insert([newEventData])
-          .select()
-          .single();
-
-        if (newEventError) throw newEventError;
-
-        // Katılımcıları kopyala (hariç tutulanlar atlanır)
-        if (originalEvent.event_participants && originalEvent.event_participants.length > 0) {
-          const participantInserts = originalEvent.event_participants
-            .filter(participant => !excludedRegistrationIds.includes(participant.registration_id))
-            .map(participant => ({
-              event_id: newEvent.id,
-              registration_id: participant.registration_id
-            }));
-
-          if (participantInserts.length > 0) {
-            const { error: participantError } = await supabase
-              .from('event_participants')
-              .insert(participantInserts);
-
-            if (participantError) throw participantError;
-          }
-        }
-
-        successCount++;
-      }
-
-      // Tüm etkinlikler kopyalandı
-      setCopyWeekLoading(false);
       setIsCopyWeekModalOpen(false);
 
-      // Başarı mesajı göster
-      if (successCount > 0) {
-        let message = `${successCount} etkinlik başarıyla kopyalandı`;
-        if (conflictCount > 0) {
-          message += `, ${conflictCount} etkinlik çakışma nedeniyle atlandı`;
-        }
-        setToast({
-          message,
-          type: 'success',
-          isVisible: true
-        });
+      if (copied > 0) {
+        showToast(
+          isTr
+            ? `${copied} etkinlik kopyalandı${skipped > 0 ? `, ${skipped} etkinlik atlandı` : ''}`
+            : `${copied} event${copied === 1 ? '' : 's'} copied${skipped > 0 ? `, ${skipped} skipped` : ''}`,
+          skipped > 0 ? 'warning' : 'success'
+        );
 
-        // Etkinlikleri yeniden yükle - mevcut görünüm aralığında
-        if (calendarRef.current) {
-          const calendarApi = calendarRef.current.getApi();
-          await fetchEvents(calendarApi.view.currentStart, calendarApi.view.currentEnd);
+        // Takvim kopyalanan haftaya kendiliğinden geçmez; kullanıcıya özet ve geçiş düğmesi gösterilir
+        const targetEnd = addDays(targetWeekStart, 6);
+        let summary = isTr
+          ? `Etkinlikler ${formatDate(targetWeekStart, 'dd MMMM yyyy')} - ${formatDate(targetEnd, 'dd MMMM yyyy')} tarihlerine kopyalandı.`
+          : `Events were copied to ${formatDate(targetWeekStart, 'dd MMMM yyyy')} - ${formatDate(targetEnd, 'dd MMMM yyyy')}.`;
+
+        if (skipped > 0) {
+          summary += isTr
+            ? ` Hedef haftada aynı saatte etkinlik olduğu için ${skipped} etkinlik atlandı: ${formatSkippedSlots(result.skipped_slots)}.`
+            : ` ${skipped} skipped because the target week already has an event at that time: ${formatSkippedSlots(result.skipped_slots)}.`;
         }
 
-        // Takvim görünümünü kopyalanan haftaya çevirme işlemi yerine bildirim göster
         setTargetWeekForNavigation(targetWeekStart);
-        setActionNotificationMessage(`Etkinlikler ${format(targetWeekStart, 'dd MMMM yyyy', { locale: tr })} - ${format(addDays(targetWeekStart, 6), 'dd MMMM yyyy', { locale: tr })} tarihlerine kopyalandı.`);
+        setActionNotificationMessage(summary);
+        setActionNotificationSticky(skipped > 0);
         setIsActionNotificationVisible(true);
-      } else if (conflictCount > 0) {
-        setToast({
-          message: `Kopyalama tamamlandı, ancak ${conflictCount} etkinlik çakışma nedeniyle kopyalanamadı`,
-          type: 'warning',
-          isVisible: true
-        });
+      } else if (skipped > 0) {
+        showToast(
+          isTr
+            ? 'Hedef haftada bu saatlerin hepsinde zaten etkinlik var; yeni etkinlik eklenmedi'
+            : 'The target week already has an event at each of these times; nothing was added',
+          'warning'
+        );
       } else {
-        setToast({
-          message: 'Kopyalanacak etkinlik bulunamadı',
-          type: 'error',
-          isVisible: true
-        });
+        showToast(
+          isTr ? 'Bu haftada kopyalanacak etkinlik bulunamadı' : 'There are no events to copy in this week',
+          'error'
+        );
       }
+
+      // Etkinlikleri yeniden yükle - mevcut görünüm aralığında
+      refreshEvents();
     } catch (error) {
+      // Modal açık kalır: hiçbir şey yazılmadığı için kullanıcı aynı ekrandan tekrar deneyebilir
       console.error('Hafta kopyalanırken hata:', error);
+      showToast(getCopyWeekErrorMessage(error), 'error');
+    } finally {
+      copyWeekInFlightRef.current = false;
       setCopyWeekLoading(false);
-      setIsCopyWeekModalOpen(false);
-      showToast('Hafta kopyalanırken bir hata oluştu: ' + error.message, 'error');
     }
   };
 
@@ -1152,8 +1019,10 @@ const Calendar = () => {
     }
   };
 
-  // Hafta görünümündeyken ve takvim yüklendikten sonra "Bu Haftayı Kopyala" ikonunu ekle
+  // Takvim yüklendikten sonra başlığın yanına "Bu Haftayı Kopyala" ikonunu ekle
   useEffect(() => {
+    const tooltipText = language === 'tr' ? 'Bu Haftayı Kopyala' : 'Copy This Week';
+
     const addCopyWeekButton = () => {
       if (!calendarRef.current) return;
 
@@ -1172,6 +1041,8 @@ const Calendar = () => {
 
       // İkon elementi
       const iconElement = document.createElement('button');
+      iconElement.type = 'button';
+      iconElement.setAttribute('aria-label', tooltipText);
       iconElement.classList.add(
         'inline-flex', 'items-center', 'justify-center',
         'w-7', 'h-7', 'bg-white', 'dark:bg-[#121621]',
@@ -1198,10 +1069,13 @@ const Calendar = () => {
         'rounded', 'opacity-0', 'group-hover:opacity-100', 'transition-opacity',
         'duration-200', 'whitespace-nowrap', 'pointer-events-none', 'z-10'
       );
-      tooltip.textContent = 'Bu Haftayı Kopyala';
+      tooltip.textContent = tooltipText;
 
-      // İkon tıklama işlevi
-      iconElement.addEventListener('click', handleCopyWeekClick);
+      // İkon tıklama işlevi: ikon bir kez oluşturulduğu için işleyici ref üzerinden çağrılır
+      // (doğrudan bağlansaydı ilk render'daki eski işleyici çalışırdı)
+      iconElement.addEventListener('click', () => {
+        if (copyWeekClickRef.current) copyWeekClickRef.current();
+      });
 
       // Elementleri birleştir
       iconContainer.appendChild(iconElement);
@@ -1211,10 +1085,10 @@ const Calendar = () => {
       titleElement.appendChild(iconContainer);
     };
 
-    // İlk yükleme ve görünüm değişikliklerinde ikonu ekle
+    // İlk yüklemede ve dil değiştiğinde ikonu ekle
     addCopyWeekButton();
 
-    // FullCalendar görünümü değiştiğinde de ikonu tekrar ekle
+    // Pencere boyutu değiştiğinde ya da sekmeye dönüldüğünde ikon kaybolduysa tekrar ekle
     const handleViewChange = () => {
       setTimeout(addCopyWeekButton, 100);
     };
@@ -1227,7 +1101,7 @@ const Calendar = () => {
       window.removeEventListener('resize', handleViewChange);
       document.removeEventListener('visibilitychange', handleViewChange);
     };
-  }, []);
+  }, [language]);
 
   // Görünen haftanın konusu (banner sadece hafta ve gün görünümlerinde gösterilir)
   const activeWeekKey = currentWeekRange
@@ -1247,7 +1121,7 @@ const Calendar = () => {
         </div>
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 w-full sm:w-auto">
           <a
-            href="/hellokido/#/takvim"
+            href={`${import.meta.env.BASE_URL}#/takvim`}
             target="_blank"
             rel="noopener noreferrer"
             className="h-10 sm:h-8 px-3 bg-purple-100 dark:bg-purple-800/20 text-purple-700 dark:text-purple-300 text-sm font-medium rounded-lg hover:bg-purple-200 dark:hover:bg-purple-800/30 focus:outline-none transition-all duration-200 flex items-center justify-center gap-1.5 w-full sm:w-auto transform hover:scale-[1.02] active:scale-[0.98]"
@@ -1282,7 +1156,8 @@ const Calendar = () => {
         </div>
       </div>
 
-      <div className="relative bg-white dark:bg-[#1a1f2e] rounded-xl overflow-hidden">
+      {/* overflow-hidden yok: gün adları satırının sayfa kaydırılırken üstte sabit kalabilmesi için */}
+      <div ref={calendarWrapperRef} className="relative bg-white dark:bg-[#1a1f2e] rounded-xl">
         {/* Haftanın Konusu (hafta ve gün görünümleri) */}
         {showThemeBanner && (
           <div className="flex items-center justify-between gap-4 px-6 py-2.5 border-b border-[#d2d2d7] dark:border-[#2a3241]">
@@ -1317,7 +1192,7 @@ const Calendar = () => {
 
         {/* Loading Overlay */}
         {isLoading && (
-          <div className="absolute inset-0 z-50 flex items-center justify-center bg-white/50 dark:bg-black/50 backdrop-blur-sm">
+          <div className="absolute inset-0 z-50 flex items-center justify-center rounded-xl bg-white/50 dark:bg-black/50 backdrop-blur-sm">
             <div className="flex flex-col items-center gap-3">
               <div className="w-10 h-10 border-4 border-purple-200 border-t-purple-600 rounded-full animate-spin"></div>
               <span className="text-sm font-medium text-purple-600 dark:text-purple-400">
@@ -1346,11 +1221,11 @@ const Calendar = () => {
           locale={language === 'tr' ? trLocale : enLocale}
           selectable={true}
           select={handleDateSelect}
-          events={events}
+          events={currentViewType === 'dayGridMonth' ? groupedEvents : events}
           eventClick={handleEventClick}
           eventContent={renderEventContent}
-          viewDidMount={handleViewDidMount}
-          editable={true} // Required for drag-and-drop
+          editable={currentViewType !== 'dayGridMonth'} // Sürükle-bırak; ay görünümündeki günlük özetler taşınmaz
+          eventDurationEditable={false} // Ders süresi takvimden değiştirilmez (boyutlandırma tutamacı çıkmasın)
           eventDrop={handleEventDrop} // Drag-and-drop handler
           dragScroll={true} // Auto-scroll during dragging
           snapDuration="00:15:00" // Place at 15-minute intervals
@@ -1377,7 +1252,7 @@ const Calendar = () => {
           slotLabelInterval="01:00"
           datesSet={(dateInfo) => {
             fetchEvents(dateInfo.start, dateInfo.end);
-            setCurrentWeekRange(dateInfo.start); // Update current week range for copy function
+            setCurrentWeekRange(dateInfo.start); // Görünen aralığın başı (haftanın konusu bandı için)
             fetchWeekThemes(dateInfo.start, dateInfo.end);
             setCurrentViewType(dateInfo.view.type);
           }}
@@ -1404,10 +1279,7 @@ const Calendar = () => {
             type,
             isVisible: true
           });
-          if (calendarRef.current) {
-            const calendarApi = calendarRef.current.getApi();
-            fetchEvents(calendarApi.view.currentStart, calendarApi.view.currentEnd);
-          }
+          refreshEvents();
         }}
         eventId={selectedEvent}
       />
@@ -1417,10 +1289,13 @@ const Calendar = () => {
         isOpen={isCopyWeekModalOpen}
         onClose={handleCloseCopyWeekModal}
         onConfirm={handleCopyWeek}
-        currentWeekStart={currentWeekRange}
-        hasConflicts={hasConflictsInTargetWeek}
+        currentWeekStart={copySourceWeekStart}
+        isCopying={copyWeekLoading}
         precheckStudents={precheckStudents}
+        precheckArchived={precheckArchived}
         precheckLoading={precheckLoading}
+        precheckFailed={precheckFailed}
+        onRetryPrecheck={() => fetchCopyWeekPrecheck(copySourceWeekStart)}
         onExtendStudent={handleExtendFromPrecheck}
       />
 
@@ -1433,7 +1308,7 @@ const Calendar = () => {
         onSuccess={() => {
           // ExtendModal onClose'u onSuccess'ten ÖNCE çağırdığı için kaydı burada
           // null'lamıyoruz. Uzatma sonrası liste yenilenir (uzatılan öğrenci düşer).
-          fetchCopyWeekPrecheck(getWeekRegistrationIds(currentWeekRange));
+          fetchCopyWeekPrecheck(copySourceWeekStart);
         }}
         registration={extendTargetRegistration}
       />
@@ -1462,7 +1337,9 @@ const Calendar = () => {
       {/* Action Notification */}
       <ActionNotification
         isVisible={isActionNotificationVisible}
+        title={language === 'tr' ? 'Kopyalama Tamamlandı' : 'Copy Completed'}
         message={actionNotificationMessage}
+        autoClose={!actionNotificationSticky}
         actionText={language === 'tr' ? "Kopyalanan Haftaya Git" : "Go to Copied Week"}
         onAction={navigateToTargetWeek}
         onClose={() => setIsActionNotificationVisible(false)}

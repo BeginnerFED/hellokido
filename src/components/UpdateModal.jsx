@@ -3,10 +3,17 @@ import { DateRange } from 'react-date-range'
 import { tr } from 'date-fns/locale'
 import 'react-date-range/dist/styles.css'
 import 'react-date-range/dist/theme/default.css'
-import { createClient } from '@supabase/supabase-js'
 import Toast from './ui/Toast'
+import AmountPreview from './ui/AmountPreview'
 import { useLanguage } from '../context/LanguageContext'
-import { 
+import { supabase } from '../lib/supabase'
+import { parseAmount, isPositiveAmount, formatAmountForInput, sanitizeAmountInput, formatMoney } from '../lib/money'
+import { capitalizeName, capitalizeWords, upperFirst } from '../lib/text'
+import { phoneDigits, normalizePhone, isValidPhone } from '../lib/phone'
+import { changeKeepingCaret } from '../lib/caret'
+import { isMissingPeriodEnd, getPeriodTypeHint } from '../lib/packagePeriod'
+import { findRegistrationByPhone, phoneInUseMessage, isDuplicatePhoneError } from '../lib/registrationLookup'
+import {
   XMarkIcon,
   FaceSmileIcon,
   UsersIcon,
@@ -20,11 +27,9 @@ import {
   PencilSquareIcon
 } from '@heroicons/react/24/outline'
 
-// Supabase istemcisini oluştur
-const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY
-)
+// İki tarih aynı anı mı gösteriyor (biri Date, diğeri veritabanından gelen metin olabilir)
+const isSameInstant = (a, b) =>
+  (a ? new Date(a).getTime() : null) === (b ? new Date(b).getTime() : null)
 
 export default function UpdateModal({ isOpen, onClose, onSuccess, registration }) {
   const { language } = useLanguage()
@@ -38,6 +43,8 @@ export default function UpdateModal({ isOpen, onClose, onSuccess, registration }
   })
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
   const [isPaymentDatePickerOpen, setIsPaymentDatePickerOpen] = useState(false)
+  // Kayıtlı (tahsil edilmiş) bir ödemenin değiştirilmesi ikinci bir onay ister
+  const [isConfirmingPaymentChange, setIsConfirmingPaymentChange] = useState(false)
 
   // Form verilerini mevcut kayıt verileriyle başlat
   const [formData, setFormData] = useState({
@@ -63,6 +70,7 @@ export default function UpdateModal({ isOpen, onClose, onSuccess, registration }
   // Kayıt verileri geldiğinde form verilerini güncelle
   useEffect(() => {
     if (registration) {
+      const isPaid = registration.payment_status === 'odendi'
       setFormData({
         studentName: registration.student_name || '',
         parentName: registration.parent_name || '',
@@ -70,8 +78,8 @@ export default function UpdateModal({ isOpen, onClose, onSuccess, registration }
         age: registration.student_age || '',
         packageType: registration.package_type || '',
         paymentStatus: registration.payment_status || '',
-        paymentMethod: registration.payment_method || '',
-        amount: registration.payment_amount?.toString() || '',
+        paymentMethod: isPaid ? (registration.payment_method || '') : '',
+        amount: isPaid ? formatAmountForInput(registration.payment_amount) : '',
         note: registration.notes || '',
         paymentDate: registration.payment_date ? new Date(registration.payment_date) : null
       })
@@ -88,8 +96,14 @@ export default function UpdateModal({ isOpen, onClose, onSuccess, registration }
   useEffect(() => {
     if (!isOpen) {
       setIsCalendarOpen(false)
+      setIsPaymentDatePickerOpen(false)
     }
   }, [isOpen])
+
+  // Formda bir şey değişince ödeme onayı yeniden istenir
+  useEffect(() => {
+    setIsConfirmingPaymentChange(false)
+  }, [formData, dateRange, isOpen])
 
   // Dışarı tıklama kontrolü
   useEffect(() => {
@@ -121,14 +135,112 @@ export default function UpdateModal({ isOpen, onClose, onSuccess, registration }
 
   // Ücretsiz katılım: ödeme ve paket tarihi sorulmaz
   const isFree = formData.packageType === 'ucretsiz'
+  const wasFree = registration?.package_type === 'ucretsiz'
+
+  // Formdaki ödeme alanlarının kaydedilecek karşılığı
+  // (ücretsiz katılım / beklemede durumunda ödeme ayrıntısı olmaz)
+  const hasNoPaymentDetails = isFree || formData.paymentStatus === 'beklemede'
+  const formPayment = {
+    status: isFree ? 'ucretsiz' : formData.paymentStatus,
+    method: hasNoPaymentDetails ? 'belirlenmedi' : formData.paymentMethod,
+    amount: hasNoPaymentDetails ? 0 : parseAmount(formData.amount),
+    date: hasNoPaymentDetails ? null : formData.paymentDate
+  }
+
+  // Yalnızca bu formda değiştirilen alanlar gönderilir. Eskiden her kayıtta paket ve ödeme
+  // alanlarının tamamı yeniden yazılıyordu: yalnızca telefon düzeltilse bile, ekran açıkken
+  // başka bir yerde yapılan uzatma eski değerlerle eziliyordu.
+  const getChanges = () => {
+    if (!registration) return {}
+    const changes = {}
+
+    const studentName = formData.studentName.trim()
+    const parentName = formData.parentName.trim()
+    const age = formData.age.trim()
+    const note = formData.note.trim()
+
+    if (studentName !== (registration.student_name || '')) changes.student_name = studentName
+    if (parentName !== (registration.parent_name || '')) changes.parent_name = parentName
+    if (age !== (registration.student_age || '')) changes.student_age = age
+    if (note !== (registration.notes || '')) changes.notes = note
+
+    // Telefon yalnızca elle değiştirildiyse tek biçime getirilip gönderilir
+    if (formData.phone !== (registration.parent_phone || '')) {
+      const phone = normalizePhone(formData.phone)
+      if (phone !== registration.parent_phone) changes.parent_phone = phone
+    }
+
+    if (formData.packageType !== registration.package_type) changes.package_type = formData.packageType
+
+    // Ücretsiz katılımda paket tarihi ve ödeme alanları sorulmaz; sunucu sıfırlar
+    if (!isFree) {
+      if (!isSameInstant(dateRange[0].startDate, registration.package_start_date)) {
+        changes.package_start_date = dateRange[0].startDate.toISOString()
+      }
+      if (!isSameInstant(dateRange[0].endDate, registration.package_end_date)) {
+        changes.package_end_date = dateRange[0].endDate.toISOString()
+      }
+
+      if (formPayment.status !== registration.payment_status) changes.payment_status = formPayment.status
+      if (formPayment.method !== registration.payment_method) changes.payment_method = formPayment.method
+      if (formPayment.amount !== Number(registration.payment_amount)) changes.payment_amount = formPayment.amount
+      if (!isSameInstant(formPayment.date, registration.payment_date)) {
+        changes.payment_date = formPayment.date ? formPayment.date.toISOString() : null
+      }
+    }
+
+    return changes
+  }
+
+  const changes = getChanges()
+  const hasChanges = Object.keys(changes).length > 0
+  const packageChanged = ['package_type', 'package_start_date', 'package_end_date'].some(field => field in changes)
+  const paymentChanged = ['payment_status', 'payment_method', 'payment_amount', 'payment_date'].some(field => field in changes)
+
+  // Çok dersli pakette bitiş tarihi seçilmeden (tek günlük dönemle) kayıt yapılamaz. Yalnızca
+  // paket bu formda değiştirildiyse denetlenir: eski kayıtlardaki tek günlük dönem, isim ya da
+  // telefon düzeltmesini engellemesin.
+  const isMissingEndDate = !isFree && packageChanged &&
+    isMissingPeriodEnd(formData.packageType, dateRange[0].startDate, dateRange[0].endDate)
+
+  // Paket türü ile dönem uzunluğu birbirini tutmuyorsa hatırlatma (kaydetmeyi engellemez)
+  const periodTypeHint = isFree
+    ? null
+    : getPeriodTypeHint(formData.packageType, dateRange[0].startDate, dateRange[0].endDate, language)
+
+  // Tahsil edilmiş bir ödemenin tutarı, yeri ya da tarihi değişiyorsa bu kayıt, kayıtlı ödemenin
+  // YERİNE yazılır (yeni ödeme eklemez). Yeni dönemin ödemesi bu formdan girildiğinde bir
+  // önceki ödeme gelir kayıtlarından siliniyordu; bu yüzden kaydetmeden önce onay istenir.
+  const replacesPaidPayment = !isFree && !wasFree &&
+    registration?.payment_status === 'odendi' && paymentChanged
+
+  const formatPaymentMethod = (method) => {
+    const methods = {
+      banka: language === 'tr' ? 'Banka' : 'Bank',
+      nakit: language === 'tr' ? 'Nakit' : 'Cash',
+      kart: language === 'tr' ? 'Kredi Kartı' : 'Credit Card'
+    }
+    return methods[method] || method
+  }
+
+  // Onay metninde ödemenin kısa yazımı: "5.000 ₺ · Banka · 05.11.2026"
+  const describePayment = (status, method, amount, date) => {
+    if (status !== 'odendi') return language === 'tr' ? 'Beklemede' : 'Pending'
+    return [
+      `${formatMoney(amount)} ₺`,
+      formatPaymentMethod(method),
+      date ? formatDate(new Date(date)) : null
+    ].filter(Boolean).join(' · ')
+  }
 
   const isFormValid = () => {
     const hasIdentityFields = (
       formData.studentName.trim() !== '' &&
       formData.parentName.trim() !== '' &&
-      formData.phone.trim() !== '' &&
       formData.age.trim() !== '' &&
-      formData.packageType !== ''
+      formData.packageType !== '' &&
+      // Telefon yalnızca değiştirildiyse denetlenir: eski kayıttaki kısa numara diğer düzenlemeleri engellemesin
+      ('parent_phone' in changes ? isValidPhone(formData.phone) : formData.phone.trim() !== '')
     )
 
     // Ücretsiz katılımda ödeme alanları ve tarih aralığı istenmez
@@ -139,8 +251,8 @@ export default function UpdateModal({ isOpen, onClose, onSuccess, registration }
     // Temel validasyon (her durumda kontrol edilecek alanlar)
     const baseValidation = (
       hasIdentityFields &&
-      formData.paymentStatus !== '' &&
-      dateRange[0].startDate !== dateRange[0].endDate
+      (formData.paymentStatus === 'odendi' || formData.paymentStatus === 'beklemede') &&
+      !isMissingEndDate
     )
 
     // Eğer ödeme durumu "beklemede" ise ödeme detaylarını kontrol etme
@@ -152,7 +264,7 @@ export default function UpdateModal({ isOpen, onClose, onSuccess, registration }
     return (
       baseValidation &&
       formData.paymentMethod !== '' &&
-      formData.amount.trim() !== '' &&
+      isPositiveAmount(formData.amount) &&
       formData.paymentDate !== null // Ödeme tarihi seçilmiş olmalı
     )
   }
@@ -195,7 +307,7 @@ export default function UpdateModal({ isOpen, onClose, onSuccess, registration }
           paymentDate: null // Ödeme tarihi null olarak ayarlanır
         }
       }
-      
+
       // Eğer ödeme durumu "odendi" olarak değiştirilirse, ödeme yöntemini sıfırla
       // Bu kullanıcıyı açıkça bir ödeme yöntemi seçmeye zorlar
       if (name === 'paymentStatus' && value === 'odendi') {
@@ -206,7 +318,7 @@ export default function UpdateModal({ isOpen, onClose, onSuccess, registration }
           paymentDate: null  // Otomatik bugün atamayı kaldırdık
         }
       }
-      
+
       return {
         ...prev,
         [name]: value
@@ -214,130 +326,41 @@ export default function UpdateModal({ isOpen, onClose, onSuccess, registration }
     })
   }
 
+  // Alanı yazılırken düzeltir (baş harf büyütme, yalnızca rakam) ve imleci yerinde tutar
+  const handleTextChange = (field, transform) => (e) => {
+    changeKeepingCaret(e, transform, (value) => {
+      setFormData(prev => ({ ...prev, [field]: value }))
+    })
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!isFormValid()) return
+    if (!registration || isLoading || !isFormValid()) return
+
+    // Değişiklik yoksa istek göndermeden kapat
+    if (!hasChanges) {
+      onClose()
+      return
+    }
+
+    // Kayıtlı ödemenin üzerine yazılacaksa önce onay iste
+    if (replacesPaidPayment && !isConfirmingPaymentChange) {
+      setIsConfirmingPaymentChange(true)
+      return
+    }
 
     setIsLoading(true)
     try {
-      // Ücretsiz katılım / beklemede durumunda varsayılan değerler ata
-      const noPaymentDetails = isFree || formData.paymentStatus === 'beklemede'
-      const paymentMethod = noPaymentDetails ? 'belirlenmedi' : formData.paymentMethod
-      const paymentAmount = noPaymentDetails ? 0 : (parseFloat(formData.amount) || 0)
-      const paymentDate = noPaymentDetails ? null : formData.paymentDate
-
-      // Güncellenecek ana kayıt verileri
-      const updateData = {
-        student_name: formData.studentName.trim(),
-        student_age: formData.age.trim(),
-        parent_name: formData.parentName.trim(),
-        parent_phone: formData.phone.trim(),
-        package_type: formData.packageType,
-        package_start_date: dateRange[0].startDate,
-        package_end_date: dateRange[0].endDate,
-        payment_status: formData.paymentStatus,
-        payment_method: paymentMethod,
-        payment_amount: paymentAmount,
-        payment_date: paymentDate, // Ödeme beklemede/ücretsiz ise null
-        notes: formData.note.trim() || null
-      }
-
-      // Eğer ilk kayıt güncelleniyorsa (uzatma yoksa), initial_* alanlarını da ekle
-      if (registration.extension_count === 0) {
-        updateData.initial_package_type = formData.packageType // Gerekirse ilk paket tipi de güncellenebilir
-        updateData.initial_start_date = dateRange[0].startDate
-        updateData.initial_end_date = dateRange[0].endDate
-        updateData.initial_payment_method = paymentMethod
-        updateData.initial_payment_amount = paymentAmount
-        updateData.initial_notes = formData.note.trim() || null
-        // Not: initial_payment_date gibi bir alanınız yok, payment_date kullanılıyor
-      }
-
-      // 1. Ana kaydı güncelle (initial_* alanları dahil veya hariç)
-      const { data: updatedRegistrationData, error: updateRegError } = await supabase
-        .from('registrations')
-        .update(updateData)
-        .eq('id', registration.id)
-        .select() // Select the updated data to potentially get the latest financial record id if needed
-        .single(); // Assuming update returns the updated row
-
-      if (updateRegError) {
-        if (updateRegError.code === '23505' && updateRegError.details?.includes('parent_phone')) {
-          throw new Error(language === 'tr' 
-            ? 'Bu telefon numarası ile daha önce kayıt yapılmış!'
-            : 'This phone number has already been registered!'
-          )
-        }
-        throw updateRegError
-      }
-
-      // 2. İster ilk kayıt ister uzatma olsun, ilgili finansal kaydı güncelle.
-      // Ücretsiz katılımda finansal kayda HİÇ dokunulmaz: geçmişte tahsil edilen para
-      // gerçek gelirdir, sıfırlanmamalı (ayrıca 'ucretsiz' statüsü DB kısıtını ihlal eder).
-      const { data: latestFinancialRecord, error: findLatestError } = isFree
-        ? { data: null, error: null }
-        : await supabase
-            .from('financial_records')
-            .select('id')
-            .eq('registration_id', registration.id)
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .single();
-
-      if (findLatestError) {
-        // Hata varsa ama 'PGRST116' (No rows found) değilse logla, ama devam et.
-        if (findLatestError.code !== 'PGRST116') {
-          console.error("En son finansal kayıt bulunurken hata:", findLatestError);
-        } else {
-          // Finansal kayıt yok (ücretsizden ücretliye dönüşüm) → yeni kayıt oluştur,
-          // aksi halde bu gelir hiçbir yere yazılmazdı.
-          const { error: insertFinancialError } = await supabase
-            .from('financial_records')
-            .insert({
-              registration_id: registration.id,
-              transaction_type: 'initial_payment',
-              amount: paymentAmount,
-              payment_method: paymentMethod,
-              payment_status: formData.paymentStatus,
-              payment_date: paymentDate,
-              notes: formData.note.trim() || null
-            });
-
-          if (insertFinancialError) {
-            console.error("Finansal kayıt oluşturulurken hata:", insertFinancialError);
-            setToast({
-              visible: true,
-              message: language === 'tr' ? 'Finansal detaylar kaydedilirken hata oluştu.' : 'Error saving financial details.',
-              type: 'error'
-            });
-          }
-        }
-      } else if (latestFinancialRecord) {
-        // En son finansal kayıt bulunduysa, onu güncelle
-        const { error: updateFinancialError } = await supabase
-          .from('financial_records')
-          .update({
-            amount: paymentAmount,
-            payment_method: paymentMethod,
-            payment_status: formData.paymentStatus,
-            payment_date: paymentDate,
-            notes: formData.note.trim() || null
-            // transaction_type DOKUNULMUYOR!
-          })
-          .eq('id', latestFinancialRecord.id); // Bulunan ID ile güncelle
-
-        if (updateFinancialError) {
-          console.error("İlgili finansal kayıt güncellenirken hata:", updateFinancialError);
-          // Hata olursa işlemi geri almak zor olabilir, loglamak iyi bir başlangıç.
-          // Kullanıcıya kesinlikle bir hata mesajı gösterilmeli.
-          setToast({
-            visible: true,
-            message: language === 'tr' ? 'Finansal detaylar güncellenirken hata oluştu.' : 'Error updating financial details.',
-            type: 'error'
-          });
-          // Belki burada işlemi durdurmak/geri almak daha iyi olabilir ama şimdilik logla ve devam et.
-        }
-      }
+      // Kayıt, ödeme defteri ve en son uzatma satırı tek işlemde güncellenir
+      // (update_registration): biri başarısız olursa hiçbiri yazılmaz. Düzeltilen ödeme satırı
+      // sunucuda id ile bulunur ("en yeni satır" başka bir ödemeye ait olabiliyordu). Kayıt bu
+      // ekran açıkken başka bir yerde değiştiyse 'stale_registration' döner.
+      const { error } = await supabase.rpc('update_registration', {
+        p_registration_id: registration.id,
+        p_expected_updated_at: registration.updated_at,
+        p_changes: changes
+      })
+      if (error) throw error
 
       setToast({
         visible: true,
@@ -348,13 +371,37 @@ export default function UpdateModal({ isOpen, onClose, onSuccess, registration }
       onSuccess?.()
     } catch (error) {
       console.error('Kayıt güncellenirken hata:', error.message)
-      setToast({
-        visible: true,
-        message: error.message === 'Bu telefon numarası ile daha önce kayıt yapılmış!' || error.message === 'This phone number has already been registered!'
-          ? error.message 
-          : language === 'tr' ? 'Kayıt güncelleme sırasında hata oluştu' : 'An error occurred while updating the record',
-        type: 'error'
-      })
+
+      if (error.message === 'stale_registration') {
+        // Ekrandaki bilgi bayat: listeyi yenile ve formu kapat, eski bilgi geri yazılmasın
+        setToast({
+          visible: true,
+          message: language === 'tr'
+            ? 'Bu kayıt başka bir yerde değişmiş. Liste yenilendi, tekrar deneyin.'
+            : 'This record was changed elsewhere. The list was refreshed, please try again.',
+          type: 'error'
+        })
+        onClose()
+        onSuccess?.()
+        return
+      }
+
+      let message
+      if (isDuplicatePhoneError(error)) {
+        const owner = await findRegistrationByPhone(changes.parent_phone)
+        message = phoneInUseMessage(owner, language)
+      } else if (error.message === 'invalid_period') {
+        message = language === 'tr'
+          ? 'Bitiş tarihi başlangıç tarihinden önce olamaz.'
+          : 'The end date cannot be before the start date.'
+      } else {
+        message = language === 'tr'
+          ? 'Kayıt güncellenemedi, hiçbir değişiklik kaydedilmedi.'
+          : 'The record could not be updated; no changes were saved.'
+      }
+
+      setIsConfirmingPaymentChange(false)
+      setToast({ visible: true, message, type: 'error' })
     } finally {
       setIsLoading(false)
     }
@@ -416,16 +463,7 @@ export default function UpdateModal({ isOpen, onClose, onSuccess, registration }
                     type="text"
                     name="studentName"
                     value={formData.studentName}
-                    onChange={(e) => {
-                      const words = e.target.value.split(' ')
-                      const capitalizedWords = words.map(word => 
-                        word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
-                      )
-                      setFormData(prev => ({
-                        ...prev,
-                        studentName: capitalizedWords.join(' ')
-                      }))
-                    }}
+                    onChange={handleTextChange('studentName', capitalizeName)}
                     className={inputClasses}
                     placeholder={language === 'tr' ? "Öğrenci İsmi" : "Student Name"}
                     tabIndex={1}
@@ -442,16 +480,7 @@ export default function UpdateModal({ isOpen, onClose, onSuccess, registration }
                     type="text"
                     name="parentName"
                     value={formData.parentName}
-                    onChange={(e) => {
-                      const words = e.target.value.split(' ')
-                      const capitalizedWords = words.map(word => 
-                        word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
-                      )
-                      setFormData(prev => ({
-                        ...prev,
-                        parentName: capitalizedWords.join(' ')
-                      }))
-                    }}
+                    onChange={handleTextChange('parentName', capitalizeName)}
                     className={inputClasses}
                     placeholder={language === 'tr' ? "Ebeveyn İsmi" : "Parent Name"}
                     tabIndex={2}
@@ -468,18 +497,17 @@ export default function UpdateModal({ isOpen, onClose, onSuccess, registration }
                     type="tel"
                     name="phone"
                     value={formData.phone}
-                    onChange={(e) => {
-                      const value = e.target.value.replace(/\D/g, '')
-                      setFormData(prev => ({
-                        ...prev,
-                        phone: value
-                      }))
-                    }}
+                    onChange={handleTextChange('phone', phoneDigits)}
                     className={inputClasses}
                     placeholder={language === 'tr' ? "Telefon Numarası" : "Phone Number"}
                     tabIndex={3}
                     autoComplete="off"
                   />
+                  {'parent_phone' in changes && !isValidPhone(formData.phone) && (
+                    <p className="absolute left-1 top-full text-[11px] leading-4 text-[#6e6e73] dark:text-[#86868b]">
+                      {language === 'tr' ? 'Telefon numarası 10-15 haneli olmalı' : 'Phone number must be 10-15 digits'}
+                    </p>
+                  )}
                 </div>
 
                 {/* Yaş/Aylık */}
@@ -491,16 +519,7 @@ export default function UpdateModal({ isOpen, onClose, onSuccess, registration }
                     type="text"
                     name="age"
                     value={formData.age}
-                    onChange={(e) => {
-                      const words = e.target.value.split(' ')
-                      const capitalizedWords = words.map(word => 
-                        word.charAt(0).toUpperCase() + word.slice(1)
-                      )
-                      setFormData(prev => ({
-                        ...prev,
-                        age: capitalizedWords.join(' ')
-                      }))
-                    }}
+                    onChange={handleTextChange('age', capitalizeWords)}
                     className={inputClasses}
                     placeholder={language === 'tr' ? "Yaş/Aylık - Örn:24 Aylık / 2 Yaş" : "Age/Months - Ex:24 Months / 2 Years"}
                     tabIndex={4}
@@ -578,7 +597,7 @@ export default function UpdateModal({ isOpen, onClose, onSuccess, registration }
                   {isCalendarOpen && (
                     <div className="absolute z-50 mt-2">
                       <div className="p-4 bg-white dark:bg-[#1d1f2e] rounded-xl shadow-xl border border-[#d2d2d7] dark:border-[#424245]">
-                        <style jsx="true">
+                        <style>
                           {`
                             .rdrCalendarWrapper,
                             .rdrDateDisplayWrapper,
@@ -751,22 +770,17 @@ export default function UpdateModal({ isOpen, onClose, onSuccess, registration }
                     type="text"
                     name="amount"
                     value={formData.amount}
-                    onChange={handleInputChange}
-                    className={`${inputClasses} [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${formData.paymentStatus !== 'odendi' && 'opacity-50 cursor-not-allowed'}`}
-                    placeholder={language === 'tr' ? "0.00 ₺" : "0.00 ₺"}
+                    onChange={handleTextChange('amount', sanitizeAmountInput)}
+                    className={`${inputClasses} ${formData.paymentStatus !== 'odendi' && 'opacity-50 cursor-not-allowed'}`}
+                    placeholder="0 ₺"
+                    inputMode="decimal"
                     tabIndex={9}
                     autoComplete="off"
                     disabled={formData.paymentStatus !== 'odendi'}
-                    onKeyPress={(e) => {
-                      if (!/[\d.]/.test(e.key)) {
-                        e.preventDefault()
-                      }
-                      if (e.key === '.' && e.target.value.includes('.')) {
-                        e.preventDefault()
-                      }
-                    }}
-                    onWheel={(e) => e.target.blur()}
                   />
+                  {formData.paymentStatus === 'odendi' && (
+                    <AmountPreview value={formData.amount} language={language} />
+                  )}
                   {formData.paymentStatus !== 'odendi' && (
                     <div className="absolute -top-8 left-1/2 -translate-x-1/2 px-2 py-1 bg-gray-900 dark:bg-[#007AFF] text-white text-sm rounded-md opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap shadow-lg dark:shadow-[#007AFF]/20">
                       {language === 'tr' 
@@ -878,6 +892,19 @@ export default function UpdateModal({ isOpen, onClose, onSuccess, registration }
                 </div>
               </div>
 
+              {/* Paket dönemiyle ilgili hatırlatma - Full genişlikte */}
+              {isMissingEndDate ? (
+                <p className="md:col-span-2 px-1 text-xs leading-relaxed text-amber-700 dark:text-amber-400">
+                  {language === 'tr'
+                    ? 'Paketin bitiş tarihini de seçin. Aynı paket için ek ödeme (taksit) kaydedecekseniz dönemi değiştirmeyin: kartta Uzat → "Mevcut dönemi seç".'
+                    : 'Select the end date of the package as well. To record an extra payment for the same package, leave the period as it is: Extend → "Select current period".'}
+                </p>
+              ) : periodTypeHint ? (
+                <p className="md:col-span-2 px-1 text-xs leading-relaxed text-amber-700 dark:text-amber-400">
+                  {periodTypeHint}
+                </p>
+              ) : null}
+
               {/* Notlar - Şimdi full genişlikte */}
               <div className="md:col-span-2 relative">
                 <div className={iconWrapperClasses}>
@@ -887,13 +914,7 @@ export default function UpdateModal({ isOpen, onClose, onSuccess, registration }
                   type="text"
                   name="note"
                   value={formData.note}
-                  onChange={(e) => {
-                    const value = e.target.value
-                    setFormData(prev => ({
-                      ...prev,
-                      note: value.charAt(0).toUpperCase() + value.slice(1)
-                    }))
-                  }}
+                  onChange={handleTextChange('note', upperFirst)}
                   className={inputClasses}
                   placeholder={language === 'tr' ? "Not ekle..." : "Add note..."}
                   tabIndex={11}
@@ -901,16 +922,37 @@ export default function UpdateModal({ isOpen, onClose, onSuccess, registration }
                 />
               </div>
 
+              {/* Kayıtlı ödemenin değiştirilmesi için onay */}
+              {isConfirmingPaymentChange && (
+                <div className="md:col-span-2 rounded-xl bg-amber-50 dark:bg-amber-900/20 p-4 border border-amber-200 dark:border-amber-900/30">
+                  <p className="text-sm font-medium text-amber-900 dark:text-amber-100">
+                    {language === 'tr' ? 'Kayıtlı ödeme değişecek' : 'The recorded payment will change'}
+                  </p>
+                  <p className="mt-1 text-sm text-amber-800 dark:text-amber-200">
+                    {describePayment(registration?.payment_status, registration?.payment_method, registration?.payment_amount, registration?.payment_date)}
+                    {' → '}
+                    {describePayment(formPayment.status, formPayment.method, formPayment.amount, formPayment.date)}
+                  </p>
+                  <p className="mt-2 text-xs leading-relaxed text-amber-800 dark:text-amber-200">
+                    {language === 'tr'
+                      ? 'Bu işlem yeni bir ödeme eklemez, kayıtlı ödemenin yerine yazılır. Yeni dönemin ödemesi için karttaki "Uzat"ı kullanın.'
+                      : 'This does not add a new payment; it replaces the recorded one. For the next period\'s payment use "Extend" on the card.'}
+                  </p>
+                </div>
+              )}
+
               {/* Buttons */}
               <div className="md:col-span-2 grid grid-cols-2 gap-4 mt-2">
                 <button
                   type="button"
-                  onClick={onClose}
+                  onClick={isConfirmingPaymentChange ? () => setIsConfirmingPaymentChange(false) : onClose}
                   className="w-full h-11 bg-gray-100 dark:bg-[#1d1d1f] text-[#1d1d1f] dark:text-white font-medium rounded-xl hover:bg-gray-200 dark:hover:bg-[#161616] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-200 dark:focus:ring-[#2a2a2a] transition-all transform hover:scale-[1.01] active:scale-[0.98] disabled:opacity-50"
                   tabIndex={12}
                   disabled={isLoading}
                 >
-                  {language === 'tr' ? 'İptal' : 'Cancel'}
+                  {isConfirmingPaymentChange
+                    ? (language === 'tr' ? 'Vazgeç' : 'Go Back')
+                    : (language === 'tr' ? 'İptal' : 'Cancel')}
                 </button>
                 <button
                   type="submit"
@@ -926,6 +968,8 @@ export default function UpdateModal({ isOpen, onClose, onSuccess, registration }
                       </svg>
                       <span>{language === 'tr' ? 'Güncelleniyor' : 'Updating'}</span>
                     </>
+                  ) : isConfirmingPaymentChange ? (
+                    language === 'tr' ? 'Ödemeyi Değiştir' : 'Change Payment'
                   ) : (
                     language === 'tr' ? 'Güncelle' : 'Update'
                   )}

@@ -3,10 +3,17 @@ import { DateRange } from 'react-date-range'
 import { tr } from 'date-fns/locale'
 import 'react-date-range/dist/styles.css'
 import 'react-date-range/dist/theme/default.css'
-import { createClient } from '@supabase/supabase-js'
 import Toast from './ui/Toast'
+import AmountPreview from './ui/AmountPreview'
 import { useLanguage } from '../context/LanguageContext'
-import { 
+import { supabase } from '../lib/supabase'
+import { parseAmount, isPositiveAmount, sanitizeAmountInput } from '../lib/money'
+import { capitalizeName, capitalizeWords, upperFirst } from '../lib/text'
+import { phoneDigits, normalizePhone, isValidPhone } from '../lib/phone'
+import { changeKeepingCaret } from '../lib/caret'
+import { isMissingPeriodEnd, getPeriodTypeHint, toDayStart } from '../lib/packagePeriod'
+import { findRegistrationByPhone, phoneInUseMessage, isDuplicatePhoneError } from '../lib/registrationLookup'
+import {
   XMarkIcon,
   FaceSmileIcon,
   UsersIcon,
@@ -19,12 +26,6 @@ import {
   CurrencyDollarIcon,
   PencilSquareIcon
 } from '@heroicons/react/24/outline'
-
-// Supabase istemcisini oluştur
-const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY
-)
 
 // Başlangıç form verilerini sabit olarak tanımla
 const initialFormData = {
@@ -40,9 +41,11 @@ const initialFormData = {
   paymentDate: null // Varsayılan olarak null (tarih seçilmemiş)
 }
 
-const initialDateRange = [{
-  startDate: new Date(),
-  endDate: new Date(),
+// Takvimin açılış aralığı: bugün. Her açılışta yeniden üretilir; sabit bir değer olsaydı
+// sekmenin açıldığı an (saatiyle birlikte, sekme gece açık kaldıysa dünün tarihiyle) kalırdı.
+const makeDateRange = () => [{
+  startDate: toDayStart(new Date()),
+  endDate: toDayStart(new Date()),
   key: 'selection'
 }]
 
@@ -57,14 +60,17 @@ export default function RegisterModal({ isOpen, onClose, onSuccess }) {
     type: 'success'
   })
   const [formData, setFormData] = useState(initialFormData)
-  const [dateRange, setDateRange] = useState(initialDateRange)
+  const [dateRange, setDateRange] = useState(makeDateRange)
+  // Paket tarihi takvimden seçilmeden kayıt yapılamaz (hazır gelen "bugün" kaydedilmez)
+  const [datesPicked, setDatesPicked] = useState(false)
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
   const [isPaymentDatePickerOpen, setIsPaymentDatePickerOpen] = useState(false)
 
   // Form verilerini sıfırlama fonksiyonu
   const resetForm = () => {
     setFormData(initialFormData)
-    setDateRange(initialDateRange)
+    setDateRange(makeDateRange())
+    setDatesPicked(false)
     setIsCalendarOpen(false)
     setIsPaymentDatePickerOpen(false)
   }
@@ -107,11 +113,24 @@ export default function RegisterModal({ isOpen, onClose, onSuccess }) {
   // Ücretsiz katılım: ödeme ve paket tarihi sorulmaz
   const isFree = formData.packageType === 'ucretsiz'
 
+  // Çok dersli pakette bitiş tarihi de seçilmelidir; tek seferlik katılım tek gün olabilir.
+  // (Eski denetim iki Date nesnesini kimlik olarak karşılaştırıyordu: hiç tarih seçilmeden
+  // geçiyor, tek tıklamadan sonra ise tek seferlik katılımı bile engelliyordu.)
+  const isMissingEndDate = !isFree && datesPicked &&
+    isMissingPeriodEnd(formData.packageType, dateRange[0].startDate, dateRange[0].endDate)
+
+  // Paket türü ile dönem uzunluğu birbirini tutmuyorsa hatırlatma (kaydetmeyi engellemez)
+  const periodTypeHint = isFree || !datesPicked
+    ? null
+    : getPeriodTypeHint(formData.packageType, dateRange[0].startDate, dateRange[0].endDate, language)
+
+  const showPhoneHint = formData.phone !== '' && !isValidPhone(formData.phone)
+
   const isFormValid = () => {
     const hasIdentityFields = (
       formData.studentName.trim() !== '' &&
       formData.parentName.trim() !== '' &&
-      formData.phone.trim() !== '' &&
+      isValidPhone(formData.phone) &&
       formData.age.trim() !== '' &&
       formData.packageType !== ''
     )
@@ -125,7 +144,8 @@ export default function RegisterModal({ isOpen, onClose, onSuccess }) {
     const baseValidation = (
       hasIdentityFields &&
       formData.paymentStatus !== '' &&
-      dateRange[0].startDate !== dateRange[0].endDate
+      datesPicked &&
+      !isMissingEndDate
     )
 
     // Eğer ödeme durumu "beklemede" ise ödeme detaylarını kontrol etme
@@ -137,7 +157,7 @@ export default function RegisterModal({ isOpen, onClose, onSuccess }) {
     return (
       baseValidation &&
       formData.paymentMethod !== '' &&
-      formData.amount.trim() !== '' &&
+      isPositiveAmount(formData.amount) &&
       formData.paymentDate !== null // Ödeme tarihi seçilmiş olmalı
     )
   }
@@ -145,10 +165,10 @@ export default function RegisterModal({ isOpen, onClose, onSuccess }) {
   const handleInputChange = (e) => {
     const { name, value } = e.target
 
-    // Ücretsiz katılıma geçilirse tarih aralığını bugüne sabitle
-    // (iki ayrı Date nesnesi - aynı referans form geçerliliğini kilitler)
+    // Ücretsiz katılıma geçilirse tarih seçimi sıfırlanır (ücretli pakete dönülürse yeniden seçilir)
     if (name === 'packageType' && value === 'ucretsiz') {
-      setDateRange([{ startDate: new Date(), endDate: new Date(), key: 'selection' }])
+      setDateRange(makeDateRange())
+      setDatesPicked(false)
       setIsCalendarOpen(false)
     }
 
@@ -208,20 +228,29 @@ export default function RegisterModal({ isOpen, onClose, onSuccess }) {
     })
   }
 
+  // Alanı yazılırken düzeltir (baş harf büyütme, yalnızca rakam) ve imleci yerinde tutar
+  const handleTextChange = (field, transform) => (e) => {
+    changeKeepingCaret(e, transform, (value) => {
+      setFormData(prev => ({ ...prev, [field]: value }))
+    })
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!isFormValid()) return
+    if (!isFormValid() || isLoading) return
 
     setIsLoading(true)
+    const phone = normalizePhone(formData.phone)
     try {
       // Ücretsiz katılım / beklemede durumunda varsayılan değerler ata
       const noPaymentDetails = isFree || formData.paymentStatus === 'beklemede'
       const paymentMethod = noPaymentDetails ? 'belirlenmedi' : formData.paymentMethod
-      const paymentAmount = noPaymentDetails ? 0 : (parseFloat(formData.amount) || 0)
+      const paymentAmount = noPaymentDetails ? 0 : parseAmount(formData.amount)
 
+      // Takvimden gelen günler saat taşımaz (günün başı)
+      let packageStartDate = toDayStart(dateRange[0].startDate)
+      let packageEndDate = toDayStart(dateRange[0].endDate)
       // Ücretsizde paket tarihi anlamsız: kayıt gününü tam gün olarak sakla
-      let packageStartDate = dateRange[0].startDate
-      let packageEndDate = dateRange[0].endDate
       if (isFree) {
         packageStartDate = new Date()
         packageStartDate.setHours(0, 0, 0, 0)
@@ -229,61 +258,27 @@ export default function RegisterModal({ isOpen, onClose, onSuccess }) {
         packageEndDate.setHours(23, 59, 59, 999)
       }
 
-      // 1. Yeni kayıt oluştur
-      const { data, error } = await supabase
-        .from('registrations')
-        .insert([
-          {
-            student_name: formData.studentName.trim(),
-            student_age: formData.age.trim(),
-            parent_name: formData.parentName.trim(),
-            parent_phone: formData.phone.trim(),
-            package_type: formData.packageType,
-            package_start_date: packageStartDate,
-            package_end_date: packageEndDate,
-            payment_status: formData.paymentStatus,
-            payment_method: paymentMethod,
-            payment_amount: paymentAmount,
-            payment_date: noPaymentDetails ? null : formData.paymentDate,
-            notes: formData.note.trim() || null,
-            is_active: true,
-            // İlk kayıt bilgileri (trigger tarafından da kaydedilecek)
-            initial_package_type: formData.packageType,
-            initial_start_date: packageStartDate,
-            initial_end_date: packageEndDate,
-            initial_payment_method: paymentMethod,
-            initial_payment_amount: paymentAmount,
-            initial_notes: formData.note.trim() || null
-          }
-        ])
-        .select()
-
-      if (error) {
-        if (error.code === '23505' && error.details?.includes('parent_phone')) {
-          throw new Error(language === 'tr' 
-            ? 'Bu telefon numarası ile daha önce kayıt yapılmış!'
-            : 'This phone number has already been registered!'
-          )
+      // Kayıt ve ilk ödeme satırı tek işlemde yazılır (create_registration). Ayrı iki istekken
+      // ikincisi başarısız olduğunda öğrenci kaydı oluşuyor ama ödemesi gelir sayfasına
+      // düşmüyor, yeniden denemede de "bu telefon kayıtlı" hatası çıkıyordu.
+      // (İlk kayıt bilgilerini veritabanındaki tetikleyici doldurur.)
+      const { error } = await supabase.rpc('create_registration', {
+        p_data: {
+          student_name: formData.studentName.trim(),
+          student_age: formData.age.trim(),
+          parent_name: formData.parentName.trim(),
+          parent_phone: phone,
+          package_type: formData.packageType,
+          package_start_date: packageStartDate.toISOString(),
+          package_end_date: packageEndDate.toISOString(),
+          payment_status: formData.paymentStatus,
+          payment_method: paymentMethod,
+          payment_amount: paymentAmount,
+          payment_date: noPaymentDetails ? null : formData.paymentDate.toISOString(),
+          notes: formData.note.trim() || null
         }
-        throw error
-      }
-
-      // 2. Finansal kayıt oluştur (ücretsiz katılımda ödeme kaydı oluşturulmaz)
-      if (!isFree && data && data[0]) {
-        const { error: financialError } = await supabase
-          .from('financial_records')
-          .insert({
-            registration_id: data[0].id,
-            transaction_type: 'initial_payment',
-            amount: paymentAmount,
-            payment_method: paymentMethod,
-            payment_status: formData.paymentStatus,
-            payment_date: formData.paymentStatus === 'beklemede' ? null : formData.paymentDate,
-            notes: formData.note.trim() || null
-          })
-
-        if (financialError) throw financialError
-      }
+      })
+      if (error) throw error
 
       setToast({
         visible: true,
@@ -295,13 +290,19 @@ export default function RegisterModal({ isOpen, onClose, onSuccess }) {
       onSuccess?.()
     } catch (error) {
       console.error('Kayıt oluşturulurken hata:', error.message)
-      setToast({
-        visible: true,
-        message: error.message === 'Bu telefon numarası ile daha önce kayıt yapılmış!' || error.message === 'This phone number has already been registered!'
-          ? error.message
-          : language === 'tr' ? 'Kayıt oluşturma sırasında hata oluştu' : 'An error occurred while creating the record',
-        type: 'error'
-      })
+
+      let message
+      if (isDuplicatePhoneError(error)) {
+        // Numaranın hangi kayıtta (ve arşivde mi) olduğunu söyle
+        const owner = await findRegistrationByPhone(phone)
+        message = phoneInUseMessage(owner, language)
+      } else {
+        message = language === 'tr'
+          ? 'Kayıt oluşturulamadı, hiçbir şey kaydedilmedi.'
+          : 'The record could not be created; nothing was saved.'
+      }
+
+      setToast({ visible: true, message, type: 'error' })
     } finally {
       setIsLoading(false)
     }
@@ -315,7 +316,7 @@ export default function RegisterModal({ isOpen, onClose, onSuccess }) {
         isVisible={toast.visible}
         onClose={() => setToast(prev => ({ ...prev, visible: false }))}
       />
-      <style jsx="true">{`
+      <style>{`
         /* Cross-browser compatibility for select elements */
         select {
           -webkit-appearance: none;
@@ -418,16 +419,7 @@ export default function RegisterModal({ isOpen, onClose, onSuccess }) {
                     type="text"
                     name="studentName"
                     value={formData.studentName}
-                    onChange={(e) => {
-                      const words = e.target.value.split(' ')
-                      const capitalizedWords = words.map(word => 
-                        word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
-                      )
-                      setFormData(prev => ({
-                        ...prev,
-                        studentName: capitalizedWords.join(' ')
-                      }))
-                    }}
+                    onChange={handleTextChange('studentName', capitalizeName)}
                     className={inputClasses}
                     placeholder={language === 'tr' ? "Öğrenci İsmi" : "Student Name"}
                     tabIndex={1}
@@ -444,16 +436,7 @@ export default function RegisterModal({ isOpen, onClose, onSuccess }) {
                     type="text"
                     name="parentName"
                     value={formData.parentName}
-                    onChange={(e) => {
-                      const words = e.target.value.split(' ')
-                      const capitalizedWords = words.map(word => 
-                        word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
-                      )
-                      setFormData(prev => ({
-                        ...prev,
-                        parentName: capitalizedWords.join(' ')
-                      }))
-                    }}
+                    onChange={handleTextChange('parentName', capitalizeName)}
                     className={inputClasses}
                     placeholder={language === 'tr' ? "Ebeveyn İsmi" : "Parent Name"}
                     tabIndex={2}
@@ -470,18 +453,17 @@ export default function RegisterModal({ isOpen, onClose, onSuccess }) {
                     type="tel"
                     name="phone"
                     value={formData.phone}
-                    onChange={(e) => {
-                      const value = e.target.value.replace(/\D/g, '')
-                      setFormData(prev => ({
-                        ...prev,
-                        phone: value
-                      }))
-                    }}
+                    onChange={handleTextChange('phone', phoneDigits)}
                     className={inputClasses}
                     placeholder={language === 'tr' ? "Telefon Numarası" : "Phone Number"}
                     tabIndex={3}
                     autoComplete="off"
                   />
+                  {showPhoneHint && (
+                    <p className="absolute left-1 top-full text-[11px] leading-4 text-[#6e6e73] dark:text-[#86868b]">
+                      {language === 'tr' ? 'Telefon numarası 10-15 haneli olmalı' : 'Phone number must be 10-15 digits'}
+                    </p>
+                  )}
                 </div>
 
                 {/* Yaş/Aylık */}
@@ -493,16 +475,7 @@ export default function RegisterModal({ isOpen, onClose, onSuccess }) {
                     type="text"
                     name="age"
                     value={formData.age}
-                    onChange={(e) => {
-                      const words = e.target.value.split(' ')
-                      const capitalizedWords = words.map(word => 
-                        word.charAt(0).toUpperCase() + word.slice(1)
-                      )
-                      setFormData(prev => ({
-                        ...prev,
-                        age: capitalizedWords.join(' ')
-                      }))
-                    }}
+                    onChange={handleTextChange('age', capitalizeWords)}
                     className={inputClasses}
                     placeholder={language === 'tr' ? "Yaş/Aylık - Örn:24 Aylık / 2 Yaş" : "Age/Months - Ex:24 Months / 2 Years"}
                     tabIndex={4}
@@ -567,7 +540,9 @@ export default function RegisterModal({ isOpen, onClose, onSuccess }) {
                     placeholder={language === 'tr' ? "Kayıt Tarihi Seçin" : "Select Registration Date"}
                     value={isFree
                       ? (language === 'tr' ? "Süresiz" : "Unlimited")
-                      : `${formatDate(dateRange[0].startDate)} - ${formatDate(dateRange[0].endDate)}`}
+                      : datesPicked
+                        ? `${formatDate(dateRange[0].startDate)} - ${formatDate(dateRange[0].endDate)}`
+                        : ''}
                     onClick={() => { if (!isFree) setIsCalendarOpen(!isCalendarOpen) }}
                     readOnly
                     disabled={isFree}
@@ -658,6 +633,7 @@ export default function RegisterModal({ isOpen, onClose, onSuccess }) {
                         <DateRange
                           onChange={item => {
                             setDateRange([item.selection])
+                            setDatesPicked(true)
                             // Eğer bitiş tarihi seçildiyse ve başlangıç tarihinden farklıysa takvimi kapat
                             if (item.selection.endDate > item.selection.startDate) {
                               setIsCalendarOpen(false)
@@ -753,22 +729,17 @@ export default function RegisterModal({ isOpen, onClose, onSuccess }) {
                     type="text"
                     name="amount"
                     value={formData.amount}
-                    onChange={handleInputChange}
-                    className={`${inputClasses} [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${formData.paymentStatus !== 'odendi' && 'opacity-50 cursor-not-allowed'}`}
-                    placeholder={language === 'tr' ? "0.00 ₺" : "0.00 ₺"}
+                    onChange={handleTextChange('amount', sanitizeAmountInput)}
+                    className={`${inputClasses} ${formData.paymentStatus !== 'odendi' && 'opacity-50 cursor-not-allowed'}`}
+                    placeholder="0 ₺"
+                    inputMode="decimal"
                     tabIndex={9}
                     autoComplete="off"
                     disabled={formData.paymentStatus !== 'odendi'}
-                    onKeyPress={(e) => {
-                      if (!/[\d.]/.test(e.key)) {
-                        e.preventDefault()
-                      }
-                      if (e.key === '.' && e.target.value.includes('.')) {
-                        e.preventDefault()
-                      }
-                    }}
-                    onWheel={(e) => e.target.blur()}
                   />
+                  {formData.paymentStatus === 'odendi' && (
+                    <AmountPreview value={formData.amount} language={language} />
+                  )}
                   {formData.paymentStatus !== 'odendi' && (
                     <div className="absolute -top-8 left-1/2 -translate-x-1/2 px-2 py-1 bg-gray-900 dark:bg-[#007AFF] text-white text-sm rounded-md opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap shadow-lg dark:shadow-[#007AFF]/20">
                       {language === 'tr' 
@@ -880,6 +851,19 @@ export default function RegisterModal({ isOpen, onClose, onSuccess }) {
                 </div>
               </div>
 
+              {/* Paket dönemiyle ilgili hatırlatma - Full genişlikte */}
+              {isMissingEndDate ? (
+                <p className="md:col-span-2 px-1 text-xs leading-relaxed text-amber-700 dark:text-amber-400">
+                  {language === 'tr'
+                    ? 'Paketin bitiş tarihini de seçin.'
+                    : 'Select the end date of the package as well.'}
+                </p>
+              ) : periodTypeHint ? (
+                <p className="md:col-span-2 px-1 text-xs leading-relaxed text-amber-700 dark:text-amber-400">
+                  {periodTypeHint}
+                </p>
+              ) : null}
+
               {/* Notlar - Şimdi full genişlikte */}
               <div className="md:col-span-2 relative">
                 <div className={iconWrapperClasses}>
@@ -889,13 +873,7 @@ export default function RegisterModal({ isOpen, onClose, onSuccess }) {
                   type="text"
                   name="note"
                   value={formData.note}
-                  onChange={(e) => {
-                    const value = e.target.value
-                    setFormData(prev => ({
-                      ...prev,
-                      note: value.charAt(0).toUpperCase() + value.slice(1)
-                    }))
-                  }}
+                  onChange={handleTextChange('note', upperFirst)}
                   className={inputClasses}
                   placeholder={language === 'tr' ? "Not ekle..." : "Add note..."}
                   tabIndex={11}

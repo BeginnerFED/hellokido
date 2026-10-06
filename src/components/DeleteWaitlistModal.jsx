@@ -1,12 +1,7 @@
 import React, { useState } from 'react'
-import { createClient } from '@supabase/supabase-js'
+import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { XMarkIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline'
-
-const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY
-)
 
 export default function DeleteWaitlistModal({ isOpen, onClose, onSuccess, entry }) {
   const { language } = useLanguage()
@@ -16,12 +11,24 @@ export default function DeleteWaitlistModal({ isOpen, onClose, onSuccess, entry 
     setIsLoading(true)
 
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('waitlist')
         .delete()
         .eq('id', entry.id)
+        .select('id')
 
       if (error) throw error
+
+      // Hata yok ama silinen satır da yok: kayıt bu sırada başkası tarafından silinmiş
+      if (!data || data.length === 0) {
+        const goneMessage = language === 'tr'
+          ? 'Bu kayıt zaten silinmiş. Liste yenilendi.'
+          : 'This record had already been deleted. The list was refreshed.'
+
+        onSuccess?.(goneMessage, 'error', { refresh: true })
+        onClose()
+        return
+      }
 
       const successMessage = language === 'tr' 
         ? 'Kayıt başarıyla silindi.' 

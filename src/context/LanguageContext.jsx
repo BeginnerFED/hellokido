@@ -19,8 +19,7 @@ const translations = {
     remainingUsage: 'Kalan Kullanım',
     incomeExpense: 'Gelir/Gider',
     waitlist: 'Bekleme Listesi',
-    notes: 'Notlar',
-    ideaCenter: 'Fikir Merkezi'
+    notes: 'Notlar'
   },
   en: {
     home: 'Home',
@@ -39,8 +38,7 @@ const translations = {
     remainingUsage: 'Remaining Usage',
     incomeExpense: 'Income/Expense',
     waitlist: 'Waitlist',
-    notes: 'Notes',
-    ideaCenter: 'Idea Center'
+    notes: 'Notes'
   }
 };
 
@@ -50,14 +48,25 @@ export const useLanguage = () => useContext(LanguageContext);
 
 export const LanguageProvider = ({ children }) => {
   // localStorage'dan kayıtlı dili al, yoksa varsayılan olarak 'tr'
+  // (Kayıtlı değer tanınmıyorsa ya da depolama kullanılamıyorsa sayfa boş kalmasın: Türkçe)
   const [language, setLanguage] = useState(() => {
-    const savedLanguage = localStorage.getItem('language');
-    return savedLanguage || 'tr';
+    try {
+      const savedLanguage = localStorage.getItem('language');
+      return savedLanguage === 'en' || savedLanguage === 'tr' ? savedLanguage : 'tr';
+    } catch {
+      return 'tr';
+    }
   });
 
   // Dil değiştiğinde localStorage'a kaydet
   useEffect(() => {
-    localStorage.setItem('language', language);
+    try {
+      localStorage.setItem('language', language);
+    } catch {
+      // Depolama kullanılamıyor: dil yalnızca bu oturumda geçerli
+    }
+    // Sayfanın dili: büyük harfe çevrilen başlıklarda (CSS uppercase) i → İ dönüşümü buna bağlı
+    document.documentElement.lang = language;
   }, [language]);
 
   const toggleLanguage = () => {
@@ -65,7 +74,7 @@ export const LanguageProvider = ({ children }) => {
   };
 
   const t = (key) => {
-    return translations[language][key] || key;
+    return translations[language]?.[key] || key;
   };
 
   return (

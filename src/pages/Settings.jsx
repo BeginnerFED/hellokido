@@ -1,43 +1,52 @@
 import React from 'react';
-import { 
-  GlobeAltIcon,
+import {
   SunIcon,
   MoonIcon,
-  InformationCircleIcon
+  InformationCircleIcon,
+  LockClosedIcon
 } from '@heroicons/react/24/outline';
 import { useTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
+import AdminAccessCard from '../components/AdminAccessCard';
+
+// Kategori kartları içeren bileşen
+// (Bileşenin dışında tanımlı: içeride tanımlanınca her çizimde yeniden oluşturuluyor,
+// içindeki kartlar da durumlarını kaybedip baştan kuruluyordu.)
+const SettingCategory = ({ icon, title, children }) => (
+  <div className="mb-10">
+    <div className="flex items-center space-x-3 mb-6 pb-2">
+      <div className="p-1.5 rounded-md bg-gray-100 dark:bg-gray-800">
+        {icon}
+      </div>
+      <h3 className="text-lg font-medium text-[#1d1d1f] dark:text-white">{title}</h3>
+    </div>
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      {children}
+    </div>
+  </div>
+);
+
+// Ayar kartı bileşeni
+const SettingCard = ({ title, children }) => (
+  <div className="bg-white dark:bg-[#1a1f2e] rounded-xl p-6 shadow-sm border border-gray-100 dark:border-[#2a3241] hover:border-indigo-100 dark:hover:border-indigo-900/30 transition-all duration-300">
+    <div className="mb-4">
+      <h4 className="font-medium text-[#1d1d1f] dark:text-white">{title}</h4>
+    </div>
+    <div className="space-y-3">
+      {children}
+    </div>
+  </div>
+);
+
+// Yayındaki sürümün derlendiği gün (vite.config.js → __BUILD_DATE__, "YYYY-AA-GG")
+const formatBuildDate = (isoDay) => {
+  const [year, month, day] = String(isoDay).split('-');
+  return `${day}.${month}.${year}`;
+};
 
 const Settings = () => {
   const { isDark, toggleTheme } = useTheme();
   const { language, toggleLanguage, t } = useLanguage();
-
-  // Kategori kartları içeren bileşen
-  const SettingCategory = ({ icon, title, children }) => (
-    <div className="mb-10">
-      <div className="flex items-center space-x-3 mb-6 pb-2">
-        <div className="p-1.5 rounded-md bg-gray-100 dark:bg-gray-800">
-          {icon}
-        </div>
-        <h3 className="text-lg font-medium text-[#1d1d1f] dark:text-white">{title}</h3>
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {children}
-      </div>
-    </div>
-  );
-
-  // Ayar kartı bileşeni 
-  const SettingCard = ({ title, children }) => (
-    <div className="bg-white dark:bg-[#1a1f2e] rounded-xl p-6 shadow-sm border border-gray-100 dark:border-[#2a3241] hover:border-indigo-100 dark:hover:border-indigo-900/30 transition-all duration-300">
-      <div className="mb-4">
-        <h4 className="font-medium text-[#1d1d1f] dark:text-white">{title}</h4>
-      </div>
-      <div className="space-y-3">
-        {children}
-      </div>
-    </div>
-  );
 
   return (
     <div className="w-full">
@@ -50,14 +59,14 @@ const Settings = () => {
 
       {/* Settings Content */}
       <div className="px-6 py-6">
-        
+
           {/* Görünüm Ayarları Kategorisi */}
-          <SettingCategory 
-            icon={<SunIcon className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />} 
+          <SettingCategory
+            icon={<SunIcon className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />}
             title={language === 'tr' ? 'Görünüm Ayarları' : 'Appearance Settings'}
           >
             {/* Dil Seçimi Kartı */}
-            <SettingCard 
+            <SettingCard
               title={t('language')}
             >
               <div className="flex items-center justify-between">
@@ -68,7 +77,7 @@ const Settings = () => {
                   {language === 'tr' ? 'Türkçe' : 'English'}
                 </span>
               </div>
-              
+
               <div className="pt-3">
                 <button
                   onClick={toggleLanguage}
@@ -80,7 +89,7 @@ const Settings = () => {
             </SettingCard>
 
             {/* Tema Seçimi Kartı */}
-            <SettingCard 
+            <SettingCard
               title={t('theme')}
             >
               <div className="flex items-center justify-between">
@@ -88,14 +97,14 @@ const Settings = () => {
                   {language === 'tr' ? 'Aktif tema' : 'Active theme'}
                 </p>
                 <span className="text-sm font-medium text-gray-900 dark:text-white">
-                  {isDark 
-                    ? (language === 'tr' ? 'Koyu Tema' : 'Dark Theme') 
+                  {isDark
+                    ? (language === 'tr' ? 'Koyu Tema' : 'Dark Theme')
                     : (language === 'tr' ? 'Açık Tema' : 'Light Theme')}
                 </span>
               </div>
-              
+
               <div className="flex items-center justify-between mt-4">
-                <div 
+                <div
                   onClick={() => isDark && toggleTheme()}
                   className={`flex-1 py-2.5 px-3 mr-2 rounded-lg flex flex-col items-center ${!isDark ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800 border-2' : 'bg-gray-50 dark:bg-[#242b3d] border border-gray-200 dark:border-gray-700 cursor-pointer hover:bg-gray-100 dark:hover:bg-[#2d364a]'} transition-all duration-200`}
                 >
@@ -104,7 +113,7 @@ const Settings = () => {
                     {language === 'tr' ? 'Açık' : 'Light'}
                   </span>
                 </div>
-                <div 
+                <div
                   onClick={() => !isDark && toggleTheme()}
                   className={`flex-1 py-2.5 px-3 rounded-lg flex flex-col items-center ${isDark ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800 border-2' : 'bg-gray-50 dark:bg-[#242b3d] border border-gray-200 dark:border-gray-700 cursor-pointer hover:bg-gray-100 dark:hover:bg-[#2d364a]'} transition-all duration-200`}
                 >
@@ -117,26 +126,29 @@ const Settings = () => {
             </SettingCard>
           </SettingCategory>
 
+          {/* Erişim Kategorisi */}
+          <SettingCategory
+            icon={<LockClosedIcon className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />}
+            title={language === 'tr' ? 'Erişim' : 'Access'}
+          >
+            {/* Yönetim paneline girebilen hesaplar */}
+            <AdminAccessCard />
+          </SettingCategory>
+
           {/* Uygulama Bilgisi Kategorisi */}
-          <SettingCategory 
-            icon={<InformationCircleIcon className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />} 
+          <SettingCategory
+            icon={<InformationCircleIcon className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />}
             title={language === 'tr' ? 'Uygulama Bilgisi' : 'Application Information'}
           >
             {/* Versiyon Bilgisi Kartı */}
-            <SettingCard 
+            <SettingCard
               title={language === 'tr' ? 'Versiyon Bilgisi' : 'Version Information'}
             >
-              <div className="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-800">
-                <span className="text-sm text-gray-500 dark:text-gray-400">
-                  {language === 'tr' ? 'Uygulama Versiyonu' : 'Application Version'}
-                </span>
-                <span className="text-sm text-gray-900 dark:text-white font-medium px-2.5 py-1 bg-gray-100 dark:bg-gray-800 rounded">1.0.12</span>
-              </div>
               <div className="flex justify-between items-center py-2">
                 <span className="text-sm text-gray-500 dark:text-gray-400">
                   {language === 'tr' ? 'Son Güncelleme' : 'Last Update'}
                 </span>
-                <span className="text-sm text-gray-900 dark:text-white">05.07.2025</span>
+                <span className="text-sm text-gray-900 dark:text-white">{formatBuildDate(__BUILD_DATE__)}</span>
               </div>
             </SettingCard>
           </SettingCategory>
@@ -145,4 +157,4 @@ const Settings = () => {
   );
 };
 
-export default Settings; 
+export default Settings;

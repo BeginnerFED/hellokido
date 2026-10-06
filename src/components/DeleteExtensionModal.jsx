@@ -1,12 +1,8 @@
 import React, { useState } from 'react'
-import { createClient } from '@supabase/supabase-js'
+import { supabase } from '../lib/supabase'
+import { formatMoney } from '../lib/money'
 import { useLanguage } from '../context/LanguageContext'
 import { XMarkIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline'
-
-const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY
-)
 
 export default function DeleteExtensionModal({ isOpen, onClose, onSuccess, registration, extension, extensionIndex }) {
   const { language } = useLanguage()
@@ -21,8 +17,12 @@ export default function DeleteExtensionModal({ isOpen, onClose, onSuccess, regis
     })
   }
 
+  // Geçmiş paneli bayat kaldıysa listedeki uzatma başka bir öğrenciye ait olabilir;
+  // onay penceresi bir öğrencinin adını gösterirken diğerinin uzatması silinmesin.
+  const belongsToRegistration = !!extension?.id && extension.registration_id === registration?.id
+
   const handleDelete = async () => {
-    if (!extension?.id) return
+    if (!belongsToRegistration || isLoading) return
     setIsLoading(true)
 
     try {
@@ -49,7 +49,7 @@ export default function DeleteExtensionModal({ isOpen, onClose, onSuccess, regis
     }
   }
 
-  if (!isOpen) return null
+  if (!isOpen || !belongsToRegistration) return null
 
   return (
     <div className="fixed inset-0 z-[60] overflow-y-auto">
@@ -107,7 +107,7 @@ export default function DeleteExtensionModal({ isOpen, onClose, onSuccess, regis
               <div className="flex items-center justify-between text-sm text-[#6e6e73] dark:text-[#86868b]">
                 <span>{language === 'tr' ? 'Tutar:' : 'Amount:'}</span>
                 <span className="font-medium text-[#1d1d1f] dark:text-white">
-                  {extension?.payment_amount ?? 0} ₺
+                  {formatMoney(extension?.payment_amount)} ₺
                 </span>
               </div>
             </div>

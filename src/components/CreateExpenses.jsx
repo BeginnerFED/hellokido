@@ -1,7 +1,10 @@
-import React, { useState } from 'react'
-import { createClient } from '@supabase/supabase-js'
+import React, { useState, useEffect } from 'react'
+import { supabase } from '../lib/supabase'
+import { parseAmount, isPositiveAmount, sanitizeAmountInput } from '../lib/money'
+import { upperFirst } from '../lib/text'
 import { useLanguage } from '../context/LanguageContext'
 import Toast from './ui/Toast'
+import AmountPreview from './ui/AmountPreview'
 import DatePicker, { registerLocale } from 'react-datepicker'
 import { tr } from 'date-fns/locale'
 import "react-datepicker/dist/react-datepicker.css"
@@ -116,13 +119,34 @@ const datePickerStyles = `
   }
 `
 
-// Supabase istemcisini oluştur
-const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY
-)
+const inputClasses = "w-full h-[50px] pl-11 pr-4 py-3 rounded-xl border border-[#d2d2d7] dark:border-[#2a3241] bg-white dark:bg-[#121621] text-[#1d1d1f] dark:text-white focus:ring-2 focus:ring-[#0071e3] focus:border-transparent transition-all appearance-none"
+const iconClasses = "w-5 h-5 text-[#86868b] pointer-events-none flex-shrink-0"
+const iconWrapperClasses = "absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"
 
-export default function CreateExpenses({ isOpen, onClose, onSuccess }) {
+// DatePicker özel stil
+// (Bileşenin dışında tanımlı: içeride tanımlanınca her çizimde input yeniden oluşturuluyordu.)
+const DateInput = React.forwardRef(function DateInput({ value, onClick, placeholder }, ref) {
+  return (
+    <div className="relative w-full">
+      <div className={iconWrapperClasses}>
+        <CalendarDaysIcon className={iconClasses} />
+      </div>
+      <input
+        type="text"
+        ref={ref}
+        onClick={onClick}
+        value={value}
+        readOnly
+        className={`${inputClasses} cursor-pointer`}
+        placeholder={placeholder}
+      />
+    </div>
+  )
+})
+
+// visibleRange: sayfada seçili tarih aralığı ([başlangıç, bitiş]); kaydedilen gider bu
+// aralığın dışındaysa listede görünmeyeceği için bildirimde söylenir.
+export default function CreateExpenses({ isOpen, onClose, onSuccess, visibleRange }) {
   const { language } = useLanguage()
   const [isLoading, setIsLoading] = useState(false)
   const [toast, setToast] = useState({
@@ -153,13 +177,21 @@ export default function CreateExpenses({ isOpen, onClose, onSuccess }) {
     })
   }
 
+  // Pencere her açıldığında tarih bugüne ayarlanır. (Form sayfa yüklenirken kuruluyordu;
+  // sekme gece açık kaldıysa ertesi gün girilen ilk gider dünün tarihiyle hazır geliyordu.)
+  useEffect(() => {
+    if (isOpen) {
+      setFormData(prev => ({ ...prev, date: new Date() }))
+    }
+  }, [isOpen])
+
   // Form validasyonu
   const isFormValid = () => {
     return (
       formData.title.trim() !== '' &&
       formData.category !== '' &&
       formData.date !== null &&
-      formData.amount.trim() !== '' &&
+      isPositiveAmount(formData.amount) &&
       formData.paymentMethod !== ''
     )
   }
@@ -174,30 +206,42 @@ export default function CreateExpenses({ isOpen, onClose, onSuccess }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!isFormValid()) return
+    if (!isFormValid() || isLoading) return
 
     setIsLoading(true)
     try {
-      // Gider kaydı oluştur
+      // Gider kaydı oluştur (created_at / updated_at veritabanında kendiliğinden atanır)
       const { error } = await supabase
         .from('expenses')
         .insert({
           expense_type: formData.category,
-          amount: parseFloat(formData.amount),
+          amount: parseAmount(formData.amount),
           description: formData.title.trim(),
           expense_date: formData.date.toISOString(),
           payment_method: formData.paymentMethod,
-          notes: formData.notes.trim() || null,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
+          notes: formData.notes.trim() || null
         })
 
       if (error) throw error
 
+      // Kaydedilen gider seçili tarih aralığının dışındaysa listede görünmez; bunu söylemeyince
+      // "kaydedilmedi" sanılıp aynı gider ikinci kez giriliyordu.
+      const savedDate = formData.date
+      const [rangeStart, rangeEnd] = visibleRange || []
+      const isOutsideRange = Boolean(rangeStart && rangeEnd) && (
+        savedDate < new Date(rangeStart.getFullYear(), rangeStart.getMonth(), rangeStart.getDate()) ||
+        savedDate >= new Date(rangeEnd.getFullYear(), rangeEnd.getMonth(), rangeEnd.getDate() + 1)
+      )
+      const savedDay = savedDate.toLocaleDateString('tr-TR')
+
       // Toast mesajını göster
       setToast({
         visible: true,
-        message: language === 'tr' ? 'Gider kaydı başarıyla oluşturuldu.' : 'Expense record has been successfully created.',
+        message: isOutsideRange
+          ? (language === 'tr'
+            ? `Gider kaydedildi. Tarihi (${savedDay}) seçili aralığın dışında olduğu için listede görünmüyor.`
+            : `Expense saved. Its date (${savedDay}) is outside the selected range, so it is not shown in the list.`)
+          : (language === 'tr' ? 'Gider kaydı başarıyla oluşturuldu.' : 'Expense record has been successfully created.'),
         type: 'success'
       })
 
@@ -218,28 +262,6 @@ export default function CreateExpenses({ isOpen, onClose, onSuccess }) {
     }
   }
 
-  const inputClasses = "w-full h-[50px] pl-11 pr-4 py-3 rounded-xl border border-[#d2d2d7] dark:border-[#2a3241] bg-white dark:bg-[#121621] text-[#1d1d1f] dark:text-white focus:ring-2 focus:ring-[#0071e3] focus:border-transparent transition-all appearance-none"
-  const iconClasses = "w-5 h-5 text-[#86868b] pointer-events-none flex-shrink-0"
-  const iconWrapperClasses = "absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"
-
-  // DatePicker özel stil
-  const CustomInput = React.forwardRef(({ value, onClick }, ref) => (
-    <div className="relative w-full">
-      <div className={iconWrapperClasses}>
-        <CalendarDaysIcon className={iconClasses} />
-      </div>
-      <input
-        type="text"
-        ref={ref}
-        onClick={onClick}
-        value={value}
-        readOnly
-        className={`${inputClasses} cursor-pointer`}
-        placeholder={language === 'tr' ? "Tarih Seçin" : "Select Date"}
-      />
-    </div>
-  ))
-
   if (!isOpen) return (
     <Toast 
       message={toast.message}
@@ -252,7 +274,7 @@ export default function CreateExpenses({ isOpen, onClose, onSuccess }) {
   return (
     <>
       <style>{datePickerStyles}</style>
-      <style jsx="true">{`
+      <style>{`
         /* Cross-browser compatibility for select elements */
         select {
           -webkit-appearance: none;
@@ -366,7 +388,7 @@ export default function CreateExpenses({ isOpen, onClose, onSuccess }) {
                         const value = e.target.value
                         setFormData(prev => ({
                           ...prev,
-                          title: value.charAt(0).toUpperCase() + value.slice(1)
+                          title: upperFirst(value)
                         }))
                       }}
                       className={inputClasses}
@@ -382,7 +404,8 @@ export default function CreateExpenses({ isOpen, onClose, onSuccess }) {
                     onChange={(date) => setFormData(prev => ({ ...prev, date }))}
                     dateFormat="dd.MM.yyyy"
                     locale={language === 'tr' ? 'tr' : 'en'}
-                    customInput={<CustomInput />}
+                    customInput={<DateInput />}
+                    placeholderText={language === 'tr' ? "Tarih Seçin" : "Select Date"}
                   />
 
                   {/* Kategori */}
@@ -409,6 +432,9 @@ export default function CreateExpenses({ isOpen, onClose, onSuccess }) {
                       </option>
                       <option value="su" className="text-[#1d1d1f] dark:text-white bg-white dark:bg-[#1d1d1f]">
                         {language === 'tr' ? "Su" : "Water"}
+                      </option>
+                      <option value="dogalgaz" className="text-[#1d1d1f] dark:text-white bg-white dark:bg-[#1d1d1f]">
+                        {language === 'tr' ? "Doğalgaz" : "Natural Gas"}
                       </option>
                       <option value="internet" className="text-[#1d1d1f] dark:text-white bg-white dark:bg-[#1d1d1f]">
                         {language === 'tr' ? "İnternet" : "Internet"}
@@ -446,21 +472,15 @@ export default function CreateExpenses({ isOpen, onClose, onSuccess }) {
                       type="text"
                       name="amount"
                       value={formData.amount}
-                      onChange={handleInputChange}
-                      className={`${inputClasses} [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`}
-                      placeholder={language === 'tr' ? "0.00 ₺" : "0.00 ₺"}
+                      onChange={(e) => setFormData(prev => ({ ...prev, amount: sanitizeAmountInput(e.target.value) }))}
+                      className={inputClasses}
+                      placeholder="0 ₺"
+                      inputMode="decimal"
                       tabIndex={4}
                       autoComplete="off"
-                      onKeyPress={(e) => {
-                        if (!/[\d.]/.test(e.key)) {
-                          e.preventDefault()
-                        }
-                        if (e.key === '.' && e.target.value.includes('.')) {
-                          e.preventDefault()
-                        }
-                      }}
-                      onWheel={(e) => e.target.blur()}
                     />
+                    {/* Yazılan tutarın nasıl kaydedileceği ("4.450" → 4.450 ₺, "4,45" → 4,45 ₺) */}
+                    <AmountPreview value={formData.amount} language={language} />
                   </div>
 
                   {/* Ödeme Yöntemi */}
@@ -504,7 +524,7 @@ export default function CreateExpenses({ isOpen, onClose, onSuccess }) {
                         const value = e.target.value
                         setFormData(prev => ({
                           ...prev,
-                          notes: value.charAt(0).toUpperCase() + value.slice(1)
+                          notes: upperFirst(value)
                         }))
                       }}
                       className={inputClasses}

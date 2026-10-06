@@ -1,12 +1,33 @@
 <!doctype html>
-<html lang="en">
+<html lang="tr">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" media="(prefers-color-scheme: light)" />
     <link rel="icon" type="image/svg+xml" href="/favicon-dark.svg" media="(prefers-color-scheme: dark)" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link href="https://fonts.cdnfonts.com/css/euclid-circular-a" rel="stylesheet">
+    <!-- Yazı tipi sayfanın çizimini bekletmeden yüklenir: font sunucusu yavaşsa ya da
+         ulaşılamıyorsa sayfa sistem yazı tipiyle hemen açılır -->
+    <link rel="preconnect" href="https://fonts.cdnfonts.com" crossorigin>
+    <link href="https://fonts.cdnfonts.com/css/euclid-circular-a" rel="stylesheet" media="print" onload="this.media='all'">
+    <noscript><link href="https://fonts.cdnfonts.com/css/euclid-circular-a" rel="stylesheet"></noscript>
     <title>Hello Kido</title>
+    <script>
+      (function () {
+        var loc = window.location;
+        // "#/takvim" bağlantısındaki # işareti yolda bozulmuşsa (ör. ?fbclid=…%23/takvim) veliyi
+        // yönetici giriş ekranına değil takvime götür. (Yol olarak bozulanları 404.html yakalar.)
+        if (!loc.hash && /takvim/i.test(loc.pathname + loc.search)) {
+          loc.replace(loc.origin + '%BASE_URL%#/takvim');
+          return;
+        }
+        // Yönetim panelinde koyu tema seçiliyse ilk çizimden önce uygula (açık renk parlaması olmasın)
+        try {
+          if (localStorage.getItem('theme') === 'true' && !/takvim/i.test(loc.hash)) {
+            document.documentElement.classList.add('dark');
+          }
+        } catch (e) { /* depolama kullanılamıyor */ }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

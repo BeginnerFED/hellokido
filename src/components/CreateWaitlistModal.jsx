@@ -1,10 +1,14 @@
 import React, { useState, useEffect } from 'react'
-import { createClient } from '@supabase/supabase-js'
+import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
+import { capitalizeName, capitalizeWords, upperFirst } from '../lib/text'
+import { phoneDigits, isValidPhone } from '../lib/phone'
+import { changeKeepingCaret } from '../lib/caret'
+import { localDateKey } from '../lib/dates'
 import DatePicker, { registerLocale } from 'react-datepicker'
 import { tr } from 'date-fns/locale'
 import "react-datepicker/dist/react-datepicker.css"
-import { 
+import {
   XMarkIcon,
   FaceSmileIcon,
   UsersIcon,
@@ -19,10 +23,36 @@ import {
 // Türkçe lokalizasyonu kaydet
 registerLocale('tr', tr)
 
-const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY
-)
+const inputClasses = "w-full h-[46px] pl-11 pr-4 rounded-xl border border-[#e5e5e5] dark:border-[#2a3241] bg-white dark:bg-[#121621] text-[#1d1d1f] dark:text-white placeholder:text-[#86868b] focus:ring-2 focus:ring-[#0071e3] focus:border-transparent transition-all text-sm appearance-none"
+const iconClasses = "w-5 h-5 text-[#86868b] pointer-events-none flex-shrink-0"
+const iconWrapperClasses = "absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none z-10"
+
+// DatePicker özel stil
+// Bileşenin dışında tanımlı: içeride tanımlanınca her render'da input yeniden oluşturuluyordu.
+// onKeyDown iletilir ki Enter/Escape/ok tuşları takvime ulaşsın ve Enter formu göndermesin.
+// onFocus/onBlur bilerek iletilmez: iletilirse gün seçildikten sonra takvim yeniden açılabiliyor.
+const DateInput = React.forwardRef(function DateInput({ value, onClick, onKeyDown, placeholder }, ref) {
+  return (
+    <div className="relative w-full">
+      <div className={iconWrapperClasses}>
+        <CalendarDaysIcon className={iconClasses} />
+      </div>
+      <input
+        type="text"
+        ref={ref}
+        onClick={onClick}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') e.preventDefault()
+          onKeyDown?.(e)
+        }}
+        value={value}
+        readOnly
+        className={`${inputClasses} cursor-pointer`}
+        placeholder={placeholder}
+      />
+    </div>
+  )
+})
 
 export default function CreateWaitlistModal({ isOpen, onClose, onSuccess }) {
   const { language } = useLanguage()
@@ -43,9 +73,9 @@ export default function CreateWaitlistModal({ isOpen, onClose, onSuccess }) {
 
   // Form validasyonunu kontrol et
   useEffect(() => {
-    const isValid = 
+    const isValid =
       formData.parent_name.trim() !== '' &&
-      formData.parent_phone.trim() !== '' &&
+      isValidPhone(formData.parent_phone) &&
       formData.student_name.trim() !== '' &&
       formData.student_age.trim() !== '' &&
       formData.package_type !== '' &&
@@ -65,11 +95,18 @@ export default function CreateWaitlistModal({ isOpen, onClose, onSuccess }) {
     setIsLoading(true)
 
     try {
+      // Metinler kırpılır; contact_date yerel gün olarak yazılır (toISOString UTC gününü verir)
       const { error } = await supabase
         .from('waitlist')
         .insert([{
-          ...formData,
-          contact_date: formData.contact_date.toISOString().split('T')[0]
+          parent_name: formData.parent_name.trim(),
+          parent_phone: phoneDigits(formData.parent_phone),
+          student_name: formData.student_name.trim(),
+          student_age: formData.student_age.trim(),
+          package_type: formData.package_type,
+          contact_date: localDateKey(formData.contact_date),
+          status: formData.status,
+          notes: formData.notes.trim()
         }])
 
       if (error) throw error
@@ -101,27 +138,14 @@ export default function CreateWaitlistModal({ isOpen, onClose, onSuccess }) {
     }
   }
 
-  const inputClasses = "w-full h-[46px] pl-11 pr-4 rounded-xl border border-[#e5e5e5] dark:border-[#2a3241] bg-white dark:bg-[#121621] text-[#1d1d1f] dark:text-white placeholder:text-[#86868b] focus:ring-2 focus:ring-[#0071e3] focus:border-transparent transition-all text-sm appearance-none"
-  const iconClasses = "w-5 h-5 text-[#86868b] pointer-events-none flex-shrink-0"
-  const iconWrapperClasses = "absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none z-10"
+  // Alanı yazılırken düzeltir (baş harf büyütme, yalnızca rakam) ve imleci yerinde tutar
+  const handleTextChange = (field, transform) => (e) => {
+    changeKeepingCaret(e, transform, (value) => {
+      setFormData(prev => ({ ...prev, [field]: value }))
+    })
+  }
 
-  // DatePicker özel stil
-  const CustomInput = React.forwardRef(({ value, onClick }, ref) => (
-    <div className="relative w-full">
-      <div className={iconWrapperClasses}>
-        <CalendarDaysIcon className={iconClasses} />
-      </div>
-      <input
-        type="text"
-        ref={ref}
-        onClick={onClick}
-        value={value}
-        readOnly
-        className={`${inputClasses} cursor-pointer`}
-        placeholder={language === 'tr' ? "Tarih Seçin" : "Select Date"}
-      />
-    </div>
-  ))
+  const showPhoneHint = formData.parent_phone !== '' && !isValidPhone(formData.parent_phone)
 
   if (!isOpen) return null
 
@@ -204,9 +228,8 @@ export default function CreateWaitlistModal({ isOpen, onClose, onSuccess }) {
             font-weight: 500;
           }
           .react-datepicker__day--keyboard-selected {
-            background-color: #0071e3;
-            color: white;
-            font-weight: 500;
+            background-color: transparent;
+            box-shadow: inset 0 0 0 1.5px #0071e3;
           }
           .react-datepicker__day--outside-month {
             color: #86868b;
@@ -240,7 +263,7 @@ export default function CreateWaitlistModal({ isOpen, onClose, onSuccess }) {
           }
         `}
       </style>
-      <style jsx>{`
+      <style>{`
         /* Cross-browser compatibility for select elements */
         select {
           -webkit-appearance: none;
@@ -343,16 +366,7 @@ export default function CreateWaitlistModal({ isOpen, onClose, onSuccess }) {
                     type="text"
                     required
                     value={formData.parent_name}
-                    onChange={(e) => {
-                      const words = e.target.value.split(' ')
-                      const capitalizedWords = words.map(word => 
-                        word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
-                      )
-                      setFormData(prev => ({
-                        ...prev,
-                        parent_name: capitalizedWords.join(' ')
-                      }))
-                    }}
+                    onChange={handleTextChange('parent_name', capitalizeName)}
                     className={inputClasses}
                     placeholder={language === 'tr' ? "Veli İsmi" : "Parent Name"}
                     tabIndex={1}
@@ -369,18 +383,17 @@ export default function CreateWaitlistModal({ isOpen, onClose, onSuccess }) {
                     type="tel"
                     required
                     value={formData.parent_phone}
-                    onChange={(e) => {
-                      const value = e.target.value.replace(/\D/g, '')
-                      setFormData(prev => ({
-                        ...prev,
-                        parent_phone: value
-                      }))
-                    }}
+                    onChange={handleTextChange('parent_phone', phoneDigits)}
                     className={inputClasses}
                     placeholder={language === 'tr' ? "Telefon Numarası" : "Phone Number"}
                     tabIndex={2}
                     autoComplete="off"
                   />
+                  {showPhoneHint && (
+                    <p className="absolute left-1 top-full text-[11px] leading-4 text-[#6e6e73] dark:text-[#86868b]">
+                      {language === 'tr' ? 'Telefon numarası 10-15 haneli olmalı' : 'Phone number must be 10-15 digits'}
+                    </p>
+                  )}
                 </div>
 
                 {/* Çocuk Adı */}
@@ -392,16 +405,7 @@ export default function CreateWaitlistModal({ isOpen, onClose, onSuccess }) {
                     type="text"
                     required
                     value={formData.student_name}
-                    onChange={(e) => {
-                      const words = e.target.value.split(' ')
-                      const capitalizedWords = words.map(word => 
-                        word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
-                      )
-                      setFormData(prev => ({
-                        ...prev,
-                        student_name: capitalizedWords.join(' ')
-                      }))
-                    }}
+                    onChange={handleTextChange('student_name', capitalizeName)}
                     className={inputClasses}
                     placeholder={language === 'tr' ? "Öğrenci İsmi" : "Student Name"}
                     tabIndex={3}
@@ -418,16 +422,7 @@ export default function CreateWaitlistModal({ isOpen, onClose, onSuccess }) {
                     type="text"
                     required
                     value={formData.student_age}
-                    onChange={(e) => {
-                      const words = e.target.value.split(' ')
-                      const capitalizedWords = words.map(word => 
-                        word.charAt(0).toUpperCase() + word.slice(1)
-                      )
-                      setFormData(prev => ({
-                        ...prev,
-                        student_age: capitalizedWords.join(' ')
-                      }))
-                    }}
+                    onChange={handleTextChange('student_age', capitalizeWords)}
                     className={inputClasses}
                     placeholder={language === 'tr' ? "Yaş/Aylık - Örn:24 Aylık / 2 Yaş" : "Age/Months - Ex:24 Months / 2 Years"}
                     tabIndex={4}
@@ -487,11 +482,9 @@ export default function CreateWaitlistModal({ isOpen, onClose, onSuccess }) {
                   onChange={(date) => setFormData(prev => ({ ...prev, contact_date: date }))}
                   dateFormat="dd.MM.yyyy"
                   locale={language === 'tr' ? 'tr' : 'en'}
-                  customInput={<CustomInput />}
-                  minDate={new Date('2024-01-01')}
-                  maxDate={new Date('2025-12-31')}
+                  customInput={<DateInput />}
+                  placeholderText={language === 'tr' ? "Tarih Seçin" : "Select Date"}
                   showPopperArrow={false}
-                  required
                 />
 
                 {/* Durum */}
@@ -527,13 +520,7 @@ export default function CreateWaitlistModal({ isOpen, onClose, onSuccess }) {
                   <input
                     type="text"
                     value={formData.notes}
-                    onChange={(e) => {
-                      const value = e.target.value
-                      setFormData(prev => ({
-                        ...prev,
-                        notes: value.charAt(0).toUpperCase() + value.slice(1)
-                      }))
-                    }}
+                    onChange={handleTextChange('notes', upperFirst)}
                     className={inputClasses}
                     placeholder={language === 'tr' ? "Not ekle..." : "Add note..."}
                     tabIndex={8}

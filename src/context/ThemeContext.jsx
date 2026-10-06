@@ -6,14 +6,22 @@ export const useTheme = () => useContext(ThemeContext);
 
 export const ThemeProvider = ({ children }) => {
   // localStorage'dan kayıtlı temayı al, yoksa varsayılan olarak false (light mode)
+  // (Kayıtlı değer bozuksa ya da depolama kullanılamıyorsa sayfa boş kalmasın: açık tema)
   const [isDark, setIsDark] = useState(() => {
-    const savedTheme = localStorage.getItem('theme');
-    return savedTheme ? JSON.parse(savedTheme) : false;
+    try {
+      return localStorage.getItem('theme') === 'true';
+    } catch {
+      return false;
+    }
   });
 
   // Tema değiştiğinde localStorage'a kaydet
   useEffect(() => {
-    localStorage.setItem('theme', JSON.stringify(isDark));
+    try {
+      localStorage.setItem('theme', JSON.stringify(isDark));
+    } catch {
+      // Depolama kullanılamıyor: tema yalnızca bu oturumda geçerli
+    }
     // HTML elementine dark class'ını ekle/çıkar
     if (isDark) {
       document.documentElement.classList.add('dark');

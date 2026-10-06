@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react'
-import { createClient } from '@supabase/supabase-js'
+import { supabase } from '../lib/supabase'
+import { parseAmount, isPositiveAmount, sanitizeAmountInput, formatAmountForInput } from '../lib/money'
+import { upperFirst } from '../lib/text'
+import AmountPreview from './ui/AmountPreview'
 import { useLanguage } from '../context/LanguageContext'
 import DatePicker, { registerLocale } from 'react-datepicker'
 import { tr } from 'date-fns/locale'
@@ -115,11 +118,30 @@ const datePickerStyles = `
   }
 `
 
-// Supabase istemcisini oluştur
-const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY
-)
+const inputClasses = "w-full h-[50px] pl-11 pr-4 py-3 rounded-xl border border-[#d2d2d7] dark:border-[#2a3241] bg-white dark:bg-[#121621] text-[#1d1d1f] dark:text-white focus:ring-2 focus:ring-[#0071e3] focus:border-transparent transition-all"
+const iconClasses = "w-5 h-5 text-[#86868b]"
+const iconWrapperClasses = "absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"
+
+// DatePicker özel input
+// (Bileşenin dışında tanımlı: içeride tanımlanınca her çizimde input yeniden oluşturuluyordu.)
+const DateInput = React.forwardRef(function DateInput({ value, onClick, placeholder }, ref) {
+  return (
+    <div className="relative w-full">
+      <div className={iconWrapperClasses}>
+        <CalendarDaysIcon className={iconClasses} />
+      </div>
+      <input
+        type="text"
+        ref={ref}
+        onClick={onClick}
+        value={value}
+        readOnly
+        className={`${inputClasses} cursor-pointer`}
+        placeholder={placeholder}
+      />
+    </div>
+  )
+})
 
 export default function UpdateExpensesModal({ isOpen, onClose, expense, onUpdate }) {
   const { language } = useLanguage()
@@ -139,65 +161,60 @@ export default function UpdateExpensesModal({ isOpen, onClose, expense, onUpdate
       setFormData({
         title: expense.title || '',
         category: expense.category || '',
-        amount: expense.amount || '',
+        amount: formatAmountForInput(expense.amount),
         payment_method: expense.method || '',
         notes: expense.notes || '',
         expense_date: expense.date ? new Date(expense.date) : new Date()
       })
+      // Önceki satırdan kalan hata mesajı yeni açılan pencerede görünmesin
+      setError(null)
     }
   }, [expense])
 
+  const isFormValid = formData.title.trim() !== '' &&
+    formData.category !== '' &&
+    formData.payment_method !== '' &&
+    formData.expense_date !== null &&
+    isPositiveAmount(formData.amount)
+
   const handleSubmit = async (e) => {
     e.preventDefault()
+    if (!expense || !isFormValid || isLoading) return
+
     setIsLoading(true)
     setError(null)
 
     try {
+      // updated_at veritabanında kendiliğinden güncellenmez; değişiklik anı burada yazılır
       const { data, error: updateError } = await supabase
         .from('expenses')
         .update({
           description: formData.title.trim(),
           expense_type: formData.category,
-          amount: parseFloat(formData.amount),
+          amount: parseAmount(formData.amount),
           payment_method: formData.payment_method,
           notes: formData.notes.trim() || null,
           expense_date: formData.expense_date.toISOString(),
           updated_at: new Date().toISOString()
         })
         .eq('id', expense.id)
+        .select('id')
 
       if (updateError) throw updateError
+      // Hata yok ama güncellenen satır da yok: kayıt bu sırada silinmiş (ya da yetki yok)
+      if (!data || data.length === 0) throw new Error('no_rows_updated')
 
       onUpdate()
       onClose()
     } catch (err) {
-      setError(err.message)
+      console.error('Gider güncellenirken hata:', err.message)
+      setError(err.message === 'no_rows_updated'
+        ? (language === 'tr' ? 'Kayıt bulunamadı; silinmiş olabilir. Sayfayı yenileyin.' : 'The record was not found; it may have been deleted. Refresh the page.')
+        : (language === 'tr' ? 'Gider güncellenemedi, lütfen tekrar deneyin.' : 'The expense could not be updated, please try again.'))
     } finally {
       setIsLoading(false)
     }
   }
-
-  const inputClasses = "w-full h-[50px] pl-11 pr-4 py-3 rounded-xl border border-[#d2d2d7] dark:border-[#2a3241] bg-white dark:bg-[#121621] text-[#1d1d1f] dark:text-white focus:ring-2 focus:ring-[#0071e3] focus:border-transparent transition-all"
-  const iconClasses = "w-5 h-5 text-[#86868b]"
-  const iconWrapperClasses = "absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"
-
-  // DatePicker özel input
-  const CustomInput = React.forwardRef(({ value, onClick }, ref) => (
-    <div className="relative w-full">
-      <div className={iconWrapperClasses}>
-        <CalendarDaysIcon className={iconClasses} />
-      </div>
-      <input
-        type="text"
-        ref={ref}
-        onClick={onClick}
-        value={value}
-        readOnly
-        className={`${inputClasses} cursor-pointer`}
-        placeholder={language === 'tr' ? "Tarih Seçin" : "Select Date"}
-      />
-    </div>
-  ))
 
   if (!isOpen) return null
 
@@ -251,7 +268,7 @@ export default function UpdateExpensesModal({ isOpen, onClose, expense, onUpdate
                         const value = e.target.value
                         setFormData(prev => ({
                           ...prev,
-                          title: value.charAt(0).toUpperCase() + value.slice(1)
+                          title: upperFirst(value)
                         }))
                       }}
                       className={inputClasses}
@@ -266,7 +283,8 @@ export default function UpdateExpensesModal({ isOpen, onClose, expense, onUpdate
                     onChange={(date) => setFormData(prev => ({ ...prev, expense_date: date }))}
                     dateFormat="dd.MM.yyyy"
                     locale={language === 'tr' ? 'tr' : 'en'}
-                    customInput={<CustomInput />}
+                    customInput={<DateInput />}
+                    placeholderText={language === 'tr' ? "Tarih Seçin" : "Select Date"}
                   />
 
                   {/* Kategori */}
@@ -291,6 +309,9 @@ export default function UpdateExpensesModal({ isOpen, onClose, expense, onUpdate
                       </option>
                       <option value="su" className="text-[#1d1d1f] dark:text-white bg-white dark:bg-[#1d1d1f]">
                         {language === 'tr' ? "Su" : "Water"}
+                      </option>
+                      <option value="dogalgaz" className="text-[#1d1d1f] dark:text-white bg-white dark:bg-[#1d1d1f]">
+                        {language === 'tr' ? "Doğalgaz" : "Natural Gas"}
                       </option>
                       {formData.category === 'dogalgaz' && (
                         <option value="dogalgaz" className="text-[#1d1d1f] dark:text-white bg-white dark:bg-[#1d1d1f]">
@@ -332,20 +353,14 @@ export default function UpdateExpensesModal({ isOpen, onClose, expense, onUpdate
                     <input
                       type="text"
                       value={formData.amount}
-                      onChange={(e) => setFormData(prev => ({ ...prev, amount: e.target.value }))}
-                      className={`${inputClasses} [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`}
-                      placeholder={language === 'tr' ? "0.00 ₺" : "0.00 ₺"}
+                      onChange={(e) => setFormData(prev => ({ ...prev, amount: sanitizeAmountInput(e.target.value) }))}
+                      className={inputClasses}
+                      placeholder="0 ₺"
+                      inputMode="decimal"
                       required
-                      onKeyPress={(e) => {
-                        if (!/[\d.]/.test(e.key)) {
-                          e.preventDefault()
-                        }
-                        if (e.key === '.' && e.target.value.includes('.')) {
-                          e.preventDefault()
-                        }
-                      }}
-                      onWheel={(e) => e.target.blur()}
                     />
+                    {/* Yazılan tutarın nasıl kaydedileceği ("4.450" → 4.450 ₺, "4,45" → 4,45 ₺) */}
+                    <AmountPreview value={formData.amount} language={language} />
                   </div>
 
                   {/* Ödeme Yöntemi */}
@@ -386,7 +401,7 @@ export default function UpdateExpensesModal({ isOpen, onClose, expense, onUpdate
                         const value = e.target.value
                         setFormData(prev => ({
                           ...prev,
-                          notes: value.charAt(0).toUpperCase() + value.slice(1)
+                          notes: upperFirst(value)
                         }))
                       }}
                       className={inputClasses}
@@ -416,7 +431,7 @@ export default function UpdateExpensesModal({ isOpen, onClose, expense, onUpdate
                 <button
                   type="submit"
                   className="w-full h-11 bg-[#1d1d1f] dark:bg-[#0071e3] text-white font-medium rounded-xl hover:bg-black dark:hover:bg-[#0077ed] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#0071e3] transition-all transform hover:scale-[1.01] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                  disabled={isLoading}
+                  disabled={isLoading || !isFormValid}
                 >
                   {isLoading ? (
                     <>

@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { supabase } from '../lib/supabase'
-import { useNavigate } from 'react-router-dom'
+import { supabase, setRememberSession } from '../lib/supabase'
+import { useNavigate, useLocation, Navigate } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
 import { FaChild } from 'react-icons/fa'
 import { EnvelopeIcon, LockClosedIcon } from '@heroicons/react/24/outline'
 
@@ -19,6 +20,7 @@ const translateError = (error) => {
     'Email is required': 'Email gerekli',
     'Something went wrong': 'Bir hata oluştu',
     'Network error': 'Bağlantı hatası',
+    'Failed to fetch': 'Sunucuya ulaşılamadı, internet bağlantınızı kontrol edin',
     'Server error': 'Sunucu hatası',
     'Too many requests': 'Çok fazla deneme yapıldı, lütfen daha sonra tekrar deneyin',
     'Invalid or expired token': 'Geçersiz veya süresi dolmuş token',
@@ -33,31 +35,43 @@ export default function Login() {
   const [loading, setLoading] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [rememberMe, setRememberMe] = useState(false)
+  // İşaretli: oturum tarayıcı kapatılsa da sürer (bugüne kadarki davranış).
+  // İşaret kaldırılırsa oturum yalnızca bu sekme açıkken geçerlidir.
+  const [rememberMe, setRememberMe] = useState(true)
   const [error, setError] = useState(null)
   const navigate = useNavigate()
+  const location = useLocation()
+  const { user } = useAuth()
+
+  // Giriş öncesinde istenen sayfa (ör. yer imi); yoksa anasayfa
+  const returnTo = location.state?.from?.pathname || '/'
 
   const handleLogin = async (e) => {
     e.preventDefault()
     try {
       setLoading(true)
       setError(null)
-      
-      const { data, error } = await supabase.auth.signInWithPassword({
+
+      // Tercih, oturum kaydedilmeden önce yazılmalı (bkz. lib/supabase.js)
+      setRememberSession(rememberMe)
+
+      const { error } = await supabase.auth.signInWithPassword({
         email,
-        password,
-        options: {
-          persistSession: rememberMe
-        }
+        password
       })
-      
+
       if (error) throw error
-      navigate('/')
+      navigate(returnTo, { replace: true })
     } catch (error) {
       setError(translateError(error.message))
     } finally {
       setLoading(false)
     }
+  }
+
+  // Zaten giriş yapılmışsa giriş formu yeniden gösterilmez
+  if (user && !loading) {
+    return <Navigate to={returnTo} replace />
   }
 
   return (

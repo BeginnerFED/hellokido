@@ -1,8 +1,13 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import RegisterModal from '../components/RegisterModal'
 import UpdateModal from '../components/UpdateModal'
 import ExtendModal from '../components/ExtendModal'
-import { createClient } from '@supabase/supabase-js'
+import { supabase } from '../lib/supabase'
+import { fetchAllRows } from '../lib/fetchAll'
+import { matchesSearch } from '../lib/text'
+import { phoneDigits } from '../lib/phone'
+import { formatMoney } from '../lib/money'
+import { resolveExtensionHistory } from '../lib/extensionHistory'
 import Masonry from 'react-masonry-css'
 import { useLanguage } from '../context/LanguageContext'
 import { 
@@ -28,12 +33,6 @@ import DeleteRegisterModal from '../components/DeleteRegisterModal'
 import DeleteExtensionModal from '../components/DeleteExtensionModal'
 import Toast from '../components/ui/Toast'
 
-// Supabase istemcisini oluştur
-const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY
-)
-
 export default function Registration() {
   const { language } = useLanguage()
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -44,6 +43,10 @@ export default function Registration() {
   const [registrations, setRegistrations] = useState([])
   const [searchTerm, setSearchTerm] = useState('')
   const [isLoading, setIsLoading] = useState(true)
+  const [loadFailed, setLoadFailed] = useState(false)
+  // Art arda gönderilen isteklerden yalnızca sonuncusunun yanıtı kullanılır
+  const listRequestRef = useRef(0)
+  const historyRequestRef = useRef(0)
   const [filters, setFilters] = useState({
     paymentStatus: '',
     packageType: '',
@@ -71,20 +74,32 @@ export default function Registration() {
 
   // Kayıtları getir
   const fetchRegistrations = async () => {
+    const requestId = ++listRequestRef.current
     setIsLoading(true)
     try {
-      const { data, error } = await supabase
+      const data = await fetchAllRows(() => supabase
         .from('registrations')
         .select('*')
         .eq('is_active', !filters.showArchived)
         .order('created_at', { ascending: false })
+        .order('id', { ascending: true }))
 
-      if (error) throw error
+      // Bu sırada yeni bir istek gönderildiyse eski yanıt yok sayılır
+      if (requestId !== listRequestRef.current) return
+
       setRegistrations(data)
+      setLoadFailed(false)
     } catch (error) {
+      if (requestId !== listRequestRef.current) return
+
       console.error('Kayıtlar getirilirken hata:', error.message)
+      // Eski satırlar ekranda kalmasın; "kayıt yok" yerine "yüklenemedi" durumu gösterilir
+      setRegistrations([])
+      setLoadFailed(true)
     } finally {
-      setIsLoading(false)
+      if (requestId === listRequestRef.current) {
+        setIsLoading(false)
+      }
     }
   }
 
@@ -139,18 +154,19 @@ export default function Registration() {
   }
 
   // Filtrelenmiş kayıtları al
+  // Yalnızca rakam, boşluk ve + ( ) - içeren arama telefon sayılır: "0532 123" yazılsa da numara bulunur
+  const searchDigits = /^[\d\s+()-]+$/.test(searchTerm) ? phoneDigits(searchTerm) : ''
   const filteredRegistrations = registrations.filter(registration => {
-    const searchLower = searchTerm.toLowerCase()
-    const matchesSearch = (
-      registration.student_name.toLowerCase().includes(searchLower) ||
-      registration.parent_name.toLowerCase().includes(searchLower) ||
-      registration.parent_phone.toLowerCase().includes(searchLower)
+    const matchesTerm = (
+      matchesSearch(registration.student_name, searchTerm) ||
+      matchesSearch(registration.parent_name, searchTerm) ||
+      (searchDigits !== '' && phoneDigits(registration.parent_phone).includes(searchDigits))
     )
 
     const matchesPaymentStatus = !filters.paymentStatus || registration.payment_status === filters.paymentStatus
     const matchesPackageType = !filters.packageType || registration.package_type === filters.packageType
 
-    return matchesSearch && matchesPaymentStatus && matchesPackageType
+    return matchesTerm && matchesPaymentStatus && matchesPackageType
   })
 
   // Güncelleme modalını açma fonksiyonu
@@ -206,30 +222,60 @@ export default function Registration() {
     setIsDeleteModalOpen(true)
   }
 
-  // Kayıt silme fonksiyonu
-  const handleDelete = async () => {
+  // Kayıt arşivleme fonksiyonu
+  // futureLessonIds: arşivleme penceresinde "ileri tarihli derslerden de çıkar" seçiliyse
+  // öğrencinin henüz yapılmamış derslerdeki katılım satırları
+  const handleDelete = async (_entry, { futureLessonIds = [] } = {}) => {
     setIsDeleting(true)
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('registrations')
         .update({ is_active: false })
         .eq('id', registrationToDelete.id)
+        .select('id')
 
       if (error) throw error
+      // Hata yok ama güncellenen satır da yok: kayıt bulunamadı ya da yetki yok
+      if (!data || data.length === 0) throw new Error('no_rows_updated')
+
+      // Arşivlenen öğrenci ileri tarihli derslerde yer tutmasın. Yalnızca hâlâ "planlandı"
+      // duran satırlar silinir; yoklaması işlenmiş bir satıra dokunulmaz.
+      let futureLessonsFailed = false
+      if (futureLessonIds.length > 0) {
+        const { error: lessonsError } = await supabase
+          .from('event_participants')
+          .delete()
+          .in('id', futureLessonIds)
+          .eq('status', 'scheduled')
+
+        if (lessonsError) {
+          console.error('İleri tarihli dersler temizlenirken hata:', lessonsError.message)
+          futureLessonsFailed = true
+        }
+      }
 
       // Kayıtları yenile
       fetchRegistrations()
-      
+
       // Modal'ı kapat
       setIsDeleteModalOpen(false)
       setRegistrationToDelete(null)
 
       // Başarılı mesajı göster
-      showToast(
-        language === 'tr' 
-          ? `${registrationToDelete.student_name} isimli kayıt başarıyla arşivlendi.`
-          : `Record for ${registrationToDelete.student_name} has been successfully archived.`
-      )
+      if (futureLessonsFailed) {
+        showToast(
+          language === 'tr'
+            ? `${registrationToDelete.student_name} arşivlendi ama ileri tarihli derslerden çıkarılamadı. Takvimden elle çıkarın.`
+            : `${registrationToDelete.student_name} was archived but could not be removed from upcoming lessons. Remove them in the calendar.`,
+          'warning'
+        )
+      } else {
+        showToast(
+          language === 'tr'
+            ? `${registrationToDelete.student_name} isimli kayıt başarıyla arşivlendi.`
+            : `Record for ${registrationToDelete.student_name} has been successfully archived.`
+        )
+      }
     } catch (error) {
       console.error('Kayıt arşivlenirken hata:', error.message)
       showToast(
@@ -243,41 +289,73 @@ export default function Registration() {
     }
   }
 
+  // Geçmiş panelini ve içinden açılan pencereleri kapatır
+  const closeHistorySheet = () => {
+    historyRequestRef.current++ // yolda olan yanıt yok sayılır
+    setIsHistorySheetOpen(false)
+    setSelectedHistoryRegistration(null)
+    setExtensionHistory([])
+    setIsEditExtensionModalOpen(false)
+    setIsDeleteExtensionModalOpen(false)
+    setSelectedExtension(null)
+    setSelectedExtensionIndex(null)
+  }
+
   // Geçmiş görüntüleme fonksiyonu
   const handleHistoryClick = async (registration) => {
+    const requestId = ++historyRequestRef.current
     setSelectedHistoryRegistration(registration)
+    // Önceki öğrencinin uzatmaları yeni öğrencinin adı altında görünmesin
+    setExtensionHistory([])
     setIsHistorySheetOpen(true)
     setIsHistoryLoading(true)
 
     try {
-      // İlk kayıt için payment_date bilgisini al
-      const { data: paymentData, error: paymentError } = await supabase
-        .from('financial_records')
-        .select('payment_date')
-        .eq('registration_id', registration.id)
-        .eq('transaction_type', 'initial_payment')
-        .maybeSingle()
+      const [registrationResult, paymentResult, extensionResult] = await Promise.all([
+        // Kaydın güncel hali: liste bayat olabilir; düzenleme penceresi bu satırı kullanır
+        supabase
+          .from('registrations')
+          .select('*')
+          .eq('id', registration.id)
+          .maybeSingle(),
+        // İlk kaydın ödemesi (ücretsiz katılımda finansal kayıt olmaz — geçmiş yine açılabilmeli)
+        supabase
+          .from('financial_records')
+          .select('amount, payment_method, payment_date')
+          .eq('registration_id', registration.id)
+          .eq('transaction_type', 'initial_payment')
+          .order('created_at', { ascending: true })
+          .limit(1)
+          .maybeSingle(),
+        // Uzatma geçmişi, her uzatmanın gelir defterindeki ödeme satırıyla birlikte
+        supabase
+          .from('extension_history')
+          .select('*, financial_records(id, amount, payment_method, payment_status, payment_date, created_at)')
+          .eq('registration_id', registration.id)
+          .order('created_at', { ascending: true })
+          .order('id', { ascending: true })
+      ])
 
-      // Ücretsiz katılımda finansal kayıt olmaz — geçmiş yine açılabilmeli
-      if (paymentError && paymentError.code !== 'PGRST116') throw paymentError
+      // Bu sırada başka bir öğrencinin geçmişi açıldıysa ya da panel kapatıldıysa yanıt yok sayılır
+      if (requestId !== historyRequestRef.current) return
 
-      // Uzatma geçmişini al
-      const { data: extensionData, error: extensionError } = await supabase
-        .from('extension_history')
-        .select('*')
-        .eq('registration_id', registration.id)
-        .order('created_at', { ascending: true })
+      if (registrationResult.error) throw registrationResult.error
+      if (paymentResult.error) throw paymentResult.error
+      if (extensionResult.error) throw extensionResult.error
+      if (!registrationResult.data) throw new Error('registration_not_found')
 
-      if (extensionError) throw extensionError
-
-      // Registration objesine payment_date ekle
+      const freshRegistration = registrationResult.data
       setSelectedHistoryRegistration({
-        ...registration,
-        payment_date: paymentData?.payment_date
+        ...freshRegistration,
+        initial_payment: paymentResult.data
       })
-      setExtensionHistory(extensionData)
+      setExtensionHistory(resolveExtensionHistory(freshRegistration, extensionResult.data))
     } catch (error) {
+      if (requestId !== historyRequestRef.current) return
+
       console.error('Geçmiş kayıtlar getirilirken hata:', error.message)
+      // Yarım yüklenmiş panel açık kalmasın
+      closeHistorySheet()
       showToast(
         language === 'tr'
           ? 'Geçmiş kayıtlar getirilirken bir hata oluştu.'
@@ -285,7 +363,9 @@ export default function Registration() {
         'error'
       )
     } finally {
-      setIsHistoryLoading(false)
+      if (requestId === historyRequestRef.current) {
+        setIsHistoryLoading(false)
+      }
     }
   }
 
@@ -297,12 +377,15 @@ export default function Registration() {
   const handleActivate = async () => {
     setIsActivating(true)
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('registrations')
         .update({ is_active: true })
         .eq('id', registrationToActivate.id)
+        .select('id')
 
       if (error) throw error
+      // Hata yok ama güncellenen satır da yok: kayıt bulunamadı ya da yetki yok
+      if (!data || data.length === 0) throw new Error('no_rows_updated')
 
       // Kayıtları yenile
       fetchRegistrations()
@@ -467,6 +550,23 @@ export default function Registration() {
                 </div>
               ))}
             </Masonry>
+          ) : loadFailed ? (
+            // Yükleme Hatası State
+            <div className="text-center py-12">
+              <UserIcon className="w-12 h-12 mx-auto text-[#86868b] mb-4" />
+              <h3 className="text-lg font-medium text-[#1d1d1f] dark:text-white mb-1">
+                {language === 'tr' ? 'Kayıtlar Yüklenemedi' : 'The Records Could Not Be Loaded'}
+              </h3>
+              <p className="text-sm text-[#6e6e73] dark:text-[#86868b]">
+                {language === 'tr' ? 'Bağlantınızı kontrol edip tekrar deneyin.' : 'Check your connection and try again.'}
+              </p>
+              <button
+                onClick={() => fetchRegistrations()}
+                className="mt-4 h-10 sm:h-8 px-4 bg-[#1d1d1f] dark:bg-[#0071e3] text-white text-sm font-medium rounded-lg hover:bg-black dark:hover:bg-[#0077ed] focus:outline-none transition-colors"
+              >
+                {language === 'tr' ? 'Tekrar Dene' : 'Try Again'}
+              </button>
+            </div>
           ) : filteredRegistrations.length === 0 ? (
             // Boş State
             <div className="text-center py-12">
@@ -475,9 +575,13 @@ export default function Registration() {
                 {language === 'tr' ? 'Kayıt Bulunamadı' : 'No Records Found'}
               </h3>
               <p className="text-sm text-[#6e6e73] dark:text-[#86868b]">
-                {searchTerm 
+                {searchTerm.trim()
                   ? (language === 'tr' ? 'Arama kriterlerinize uygun kayıt bulunamadı.' : 'No records match your search criteria.')
-                  : (language === 'tr' ? 'Henüz kayıt eklenmemiş.' : 'No records have been added yet.')}
+                  : (filters.paymentStatus || filters.packageType)
+                    ? (language === 'tr' ? 'Seçili filtrelere uygun kayıt yok.' : 'No records match the selected filters.')
+                    : filters.showArchived
+                      ? (language === 'tr' ? 'Arşivde kayıt yok.' : 'There are no archived records.')
+                      : (language === 'tr' ? 'Henüz kayıt eklenmemiş.' : 'No records have been added yet.')}
               </p>
             </div>
           ) : (
@@ -574,7 +678,7 @@ export default function Registration() {
                               language === 'tr' ? 'Ücretsiz' : 'Free'
                             ) : (
                               <>
-                                {formatPaymentMethod(registration.payment_method)} - {registration.payment_amount} ₺
+                                {formatPaymentMethod(registration.payment_method)} - {formatMoney(registration.payment_amount)} ₺
                                 {registration.payment_status === 'odendi' && registration.payment_date && (
                                   <> - {formatDate(registration.payment_date)}</>
                                 )}
@@ -693,7 +797,7 @@ export default function Registration() {
               </h3>
               <div className="grid grid-cols-3 gap-2">
                 <button
-                  onClick={() => setFilters(prev => ({ ...prev, paymentStatus: 'odendi' }))}
+                  onClick={() => setFilters(prev => ({ ...prev, paymentStatus: prev.paymentStatus === 'odendi' ? '' : 'odendi' }))}
                   className={`
                     h-9 px-4 rounded-lg text-sm font-medium transition-colors
                     ${filters.paymentStatus === 'odendi'
@@ -705,7 +809,7 @@ export default function Registration() {
                   {language === 'tr' ? 'Ödendi' : 'Paid'}
                 </button>
                 <button
-                  onClick={() => setFilters(prev => ({ ...prev, paymentStatus: 'beklemede' }))}
+                  onClick={() => setFilters(prev => ({ ...prev, paymentStatus: prev.paymentStatus === 'beklemede' ? '' : 'beklemede' }))}
                   className={`
                     h-9 px-4 rounded-lg text-sm font-medium transition-colors
                     ${filters.paymentStatus === 'beklemede'
@@ -717,7 +821,7 @@ export default function Registration() {
                   {language === 'tr' ? 'Beklemede' : 'Pending'}
                 </button>
                 <button
-                  onClick={() => setFilters(prev => ({ ...prev, paymentStatus: 'ucretsiz' }))}
+                  onClick={() => setFilters(prev => ({ ...prev, paymentStatus: prev.paymentStatus === 'ucretsiz' ? '' : 'ucretsiz' }))}
                   className={`
                     h-9 px-4 rounded-lg text-sm font-medium transition-colors
                     ${filters.paymentStatus === 'ucretsiz'
@@ -738,7 +842,7 @@ export default function Registration() {
               </h3>
               <div className="grid grid-cols-1 gap-2">
                 <button
-                  onClick={() => setFilters(prev => ({ ...prev, packageType: 'tek-seferlik' }))}
+                  onClick={() => setFilters(prev => ({ ...prev, packageType: prev.packageType === 'tek-seferlik' ? '' : 'tek-seferlik' }))}
                   className={`
                     h-9 px-4 rounded-lg text-sm font-medium transition-colors text-left
                     ${filters.packageType === 'tek-seferlik'
@@ -750,7 +854,7 @@ export default function Registration() {
                   {language === 'tr' ? 'Tek Seferlik Katılım' : 'One Time Participation'}
                 </button>
                 <button
-                  onClick={() => setFilters(prev => ({ ...prev, packageType: 'hafta-1' }))}
+                  onClick={() => setFilters(prev => ({ ...prev, packageType: prev.packageType === 'hafta-1' ? '' : 'hafta-1' }))}
                   className={`
                     h-9 px-4 rounded-lg text-sm font-medium transition-colors text-left
                     ${filters.packageType === 'hafta-1'
@@ -762,7 +866,7 @@ export default function Registration() {
                   {language === 'tr' ? 'Haftada 1 Gün' : '1 Day Per Week'}
                 </button>
                 <button
-                  onClick={() => setFilters(prev => ({ ...prev, packageType: 'hafta-2' }))}
+                  onClick={() => setFilters(prev => ({ ...prev, packageType: prev.packageType === 'hafta-2' ? '' : 'hafta-2' }))}
                   className={`
                     h-9 px-4 rounded-lg text-sm font-medium transition-colors text-left
                     ${filters.packageType === 'hafta-2'
@@ -774,7 +878,7 @@ export default function Registration() {
                   {language === 'tr' ? 'Haftada 2 Gün' : '2 Days Per Week'}
                 </button>
                 <button
-                  onClick={() => setFilters(prev => ({ ...prev, packageType: 'hafta-3' }))}
+                  onClick={() => setFilters(prev => ({ ...prev, packageType: prev.packageType === 'hafta-3' ? '' : 'hafta-3' }))}
                   className={`
                     h-9 px-4 rounded-lg text-sm font-medium transition-colors text-left
                     ${filters.packageType === 'hafta-3'
@@ -786,7 +890,7 @@ export default function Registration() {
                   {language === 'tr' ? 'Haftada 3 Gün' : '3 Days Per Week'}
                 </button>
                 <button
-                  onClick={() => setFilters(prev => ({ ...prev, packageType: 'hafta-4' }))}
+                  onClick={() => setFilters(prev => ({ ...prev, packageType: prev.packageType === 'hafta-4' ? '' : 'hafta-4' }))}
                   className={`
                     h-9 px-4 rounded-lg text-sm font-medium transition-colors text-left
                     ${filters.packageType === 'hafta-4'
@@ -798,7 +902,7 @@ export default function Registration() {
                   {language === 'tr' ? 'Haftada 4 Gün' : '4 Days Per Week'}
                 </button>
                 <button
-                  onClick={() => setFilters(prev => ({ ...prev, packageType: '3ay-hafta-1' }))}
+                  onClick={() => setFilters(prev => ({ ...prev, packageType: prev.packageType === '3ay-hafta-1' ? '' : '3ay-hafta-1' }))}
                   className={`
                     h-9 px-4 rounded-lg text-sm font-medium transition-colors text-left
                     ${filters.packageType === '3ay-hafta-1'
@@ -810,7 +914,7 @@ export default function Registration() {
                   {language === 'tr' ? '3 Aylık - 12 Atölye' : '3 Months - 12 Workshops'}
                 </button>
                 <button
-                  onClick={() => setFilters(prev => ({ ...prev, packageType: '3ay-hafta-2' }))}
+                  onClick={() => setFilters(prev => ({ ...prev, packageType: prev.packageType === '3ay-hafta-2' ? '' : '3ay-hafta-2' }))}
                   className={`
                     h-9 px-4 rounded-lg text-sm font-medium transition-colors text-left
                     ${filters.packageType === '3ay-hafta-2'
@@ -822,7 +926,7 @@ export default function Registration() {
                   {language === 'tr' ? '3 Aylık - 24 Atölye' : '3 Months - 24 Workshops'}
                 </button>
                 <button
-                  onClick={() => setFilters(prev => ({ ...prev, packageType: 'ucretsiz' }))}
+                  onClick={() => setFilters(prev => ({ ...prev, packageType: prev.packageType === 'ucretsiz' ? '' : 'ucretsiz' }))}
                   className={`
                     h-9 px-4 rounded-lg text-sm font-medium transition-colors text-left
                     ${filters.packageType === 'ucretsiz'
@@ -868,10 +972,17 @@ export default function Registration() {
         />
       )}
 
-      <RegisterModal 
+      <RegisterModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        onSuccess={fetchRegistrations}
+        onSuccess={() => {
+          // Yeni kayıt aktif listeye düşer; arşiv görünümündeyken eklendiyse aktif listeye dön
+          if (filters.showArchived) {
+            setFilters(prev => ({ ...prev, showArchived: false }))
+          } else {
+            fetchRegistrations()
+          }
+        }}
       />
 
       {/* Update Modal */}
@@ -973,10 +1084,7 @@ export default function Registration() {
               )}
             </h2>
             <button
-              onClick={() => {
-                setIsHistorySheetOpen(false)
-                setSelectedHistoryRegistration(null)
-              }}
+              onClick={closeHistorySheet}
               className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-[#2a3241] transition-colors"
             >
               <XMarkIcon className="w-5 h-5 text-[#424245] dark:text-[#86868b]" />
@@ -1068,9 +1176,10 @@ export default function Registration() {
                       <div className="flex items-center gap-2 text-sm">
                         <CreditCardIcon className="w-4 h-4 text-[#86868b]" />
                         <span className="text-[#424245] dark:text-[#86868b]">
-                          {formatPaymentMethod(selectedHistoryRegistration.initial_payment_method)} - {selectedHistoryRegistration.initial_payment_amount} ₺
-                          {selectedHistoryRegistration.payment_date && (
-                            <> - {formatDate(selectedHistoryRegistration.payment_date)}</>
+                          {/* Gelir defterindeki ilk ödeme satırı esastır; yoksa kayıttaki ilk değerler */}
+                          {formatPaymentMethod(selectedHistoryRegistration.initial_payment?.payment_method ?? selectedHistoryRegistration.initial_payment_method)} - {formatMoney(selectedHistoryRegistration.initial_payment?.amount ?? selectedHistoryRegistration.initial_payment_amount)} ₺
+                          {selectedHistoryRegistration.initial_payment?.payment_date && (
+                            <> - {formatDate(selectedHistoryRegistration.initial_payment.payment_date)}</>
                           )}
                         </span>
                       </div>
@@ -1104,7 +1213,9 @@ export default function Registration() {
                             </span>
                           </div>
                           <div className="ml-9 p-4 rounded-xl bg-[#f5f5f7] dark:bg-[#1d1d1f] space-y-3 relative group">
-                            {isLast && (
+                            {/* Ücretsiz katılıma çevrilmiş kayıtta uzatma düzenlenmez/geri alınmaz:
+                                ikisi de kaydı yeniden ücretli pakete çevirirdi */}
+                            {isLast && selectedHistoryRegistration.package_type !== 'ucretsiz' && (
                               <div className="absolute top-3 right-3 flex items-center gap-1">
                                 <button
                                   type="button"
@@ -1149,7 +1260,7 @@ export default function Registration() {
                             <div className="flex items-center gap-2 text-sm">
                               <CreditCardIcon className="w-4 h-4 text-[#86868b]" />
                               <span className="text-[#424245] dark:text-[#86868b]">
-                                {formatPaymentMethod(history.payment_method)} - {history.payment_amount} ₺
+                                {formatPaymentMethod(history.payment_method)} - {formatMoney(history.payment_amount)} ₺
                                 {history.payment_date && (
                                   <> - {formatDate(history.payment_date)}</>
                                 )}
@@ -1180,10 +1291,7 @@ export default function Registration() {
       {isHistorySheetOpen && (
         <div
           className="fixed inset-0 bg-black/25 backdrop-blur-sm z-40"
-          onClick={() => {
-            setIsHistorySheetOpen(false)
-            setSelectedHistoryRegistration(null)
-          }}
+          onClick={closeHistorySheet}
         />
       )}
 

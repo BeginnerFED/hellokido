@@ -1,13 +1,7 @@
 import React, { useState } from 'react'
-import { createClient } from '@supabase/supabase-js'
+import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { XMarkIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline'
-
-// Supabase istemcisini oluştur
-const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY
-)
 
 export default function DeleteExpensesModal({ isOpen, onClose, expense, onDelete }) {
   const { language } = useLanguage()
@@ -15,21 +9,33 @@ export default function DeleteExpensesModal({ isOpen, onClose, expense, onDelete
   const [error, setError] = useState(null)
 
   const handleDelete = async () => {
+    if (!expense || isLoading) return
+
     setIsLoading(true)
     setError(null)
 
     try {
-      const { error: deleteError } = await supabase
+      const { data, error: deleteError } = await supabase
         .from('expenses')
         .delete()
         .eq('id', expense.id)
+        .select('id')
 
       if (deleteError) throw deleteError
+
+      // Hata yok ama silinen satır da yok: kayıt bu sırada başkası tarafından silinmiş.
+      // Liste yenilenir; pencere kapanır.
+      if (!data || data.length === 0) {
+        onDelete()
+        onClose()
+        return
+      }
 
       onDelete()
       onClose()
     } catch (err) {
-      setError(err.message)
+      console.error('Gider silinirken hata:', err.message)
+      setError(language === 'tr' ? 'Gider silinemedi, lütfen tekrar deneyin.' : 'The expense could not be deleted, please try again.')
     } finally {
       setIsLoading(false)
     }

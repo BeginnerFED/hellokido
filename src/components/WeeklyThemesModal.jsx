@@ -27,11 +27,17 @@ export default function WeeklyThemesModal({ isOpen, onClose, onSaved, focusWeekS
   const [editingWeekKey, setEditingWeekKey] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [loadedRangeKey, setLoadedRangeKey] = useState(null); // Başarıyla yüklenen aralık (hata durumunda ızgara gizlenir)
+  // Yüklenmesi BAŞARISIZ olan aralık. Hata ekranı yalnızca gerçekten hata alındığında gösterilir;
+  // "henüz yüklenmedi" durumundan türetilirse modal her açılışta bir an kırmızı hata ekranı gösterir.
+  const [failedRangeKey, setFailedRangeKey] = useState(null);
   const [retryCounter, setRetryCounter] = useState(0);
   const [isSaving, setIsSaving] = useState(false);
   const [saveFlash, setSaveFlash] = useState(false);
   const [error, setError] = useState(null);
   const flashTimerRef = useRef(null);
+  // Karartılmış alana "tıklama" sayılması için basış da orada başlamış olmalı
+  // (kutudaki metni seçerken fare dışarıda bırakılırsa modal kapanmasın)
+  const overlayPressRef = useRef(false);
 
   // Ay kısayolu (ay adına tıklayınca açılan seçici)
   const [isMonthPickerOpen, setIsMonthPickerOpen] = useState(false);
@@ -80,6 +86,7 @@ export default function WeeklyThemesModal({ isOpen, onClose, onSaved, focusWeekS
     setSaveFlash(false);
     clearTimeout(flashTimerRef.current);
     setLoadedRangeKey(null);
+    setFailedRangeKey(null);
     setIsMonthPickerOpen(false);
     if (focusWeekStart) {
       // Haftanın ait olduğu ay = perşembesinin ayı
@@ -121,6 +128,7 @@ export default function WeeklyThemesModal({ isOpen, onClose, onSaved, focusWeekS
       try {
         setIsLoading(true);
         setError(null);
+        setFailedRangeKey(null);
 
         const { data, error: fetchError } = await supabase
           .from('weekly_themes')
@@ -149,6 +157,7 @@ export default function WeeklyThemesModal({ isOpen, onClose, onSaved, focusWeekS
       } catch (err) {
         console.error('Haftalık konular getirilirken hata:', err);
         if (!cancelled) {
+          setFailedRangeKey(fetchedRangeKey);
           setError(language === 'tr' ? 'Konular yüklenirken bir hata oluştu' : 'An error occurred while loading themes');
         }
       } finally {
@@ -215,6 +224,9 @@ export default function WeeklyThemesModal({ isOpen, onClose, onSaved, focusWeekS
 
   // Değişiklikleri kaydet: dolu olanlar upsert edilir, boşaltılan mevcut kayıtlar silinir
   const handleSave = async () => {
+    // Kaydet'e basıldığı andaki taslaklar. Kayıt sürerken yazılanlar bunlardan farklı olur ve korunur.
+    const draftsAtSave = drafts;
+
     try {
       setIsSaving(true);
       setError(null);
@@ -257,7 +269,15 @@ export default function WeeklyThemesModal({ isOpen, onClose, onSaved, focusWeekS
         });
         return next;
       });
-      setDrafts({});
+      // Yalnızca kaydedilen (o arada değişmemiş) taslakları temizle. Kayıt sürerken başka bir
+      // haftaya yazılan ya da değiştirilen metin "kaydedilmemiş değişiklik" olarak ekranda kalır.
+      setDrafts(prev => {
+        const next = {};
+        Object.keys(prev).forEach(key => {
+          if (prev[key] !== draftsAtSave[key]) next[key] = prev[key];
+        });
+        return next;
+      });
 
       clearTimeout(flashTimerRef.current);
       setSaveFlash(true);
@@ -275,13 +295,20 @@ export default function WeeklyThemesModal({ isOpen, onClose, onSaved, focusWeekS
   if (!isOpen) return null;
 
   const isGridReady = !isLoading && loadedRangeKey === rangeKey;
+  const hasLoadError = !isLoading && failedRangeKey === rangeKey;
 
   return (
     <>
       {/* Overlay (takvimin loading overlay'i z-50 olduğu için z-50) */}
       <div
         className="fixed inset-0 bg-black bg-opacity-25 z-50 flex items-center justify-center"
-        onClick={handleClose}
+        onMouseDown={(e) => {
+          overlayPressRef.current = e.target === e.currentTarget;
+        }}
+        onClick={(e) => {
+          if (e.target === e.currentTarget && overlayPressRef.current) handleClose();
+          overlayPressRef.current = false;
+        }}
       >
         {/* Modal */}
         <div
@@ -410,7 +437,7 @@ export default function WeeklyThemesModal({ isOpen, onClose, onSaved, focusWeekS
 
           {/* Ay Takvimi */}
           <div className="flex-1 overflow-y-auto px-6 pb-4">
-            {!isGridReady && !isLoading ? (
+            {hasLoadError ? (
               // Aralık yüklenemedi: kayıtlı konular görünmeden inputları göstermek
               // mevcut konuların fark edilmeden üzerine yazılmasına yol açar
               <div className="py-16 flex flex-col items-center gap-3">

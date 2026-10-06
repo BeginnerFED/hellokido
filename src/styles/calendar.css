@@ -27,6 +27,8 @@
   --fc-button-active-bg-color: #3b82f6;
   --fc-button-active-border-color: #3b82f6;
   --fc-button-light-bg-color: #1a1f2e;
+  /* Üstte sabit kalan gün adları satırının zemini (varsayılanı beyaz) */
+  --fc-page-bg-color: #1a1f2e;
 }
 
 /* Toolbar stilleri */
@@ -531,8 +533,8 @@
 }
 
 /* Hover durumunda diğer kartları blur yap - Yeni yaklaşım */
-.fc-timegrid-body:has(.fc-timegrid-event:hover) .fc-timegrid-event:not(:hover),
-.fc-daygrid-body:not(.fc-dayGridMonth-view):has(.fc-daygrid-event:hover) .fc-daygrid-event:not(:hover) {
+/* (Ay görünümü hariç: oradaki günlük özetler birbirini bulanıklaştırmaz) */
+.fc-timegrid-body:has(.fc-timegrid-event:hover) .fc-timegrid-event:not(:hover) {
   filter: blur(2px) opacity(0.7) !important;
   transition: filter 0.5s ease !important;
 }
@@ -762,6 +764,20 @@
   display: block !important;
 }
 
+/* Gün görünümünde kart geniştir: öğrenci listesi alt alta uzayıp bir sonraki dersin altında
+   kalmasın diye sütunlara yayılır (iç kaydırma da olmaz) */
+.fc-timeGridDay-view .student-list-items {
+  max-height: none !important;
+  overflow: visible !important;
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 2px 12px;
+}
+
+.fc-timeGridDay-view .student-list-items > * {
+  margin-top: 0 !important;
+}
+
 /* Hover efektlerini sadece hafta görünümü için uygula */
 .fc-timeGridWeek-view .fc-timegrid-event:hover {
   transform: translateY(-3px) scale(1.02) !important;
@@ -893,6 +909,24 @@
 
 .fc-event:active {
   cursor: grabbing !important;
+}
+
+/* Sürüklenemeyen dersler (geçmiş ya da yoklaması işlenmiş): tutma imleci gösterilmez */
+.fc-timegrid-event:not(.fc-event-draggable),
+.fc-timegrid-event:not(.fc-event-draggable):active {
+  cursor: pointer !important;
+}
+
+/* Geçmiş derste yoklaması işaretlenmemiş öğrenci olduğunu gösteren küçük nokta */
+.attendance-missing-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 2px;
+  border-radius: 9999px;
+  background-color: #fde047;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.12);
+  flex-shrink: 0;
 }
 
 /* Sürükleme sırasında geçiş animasyonu */

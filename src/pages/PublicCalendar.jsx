@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabasePublic as supabase } from '../lib/supabasePublic';
 import { AGE_GROUPS } from '../lib/ageGroups';
+import { holdsSeat } from '../lib/attendance';
 import { format, startOfWeek, endOfWeek, addWeeks, subWeeks, addDays, eachDayOfInterval } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import { ChevronLeftIcon, ChevronRightIcon, AdjustmentsHorizontalIcon, MoonIcon, XMarkIcon } from '@heroicons/react/24/outline';
@@ -14,21 +15,63 @@ const EVENT_TYPES = [
   { value: 'ozel', label: 'Özel', color: '#059669' }
 ];
 
+// Ders kartında gösterilen süre (velilere giden hatırlatma mesajındaki süreyle aynı olmalı)
+const LESSON_DURATION_LABEL = '75-90 dk';
+
+// --- Türkiye saati ---------------------------------------------------------------------------
+// Atölye İstanbul'da. Ders saatleri, "bugün" ve hafta sınırları ziyaretçinin cihazındaki saat
+// diliminden bağımsız olarak HER ZAMAN Türkiye saatiyle hesaplanır. (Almanya'daki bir veli
+// 09:45 dersini 08:45, Dubai'deki 10:45 görmesin.)
+const ISTANBUL_PARTS = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Europe/Istanbul',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hour12: false
+});
+
+// Gerçek bir anı, YEREL alanları (yıl/ay/gün/saat/dakika) İstanbul duvar saatine eşit olan bir
+// Date'e çevirir. Sonrasında date-fns'in yerel saatle çalışan tüm fonksiyonları (format,
+// startOfWeek, addDays...) İstanbul takvimiyle çalışmış olur.
+const toIstanbulWallTime = (date) => {
+  const parts = {};
+  ISTANBUL_PARTS.formatToParts(date).forEach(part => {
+    parts[part.type] = Number(part.value);
+  });
+  // Bazı tarayıcılar hour12:false ile gece yarısını "24" verir → % 24
+  return new Date(parts.year, parts.month - 1, parts.day, parts.hour % 24, parts.minute, parts.second);
+};
+
+const istanbulNow = () => toIstanbulWallTime(new Date());
+
+// İstanbul'daki bir günün 00:00'ı, sorguda kullanılacak gerçek an olarak.
+// Türkiye yıl boyu UTC+3'tür (veritabanında da "gece yarısı" 21:00Z olarak durur).
+const istanbulDayStartISO = (wallDate) => `${format(wallDate, 'yyyy-MM-dd')}T00:00:00+03:00`;
+
 const PublicCalendar = () => {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [currentWeek, setCurrentWeek] = useState(new Date());
-  const [selectedDay, setSelectedDay] = useState(() => format(new Date(), 'yyyy-MM-dd'));
+  const [currentWeek, setCurrentWeek] = useState(() => istanbulNow());
+  const [selectedDay, setSelectedDay] = useState(() => format(istanbulNow(), 'yyyy-MM-dd'));
   const [weekTheme, setWeekTheme] = useState(null);
   const [themeWeekLoaded, setThemeWeekLoaded] = useState(null); // weekTheme'in ait olduğu haftanın anahtarı
+  // events listesinin ait olduğu görünüm (hafta + filtreler). Ekrandaki görünümle eşleşmiyorsa
+  // liste bayattır: "kapalı" mesajı yerine iskelet gösterilir.
+  const [eventsViewKey, setEventsViewKey] = useState(null);
   const [isFiltersVisible, setIsFiltersVisible] = useState(false);
   const [filters, setFilters] = useState({
     ageGroup: '',
     eventType: ''
   });
 
-  const latestThemeWeekRef = useRef(null); // Geç gelen konu yanıtının günceli ezmemesi için
+  // Her fetchEvents çağrısı bir sıra numarası alır. Yanıt geldiğinde daha yeni bir çağrı
+  // başlamışsa (kullanıcı hızlıca iki hafta ilerledi / iki filtreye bastı) yanıt yok sayılır;
+  // böylece geç gelen eski yanıt, ekrandaki haftanın/filtrenin verisini ezemez.
+  const fetchSeqRef = useRef(0);
 
   // Bottom sheet'i sürükleyerek kapatma (Apple usulü: sheet'in her yerinden).
   // 8px'lik dikey hareketten sonra sürükleme devralınır — düz dokunuşlar tıklama olarak kalır.
@@ -140,21 +183,27 @@ const PublicCalendar = () => {
     fetchEvents();
   }, [currentWeek, filters]);
 
+  // Bir görünümün (hafta + filtreler) anahtarı — yüklenen listenin hangi görünüme ait olduğunu izlemek için
+  const buildViewKey = (weekKey, activeFilters) => `${weekKey}|${activeFilters.ageGroup}|${activeFilters.eventType}`;
+
   const fetchEvents = async () => {
+    const seq = ++fetchSeqRef.current;
+    const isStale = () => seq !== fetchSeqRef.current;
+
+    // currentWeek İstanbul duvar saatindedir; hafta pazartesi 00:00 (TR) – sonraki pazartesi 00:00 (TR)
+    const weekStart = startOfWeek(currentWeek, { weekStartsOn: 1 });
+    const themeWeekKey = format(weekStart, 'yyyy-MM-dd');
+    const viewKey = buildViewKey(themeWeekKey, filters);
+
     try {
       setLoading(true);
       setError(null);
 
-      const weekStart = startOfWeek(currentWeek, { weekStartsOn: 1 });
-      const weekEnd = endOfWeek(currentWeek, { weekStartsOn: 1 });
-
-      // Haftanın konusu SADECE içinde bulunduğumuz hafta için gösterilir.
-      // Diğer haftalarda sorgu hiç atılmaz — sadece arayüzde gizlemek yetmezdi,
-      // veri yine ağ isteğinde gider ve dışarıdan okunabilirdi.
-      const themeWeekKey = format(weekStart, 'yyyy-MM-dd');
-      const currentWeekKey = format(startOfWeek(new Date(), { weekStartsOn: 1 }), 'yyyy-MM-dd');
+      // Haftanın konusu SADECE içinde bulunduğumuz hafta için gösterilir. Asıl koruma veritabanındadır
+      // (RLS: ziyaretçi yalnızca içinde bulunulan haftanın satırını okuyabilir); burada diğer haftalar
+      // için boşuna istek atmıyoruz.
+      const currentWeekKey = format(startOfWeek(istanbulNow(), { weekStartsOn: 1 }), 'yyyy-MM-dd');
       const isCurrentWeek = themeWeekKey === currentWeekKey;
-      latestThemeWeekRef.current = themeWeekKey;
 
       // Promise.resolve sorguyu hemen başlatır; reject etmez, hata sonuç objesinde döner
       // — başarısız olsa da takvim çalışmaya devam eder
@@ -168,12 +217,15 @@ const PublicCalendar = () => {
           ).catch(err => ({ data: null, error: err }))
         : Promise.resolve({ data: null, error: null });
 
+      // Dersler ve doluluk TEK istekte gelir (eskiden ders başına ayrı istek atılıyordu:
+      // haftada 18 ders = 19 istek + 19 CORS ön isteği; biri bile düşse tüm takvim hata veriyordu).
+      // Yalnızca ekranda kullanılan kolonlar istenir.
       let query = supabase
         .from('events')
-        .select('*')
+        .select('id, event_date, age_group, event_type, event_participants(status)')
         .eq('is_active', true)
-        .gte('event_date', weekStart.toISOString())
-        .lte('event_date', weekEnd.toISOString())
+        .gte('event_date', istanbulDayStartISO(weekStart))
+        .lt('event_date', istanbulDayStartISO(addDays(weekStart, 7)))
         .order('event_date', { ascending: true });
 
       if (filters.ageGroup) {
@@ -184,46 +236,40 @@ const PublicCalendar = () => {
       }
 
       const { data, error } = await query;
+      if (isStale()) return;
       if (error) throw error;
 
-      // Her etkinlik için aktif katılımcı sayısını getir
-      const eventsWithActiveCapacity = await Promise.all(data.map(async (event) => {
-        const { data: participants, error: participantsError } = await supabase
-          .from('event_participants')
-          .select('status')
-          .eq('event_id', event.id);
-
-        if (participantsError) throw participantsError;
-
+      const eventsWithActiveCapacity = (data || []).map(({ event_participants: participants, ...event }) => ({
+        ...event,
+        // Ders saati her zaman Türkiye saatiyle gösterilir ve Türkiye gününe göre gruplanır
+        wallDate: toIstanbulWallTime(new Date(event.event_date)),
         // Aktif statüdeki katılımcıları say (scheduled, makeup, attended)
-        const activeCount = participants ?
-          participants.filter(p => p.status === 'scheduled' || p.status === 'makeup' || p.status === 'attended').length :
-          0;
-
-        return {
-          ...event,
-          active_capacity: activeCount
-        };
+        active_capacity: (participants || []).filter(p => holdsSeat(p.status)).length
       }));
 
       setEvents(eventsWithActiveCapacity);
+      setEventsViewKey(viewKey);
 
       // Konu yanıtını işle (yalnızca hâlâ görüntülenen haftaya aitse)
       const { data: themeRow, error: themeError } = await themePromise;
-      if (latestThemeWeekRef.current === themeWeekKey) {
-        if (themeError) {
-          console.error('Haftanın konusu getirilirken hata:', themeError);
-          setWeekTheme(null);
-        } else {
-          setWeekTheme(themeRow ? themeRow.theme : null);
-        }
-        setThemeWeekLoaded(themeWeekKey);
+      if (isStale()) return;
+      if (themeError) {
+        console.error('Haftanın konusu getirilirken hata:', themeError);
+        setWeekTheme(null);
+      } else {
+        setWeekTheme(themeRow ? themeRow.theme : null);
       }
+      setThemeWeekLoaded(themeWeekKey);
     } catch (err) {
+      if (isStale()) return;
       console.error('Error fetching events:', err);
-      setError(err.message);
+      setError(err?.message || 'error');
+      // Konu iskeleti hata durumunda sonsuza dek dönmesin
+      setWeekTheme(null);
+      setThemeWeekLoaded(themeWeekKey);
     } finally {
-      setLoading(false);
+      // Daha yeni bir istek sürüyorsa yükleniyor durumunu o kapatır
+      if (!isStale()) setLoading(false);
     }
   };
 
@@ -235,7 +281,7 @@ const PublicCalendar = () => {
 
     const weekStart = startOfWeek(newWeek, { weekStartsOn: 1 });
     const weekEnd = endOfWeek(newWeek, { weekStartsOn: 1 });
-    const today = new Date();
+    const today = istanbulNow();
     setSelectedDay(
       today >= weekStart && today <= weekEnd
         ? format(today, 'yyyy-MM-dd')
@@ -249,22 +295,32 @@ const PublicCalendar = () => {
     end: endOfWeek(currentWeek, { weekStartsOn: 1 })
   });
 
-  const getEventsForDay = (date) => {
-    return events.filter(event =>
-      format(new Date(event.event_date), 'yyyy-MM-dd') === format(date, 'yyyy-MM-dd')
-    );
-  };
-
-  const todayKey = format(new Date(), 'yyyy-MM-dd');
-  const selectedDate = weekDays.find(day => format(day, 'yyyy-MM-dd') === selectedDay) || weekDays[0];
-  const selectedDayEvents = getEventsForDay(selectedDate);
-  const isSelectedToday = format(selectedDate, 'yyyy-MM-dd') === todayKey;
   // Haftanın konusu yalnızca içinde bulunulan haftada gösterilir (diğer haftalarda
   // sorgu bile atılmıyor) — bu yüzden iskelet de sadece o haftada anlamlı
   const viewedWeekKey = format(weekDays[0], 'yyyy-MM-dd');
-  const isViewingCurrentWeek = viewedWeekKey === format(startOfWeek(new Date(), { weekStartsOn: 1 }), 'yyyy-MM-dd');
+  const currentWeekKeyNow = format(startOfWeek(istanbulNow(), { weekStartsOn: 1 }), 'yyyy-MM-dd');
+  const isViewingCurrentWeek = viewedWeekKey === currentWeekKeyNow;
   const hasActiveFilters = Boolean(filters.ageGroup || filters.eventType);
   const activeFilterCount = (filters.ageGroup ? 1 : 0) + (filters.eventType ? 1 : 0);
+
+  // Liste ekrandaki görünüme (hafta + filtreler) ait değilse — yeni görünümün yanıtı henüz gelmedi —
+  // bayat sayılır ve kullanılmaz: bayat listeden "Atölyemiz bugün kapalı" sonucu çıkarılmasın.
+  const isViewLoaded = eventsViewKey === buildViewKey(viewedWeekKey, filters);
+  const viewEvents = isViewLoaded ? events : [];
+  const isLoadingView = !error && (loading || !isViewLoaded);
+
+  const getEventsForDay = (date) => {
+    return viewEvents.filter(event =>
+      format(event.wallDate, 'yyyy-MM-dd') === format(date, 'yyyy-MM-dd')
+    );
+  };
+
+  const todayKey = format(istanbulNow(), 'yyyy-MM-dd');
+  const selectedDate = weekDays.find(day => format(day, 'yyyy-MM-dd') === selectedDay) || weekDays[0];
+  const selectedDayEvents = getEventsForDay(selectedDate);
+  const isSelectedToday = format(selectedDate, 'yyyy-MM-dd') === todayKey;
+  // Görüntülenen hafta için (filtre yokken) hiç ders girilmemişse ve hafta gelecekteyse: program henüz yayınlanmadı
+  const isUnpublishedFutureWeek = !hasActiveFilters && viewEvents.length === 0 && viewedWeekKey > currentWeekKeyNow;
 
   // Hafta iki aya yayılıyorsa "Ağu – Eylül 2026" gibi göster
   const monthLabel =
@@ -281,7 +337,7 @@ const PublicCalendar = () => {
     const dayKey = format(day, 'yyyy-MM-dd');
     const isSelected = interactive && dayKey === selectedDay;
     const isToday = dayKey === todayKey;
-    const dayHasEvents = interactive && !loading && getEventsForDay(day).length > 0;
+    const dayHasEvents = interactive && !isLoadingView && getEventsForDay(day).length > 0;
 
     return (
       <button
@@ -479,7 +535,7 @@ const PublicCalendar = () => {
               haftalarda iskelet de gösterilmez (orada zaten hiç konu gelmeyecek).
               Yüklü konu görünen haftaya ait değilse (hafta yeni değişti, veri henüz
               gelmedi) eski konu bir an bile gösterilmez. */}
-          {!isViewingCurrentWeek ? null : loading || themeWeekLoaded !== viewedWeekKey ? (
+          {!isViewingCurrentWeek ? null : themeWeekLoaded !== viewedWeekKey ? (
             <div className="pc-skeleton pc-fade-in mt-5 h-[84px] rounded-2xl"></div>
           ) : weekTheme ? (
             <div
@@ -540,9 +596,16 @@ const PublicCalendar = () => {
       {/* Seçili Günün Programı */}
       <main className="max-w-lg mx-auto px-4 sm:px-0 pt-6 pb-10" role="main">
         {error ? (
-          <div className={`bg-white rounded-[20px] ${CARD_SHADOW} p-8 text-center`}>
-            <p className="text-sm font-semibold">Bir şeyler ters gitti</p>
-            <p className="text-[13px] text-zinc-500 mt-1">Lütfen sayfayı yenileyip tekrar deneyin.</p>
+          <div className={`bg-white rounded-[20px] ${CARD_SHADOW} p-8 text-center`} role="alert">
+            <p className="text-sm font-semibold">Program yüklenemedi</p>
+            <p className="text-[13px] text-zinc-500 mt-1">İnternet bağlantınızı kontrol edip tekrar deneyin.</p>
+            {/* Web sitesindeki iframe içinde "sayfayı yenile" tüm siteyi yeniler; bu yüzden yerinde tekrar dene */}
+            <button
+              onClick={fetchEvents}
+              className="mt-4 h-11 px-6 rounded-full bg-sky-600 text-white text-[14px] font-semibold hover:bg-sky-700 active:scale-95 transition-all"
+            >
+              Tekrar dene
+            </button>
           </div>
         ) : (
           <>
@@ -556,7 +619,7 @@ const PublicCalendar = () => {
               )}
             </div>
 
-            {loading ? (
+            {isLoadingView ? (
               // Skeleton: gerçek kart boyutlarında, kademeli
               <div className="space-y-3">
                 {[0, 1, 2].map(i => (
@@ -579,8 +642,32 @@ const PublicCalendar = () => {
                 <div className="w-14 h-14 rounded-2xl bg-[#f5f7fa] flex items-center justify-center mx-auto">
                   <MoonIcon className="w-6 h-6 text-zinc-300" />
                 </div>
-                <p className="text-[15px] font-semibold text-zinc-800 mt-4">Atölyemiz bugün kapalı</p>
-                <p className="text-[13px] text-zinc-500 mt-1">Diğer günlere göz atabilirsiniz</p>
+                {hasActiveFilters ? (
+                  // Filtre varken boş gün "kapalı" demek değildir: o gün bu filtreye uyan ders yok
+                  <>
+                    <p className="text-[15px] font-semibold text-zinc-800 mt-4">Bu filtreye uygun atölye yok</p>
+                    <p className="text-[13px] text-zinc-500 mt-1">Diğer günlere bakabilir ya da filtreyi kaldırabilirsiniz</p>
+                    <button
+                      onClick={() => setFilters({ ageGroup: '', eventType: '' })}
+                      className="mt-4 h-10 px-5 rounded-full bg-zinc-100 text-zinc-800 text-[13px] font-semibold hover:bg-zinc-200 active:scale-95 transition-all"
+                    >
+                      Filtreleri temizle
+                    </button>
+                  </>
+                ) : isUnpublishedFutureWeek ? (
+                  // Hafta için henüz hiç ders girilmemiş: "kapalı" değil, program açıklanmadı
+                  <>
+                    <p className="text-[15px] font-semibold text-zinc-800 mt-4">Bu haftanın programı henüz açıklanmadı</p>
+                    <p className="text-[13px] text-zinc-500 mt-1">Yakında burada yayınlanacak</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-[15px] font-semibold text-zinc-800 mt-4">
+                      {isSelectedToday ? 'Atölyemiz bugün kapalı' : 'Atölyemiz bu tarihte kapalı'}
+                    </p>
+                    <p className="text-[13px] text-zinc-500 mt-1">Diğer günlere göz atabilirsiniz</p>
+                  </>
+                )}
               </div>
             ) : (
               // Etkinlik kartları (gün değişince yumuşak giriş)
@@ -603,9 +690,9 @@ const PublicCalendar = () => {
                         style={{ backgroundColor: `${typeDetails.color}14`, color: typeDetails.color }}
                       >
                         <span className="text-[15px] font-bold leading-none tabular-nums tracking-tight">
-                          {format(new Date(event.event_date), 'HH:mm')}
+                          {format(event.wallDate, 'HH:mm')}
                         </span>
-                        <span className="text-[10px] font-medium opacity-70 mt-1">60 dk</span>
+                        <span className="text-[10px] font-medium opacity-70 mt-1">{LESSON_DURATION_LABEL}</span>
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="text-[16px] font-semibold tracking-tight leading-tight truncate">
@@ -643,15 +730,21 @@ const PublicCalendar = () => {
           }`}
         ></div>
 
-        {/* Sheet */}
+        {/* Sheet — kapalıyken klavye odağından ve ekran okuyuculardan tamamen çıkar:
+            inert (destekleyen tarayıcılar) + visibility:hidden (hepsi; kapanış animasyonu bitince) */}
         <div
           role="dialog"
-          aria-modal="true"
+          aria-modal={isFiltersVisible ? 'true' : undefined}
+          aria-hidden={!isFiltersVisible}
+          inert={!isFiltersVisible}
           aria-label="Filtreler"
           className="absolute inset-x-0 bottom-0 sm:max-w-lg sm:mx-auto bg-white rounded-t-[28px] shadow-[0_-8px_40px_rgba(23,19,31,0.15)] touch-none"
           style={{
             transform: isFiltersVisible ? `translateY(${sheetDragY}px)` : 'translateY(100%)',
-            transition: isSheetDragging ? 'none' : 'transform 300ms ease-out'
+            visibility: isFiltersVisible ? 'visible' : 'hidden',
+            transition: isSheetDragging
+              ? 'none'
+              : `transform 300ms ease-out, visibility 0s linear ${isFiltersVisible ? '0s' : '300ms'}`
           }}
           onPointerDown={handleSheetPointerDown}
           onPointerMove={handleSheetPointerMove}
@@ -745,7 +838,7 @@ const PublicCalendar = () => {
               onClick={() => setIsFiltersVisible(false)}
               className="w-full h-[52px] rounded-2xl bg-sky-600 text-white text-[15px] font-semibold hover:bg-sky-700 active:scale-[0.98] transition-all shadow-[0_8px_20px_-6px_rgba(2,132,199,0.5)]"
             >
-              {loading ? 'Yükleniyor…' : `${events.length} etkinlik göster`}
+              {isLoadingView ? 'Yükleniyor…' : `${viewEvents.length} etkinlik göster`}
             </button>
           </div>
         </div>

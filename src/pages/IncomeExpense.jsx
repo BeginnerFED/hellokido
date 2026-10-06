@@ -1,27 +1,31 @@
-import React, { useState, useEffect } from 'react'
-import { createClient } from '@supabase/supabase-js'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
+import { supabase } from '../lib/supabase'
+import { fetchAllRows } from '../lib/fetchAll'
+import { matchesSearch } from '../lib/text'
+import { EXPENSE_TYPES, expenseTypeLabel, paymentMethodLabel, paymentStatusLabel, packageShortLabel } from '../lib/labels'
 import { useLanguage } from '../context/LanguageContext'
-import { 
+import {
   BanknotesIcon,
   ArrowTrendingUpIcon,
   ArrowTrendingDownIcon,
   ScaleIcon,
   ClockIcon,
   PlusIcon,
-  FunnelIcon,
   XMarkIcon,
   AdjustmentsHorizontalIcon,
   CheckCircleIcon,
   PencilSquareIcon,
   TrashIcon,
   CalendarDaysIcon,
-  ChartPieIcon
+  ChartPieIcon,
+  ExclamationTriangleIcon
 } from '@heroicons/react/24/outline'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import CreateExpenses from '../components/CreateExpenses'
 import UpdateExpensesModal from '../components/UpdateExpensesModal'
 import DeleteExpensesModal from '../components/DeleteExpensesModal'
 import DatePicker, { registerLocale } from 'react-datepicker'
+import { startOfDay, endOfDay, subDays } from 'date-fns'
 import { tr } from 'date-fns/locale'
 import 'react-datepicker/dist/react-datepicker.css'
 
@@ -200,52 +204,52 @@ const customDatePickerStyles = `
     display: none;
   }
 
-  .react-datepicker-popper {
+  .ie-range-popper {
     animation: datePickerSlideDown 0.2s ease-out forwards;
     opacity: 0;
     top: 40px !important;
   }
 
   @media (min-width: 1024px) {
-    .react-datepicker-popper {
+    .ie-range-popper {
       left: -100px !important;
     }
   }
 
   @media (max-width: 1023px) {
-    .react-datepicker-popper {
+    .ie-range-popper {
       left: 0 !important;
     }
   }
 
-  .react-datepicker-popper[data-placement^='bottom'] {
+  .ie-range-popper[data-placement^='bottom'] {
     top: 40px !important;
   }
 
   @media (min-width: 1024px) {
-    .react-datepicker-popper[data-placement^='bottom'] {
+    .ie-range-popper[data-placement^='bottom'] {
       left: -100px !important;
     }
   }
 
   @media (max-width: 1023px) {
-    .react-datepicker-popper[data-placement^='bottom'] {
+    .ie-range-popper[data-placement^='bottom'] {
       left: 0 !important;
     }
   }
 
-  .react-datepicker-popper[data-placement^='top'] {
+  .ie-range-popper[data-placement^='top'] {
     top: auto !important;
   }
 
   @media (min-width: 1024px) {
-    .react-datepicker-popper[data-placement^='top'] {
+    .ie-range-popper[data-placement^='top'] {
       left: -100px !important;
     }
   }
 
   @media (max-width: 1023px) {
-    .react-datepicker-popper[data-placement^='top'] {
+    .ie-range-popper[data-placement^='top'] {
       left: 0 !important;
     }
   }
@@ -283,12 +287,6 @@ const customDatePickerStyles = `
     background: #0071e3;
   }
 `;
-
-// Supabase istemcisini oluştur
-const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY
-)
 
 // Skeleton Components
 const SummaryCardSkeleton = () => (
@@ -365,50 +363,133 @@ const ChartSkeleton = () => (
   </div>
 )
 
+// Gider kategorilerinin grafik renkleri
+const EXPENSE_TYPE_COLORS = {
+  kira: '#0071e3',
+  elektrik: '#34d399',
+  su: '#fbbf24',
+  dogalgaz: '#f87171',
+  internet: '#a78bfa',
+  maas: '#60a5fa',
+  malzeme: '#fb923c',
+  mutfak: '#4ade80',
+  reklam: '#f472b6',
+  filament: '#22d3ee',
+  diger: '#94a3b8'
+}
+
+// Gelir sayılan ödeme türleri
+const INCOME_TRANSACTION_TYPES = ['initial_payment', 'extension_payment']
+
+// Gelir tablosunda bir ödeme satırı için okunan alanlar: ödemenin kendisi, ait olduğu kayıt ve
+// (uzatma ödemesiyse) bağlı uzatma satırı. Uzatma, ilişki üzerinden tek satır olarak gelir.
+// requireRegistration: kayıt üzerinden süzme yapılacaksa (ör. yalnızca aktif öğrenciler) true
+const incomeRowFields = (requireRegistration = false) => `
+  id,
+  amount,
+  payment_method,
+  payment_status,
+  created_at,
+  transaction_type,
+  registration_id,
+  extension_history_id,
+  payment_date,
+  registrations${requireRegistration ? '!inner' : ''} (
+    student_name,
+    parent_name,
+    package_type,
+    package_start_date,
+    package_end_date,
+    is_active,
+    initial_start_date,
+    initial_end_date,
+    initial_package_type
+  ),
+  extension_history (
+    new_start_date,
+    new_end_date,
+    new_package_type,
+    previous_end_date
+  )
+`
+
+// Ödeme satırını tablo satırına çevirir (paket ve dönem: ödemenin ait olduğu paket)
+const toIncomeRow = (record) => {
+  const registration = record.registrations || {}
+  const extension = record.extension_history
+
+  let displayStartDate, displayEndDate, displayPackageType
+
+  if (record.transaction_type === 'initial_payment') {
+    // İlk kayıt için kaydedilen ilk tarihleri kullan
+    displayStartDate = registration.initial_start_date || registration.package_start_date
+    displayEndDate = registration.initial_end_date || registration.package_end_date
+    displayPackageType = registration.initial_package_type || registration.package_type
+  } else if (extension) {
+    // Uzatma ödemesi: bağlı uzatma satırının dönemi (eski satırlarda başlangıç ayrıca
+    // tutulmuyordu; o zaman dönem, önceki paketin bitişinden başlar)
+    displayStartDate = extension.new_start_date || extension.previous_end_date
+    displayEndDate = extension.new_end_date
+    displayPackageType = extension.new_package_type
+  } else {
+    // Uzatma satırı kalmamış ödeme: kaydın güncel paketi gösterilir
+    displayStartDate = registration.package_start_date
+    displayEndDate = registration.package_end_date
+    displayPackageType = registration.package_type
+  }
+
+  return {
+    id: record.id,
+    student: registration.student_name || '',
+    parent: registration.parent_name || '',
+    package: displayPackageType,
+    date: displayStartDate,
+    end_date: displayEndDate,
+    is_active: registration.is_active,
+    amount: Number(record.amount) || 0,
+    method: record.payment_method,
+    status: record.payment_status,
+    payment_date: record.payment_date, // bekleyen ödemede yoktur
+    transaction_type: record.transaction_type,
+    created_at: record.created_at
+  }
+}
+
+const sumAmounts = (rows) => rows.reduce((total, row) => total + (Number(row.amount) || 0), 0)
+
+const INITIAL_INCOME_FILTERS = {
+  paymentMethod: [], // çoklu seçim
+  paymentStatus: '',
+  activeStatus: '',
+  search: ''
+}
+
+const INITIAL_EXPENSE_FILTERS = {
+  expenseType: '',
+  paymentMethod: ''
+}
+
 export default function IncomeExpense() {
   const { language } = useLanguage()
   const [isLoading, setIsLoading] = useState(true)
-  const [isTableLoading, setIsTableLoading] = useState(true)
+  const [isChartLoading, setIsChartLoading] = useState(true)
+  // Yüklenemeyen bölümler: önceki dönemin rakamları yeni tarihlerin altında kalmasın
+  const [loadFailed, setLoadFailed] = useState({ period: false, chart: false })
   const [isCreateExpenseModalOpen, setIsCreateExpenseModalOpen] = useState(false)
-  const [summaryData, setSummaryData] = useState({
-    monthlyIncome: 0,
-    monthlyExpense: 0,
-    netIncome: 0,
-    pendingCount: 0
-  })
 
-  // Filtrelenmiş gelir toplam datası için yeni state ekliyorum
-  const [filteredSummaryData, setFilteredSummaryData] = useState({
-    filteredIncome: 0,
-    filteredExpense: 0,
-    filteredNetIncome: 0
-  })
+  // Seçili tarih aralığının verisi: ödenmiş gelir satırları ve giderler.
+  // Bekleyen tahsilatlar tarihten bağımsızdır (aktif öğrencilerin ödenmemiş kayıtları).
+  const [paidIncomeRows, setPaidIncomeRows] = useState([])
+  const [pendingIncomeRows, setPendingIncomeRows] = useState([])
+  const [expenseRows, setExpenseRows] = useState([])
 
   // Grafik verisi için state
   const [chartData, setChartData] = useState([])
   const [chartRange, setChartRange] = useState(6) // Yeni state: default 6 ay
 
-  // Pie chart verisi için state
-  const [expenseDistribution, setExpenseDistribution] = useState([])
-
-  // Tablo verileri için state
-  const [incomeTableData, setIncomeTableData] = useState([])
-  const [expenseTableData, setExpenseTableData] = useState([])
-
-  // Filtreler için state
-  const [incomeFilters, setIncomeFilters] = useState({
-    paymentMethod: [],  // String yerine artık array yapısında
-    dateRange: [],  
-    paymentStatus: '',
-    activeStatus: '',
-    search: ''
-  })
-
-  const [expenseFilters, setExpenseFilters] = useState({
-    expenseType: '',
-    paymentMethod: '',
-    dateRange: []  // null yerine boş dizi kullanıyoruz
-  })
+  // Filtreler için state (filtreler tarayıcıda uygulanır; yeniden veri indirilmez)
+  const [incomeFilters, setIncomeFilters] = useState(INITIAL_INCOME_FILTERS)
+  const [expenseFilters, setExpenseFilters] = useState(INITIAL_EXPENSE_FILTERS)
 
   const [isIncomeFilterSheetOpen, setIsIncomeFilterSheetOpen] = useState(false)
   const [isExpenseFilterSheetOpen, setIsExpenseFilterSheetOpen] = useState(false)
@@ -424,9 +505,15 @@ export default function IncomeExpense() {
     new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0)
   ])
 
+  // Art arda gönderilen isteklerden yalnızca sonuncusunun yanıtı kullanılır
+  const periodRequestRef = useRef(0)
+  const chartRequestRef = useRef(0)
+
   // Hızlı tarih seçimi için yardımcı fonksiyonlar
+  // (Aralık gün başlarıyla kurulur: "şu an"dan başlayan aralık, günün başına kayıtlı
+  // bugünkü ödemeleri dışarıda bırakıyordu ve "Bugün" hep 0 ₺ gelir gösteriyordu.)
   const handleQuickDateSelect = (option) => {
-    const today = new Date()
+    const today = startOfDay(new Date())
     let start, end
 
     switch (option) {
@@ -434,8 +521,8 @@ export default function IncomeExpense() {
         start = today
         end = today
         break
-      case 'next14':
-        start = new Date(today.getTime() - 14 * 24 * 60 * 60 * 1000) // Son 14 gün
+      case 'last14':
+        start = subDays(today, 13) // bugün dahil son 14 gün
         end = today
         break
       case 'thisMonth':
@@ -453,544 +540,241 @@ export default function IncomeExpense() {
     setDateRange([start, end])
   }
 
-  // Özet verileri getir
-  const fetchSummaryData = async () => {
+  // Seçili tarih aralığının verilerini getir (özet kartları, tablolar, gider dağılımı)
+  const fetchPeriodData = async () => {
     // Eğer tarih aralığı tam değilse işlemi yapma
-    if (!dateRange[0] || !dateRange[1]) {
-      return
-    }
+    if (!dateRange[0] || !dateRange[1]) return
 
+    const requestId = ++periodRequestRef.current
     setIsLoading(true)
+
+    // Aralık: ilk günün başından son günün sonuna
+    const rangeStart = startOfDay(dateRange[0]).toISOString()
+    const rangeEnd = endOfDay(dateRange[1]).toISOString()
+
     try {
-      // Seçili tarih aralığını kullan
-      const startDate = dateRange[0]
-      // Bitiş tarihini günün sonuna ayarla (23:59:59.999)
-      const endDate = new Date(dateRange[1])
-      endDate.setHours(23, 59, 59, 999)
+      // Sorgular birlikte çalışır; uzun listeler sayfa sayfa okunur (bkz. lib/fetchAll.js).
+      const [paidRecords, pendingRecords, expenseRecords] = await Promise.all([
+        // 1. Ödenmiş gelirler: ödeme tarihi aralıkta olanlar (sunucuda süzülür)
+        fetchAllRows(() => supabase
+          .from('financial_records')
+          .select(incomeRowFields())
+          .in('transaction_type', INCOME_TRANSACTION_TYPES)
+          .eq('payment_status', 'odendi')
+          .gte('payment_date', rangeStart)
+          .lte('payment_date', rangeEnd)
+          .order('payment_date', { ascending: false })
+          .order('created_at', { ascending: false })
+          .order('id', { ascending: true })),
+        // 2. Bekleyen tahsilatlar: aktif öğrencilerin ödenmemiş kayıtları (tarihten bağımsız;
+        //    ödenmemiş kaydın ödeme tarihi olmaz)
+        fetchAllRows(() => supabase
+          .from('financial_records')
+          .select(incomeRowFields(true))
+          .in('transaction_type', INCOME_TRANSACTION_TYPES)
+          .eq('payment_status', 'beklemede')
+          .eq('registrations.is_active', true)
+          .order('created_at', { ascending: false })
+          .order('id', { ascending: true })),
+        // 3. Giderler: gider tarihi aralıkta olanlar
+        fetchAllRows(() => supabase
+          .from('expenses')
+          .select('*')
+          .gte('expense_date', rangeStart)
+          .lte('expense_date', rangeEnd)
+          .order('expense_date', { ascending: false })
+          .order('created_at', { ascending: false })
+          .order('id', { ascending: true }))
+      ])
 
-      // 1. Bu ayki gelirleri getir (financial_records tablosundan)
-      const { data: incomeData, error: incomeError } = await supabase
-        .from('financial_records')
-        .select(`
-          amount,
-          payment_status,
-          transaction_type,
-          payment_date,
-          registrations (
-            package_start_date,
-            package_end_date
-          )
-        `)
-        .in('transaction_type', ['initial_payment', 'extension_payment'])
-        .eq('payment_status', 'odendi')
+      // Bu sırada yeni bir istek gönderildiyse eski yanıt yok sayılır
+      if (requestId !== periodRequestRef.current) return
 
-      if (incomeError) throw incomeError
-
-      // Ödeme tarihine göre filtreleme yapıyoruz
-      const filteredIncomeData = incomeData.filter(record => {
-        const paymentDate = new Date(record.payment_date || record.created_at);
-        return paymentDate >= startDate && paymentDate <= endDate;
-      });
-
-      // 2. Bu ayki giderleri getir
-      const { data: expenseData, error: expenseError } = await supabase
-        .from('expenses')
-        .select('amount')
-        .gte('expense_date', startDate.toISOString())
-        .lte('expense_date', endDate.toISOString())
-
-      if (expenseError) throw expenseError
-
-      // 3. Bekleyen ödemeleri getir - paket başlangıç tarihine göre filtreliyoruz
-      const { data: pendingData, error: pendingError } = await supabase
-        .from('financial_records')
-        .select(`
-          id,
-          payment_status,
-          payment_date,
-          registrations (
-            package_start_date,
-            package_end_date
-          )
-        `)
-        .eq('payment_status', 'beklemede')
-
-      if (pendingError) throw pendingError
-
-      // Bekleyen ödemeleri de ödeme tarihine göre filtreliyoruz
-      const filteredPendingData = pendingData.filter(record => {
-        // Eğer payment_date yoksa, tahsilat tarihi henüz belirlenmemiş demektir,
-        // bu durumda bunu gelecekte tahsil edilecek ödeme olarak kabul edelim ve gösterelim
-        if (!record.payment_date) return true;
-        
-        const paymentDate = new Date(record.payment_date);
-        return paymentDate >= startDate && paymentDate <= endDate;
-      });
-
-      // Toplamları hesapla
-      const monthlyIncome = filteredIncomeData.reduce((sum, record) => sum + record.amount, 0);
-      const monthlyExpense = expenseData.reduce((sum, record) => sum + record.amount, 0)
-      const netIncome = monthlyIncome - monthlyExpense
-      const pendingCount = filteredPendingData.length
-
-      // State'i güncelle
-      setSummaryData({
-        monthlyIncome,
-        monthlyExpense,
-        netIncome,
-        pendingCount
-      })
-
-      // Filtrelenmiş veri için varsayılan değerleri ayarla
-      setFilteredSummaryData({
-        filteredIncome: monthlyIncome,
-        filteredExpense: monthlyExpense,
-        filteredNetIncome: netIncome
-      })
-    } catch (error) {
-      console.error('Özet verileri getirilirken hata:', error.message)
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  // Gelir tablosu verilerini getir
-  const fetchIncomeTableData = async () => {
-    try {
-      // 1. Önce tüm finansal kayıtları getirelim
-      // Bütün finansal kayıtları getirelim, filtrelemeyi sonra yapalım
-      const { data, error } = await supabase
-        .from('financial_records')
-        .select(`
-          id,
-          amount,
-          payment_method,
-          payment_status,
-          created_at,
-          transaction_type,
-          registration_id,
-          extension_history_id,
-          payment_date,
-          notes,
-          registrations (
-            student_name,
-            parent_name,
-            package_type,
-            package_start_date,
-            package_end_date,
-            is_active,
-            initial_start_date,
-            initial_end_date,
-            initial_package_type
-          )
-        `)
-        .in('transaction_type', ['initial_payment', 'extension_payment'])
-        .in('payment_status', ['odendi', 'beklemede']) // Hem ödendi hem bekleyen kayıtları getirelim
-        .order('created_at', { ascending: false })
-
-      if (error) throw error
-
-      // 2. Uzatma geçmişini de getirelim
-      const { data: extensionData, error: extensionError } = await supabase
-        .from('extension_history')
-        .select('*')
-
-      if (extensionError) throw extensionError
-
-      // 3. Verilerimizi işleyelim
-      const formattedData = await Promise.all(data.map(async (record) => {
-        let displayStartDate, displayEndDate, displayPackageType;
-
-        if (record.transaction_type === 'initial_payment') {
-          // İlk kayıt için kaydedilen ilk tarihleri kullan (UpdateModal sonrası doğru olmalı)
-          displayStartDate = record.registrations.initial_start_date || record.registrations.package_start_date;
-          displayEndDate = record.registrations.initial_end_date || record.registrations.package_end_date; 
-          displayPackageType = record.registrations.initial_package_type || record.registrations.package_type;
-        } else { // extension_payment
-          // Öncelik: FK üzerinden direkt eşleşme; yoksa fuzzy fallback.
-          const directMatch = record.extension_history_id
-            ? extensionData.find(ext => ext.id === record.extension_history_id)
-            : null;
-
-          const potentialMatches = extensionData
-            .filter(ext => ext.registration_id === record.registration_id)
-            .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-
-          const fuzzyMatch = potentialMatches.find(ext =>
-            (record.payment_status === 'beklemede' ||
-             (ext.payment_amount === record.amount &&
-              ext.payment_method === record.payment_method &&
-              (!record.payment_date || !ext.payment_date || Math.abs(new Date(record.payment_date) - new Date(ext.payment_date)) < 60000)
-             )
-            ) &&
-            ext.new_package_type === record.registrations.package_type
-          );
-
-          const extensionRecord = directMatch || fuzzyMatch;
-
-          if (extensionRecord && extensionRecord.new_start_date) {
-            // Uzatma kaydı bulunduysa ve new_start_date varsa onu kullan
-            displayStartDate = extensionRecord.new_start_date; // *** Düzeltildi: new_start_date kullanılıyor ***
-            displayEndDate = extensionRecord.new_end_date;
-            displayPackageType = extensionRecord.new_package_type;
-          } else {
-            // Güvenilir bir eşleşme bulunamadıysa veya new_start_date yoksa,
-            // en iyi tahmin olarak mevcut paket tarihlerini kullan (bu durum ideal değil)
-            console.warn(`Extension history eşleşmesi bulunamadı veya new_start_date eksik: financial_record.id=${record.id}, registration_id=${record.registration_id}`);
-            displayStartDate = record.registrations.package_start_date;
-            displayEndDate = record.registrations.package_end_date;
-            displayPackageType = record.registrations.package_type;
-          }
-        }
-
-        return {
-          id: record.id,
-          student: record.registrations.student_name,
-          parent: record.registrations.parent_name,
-          package: displayPackageType,
-          date: displayStartDate,
-          end_date: displayEndDate,
-          is_active: record.registrations.is_active,
-          amount: record.amount,
-          method: record.payment_method,
-          status: record.payment_status,
-          payment_date: record.payment_date || record.created_at, // Ödeme tarihi, yoksa created_at kullanılır
-          transaction_type: record.transaction_type === 'initial_payment' 
-            ? (language === 'tr' ? 'İlk Kayıt' : 'Initial Registration')
-            : (language === 'tr' ? 'Paket Uzatma' : 'Package Extension'),
-          created_at: record.created_at
-        };
-      }));
-
-      // 4. Tarihe göre filtreleme yap - Artık ödeme tarihine göre filtreleme yapıyoruz
-      const filteredData = formattedData.filter(record => {
-        const paymentDate = new Date(record.payment_date);
-        
-        // Bitiş tarihini günün sonuna ayarla (23:59:59.999)
-        const endDateAdjusted = new Date(dateRange[1]);
-        endDateAdjusted.setHours(23, 59, 59, 999);
-        
-        // Ödeme tarihi belirtilen aralıkta mı kontrol et
-        return paymentDate >= dateRange[0] && paymentDate <= endDateAdjusted;
-      });
-
-      // 5. Varsayılan olarak sadece "odendi" durumundaki kayıtları gösterelim
-      // Ancak filtre uygulanmışsa ve "beklemede" seçilmişse, o durumda bekleyen kayıtları gösterelim
-      const paymentStatusFiltered = incomeFilters.paymentStatus 
-        ? filteredData.filter(record => record.status === incomeFilters.paymentStatus)
-        : filteredData.filter(record => record.status === 'odendi'); // Varsayılan olarak sadece ödenmiş olanları göster
-
-      setIncomeTableData(paymentStatusFiltered);
-    } catch (error) {
-      console.error('Gelir tablosu verileri getirilirken hata:', error.message);
-    }
-  }
-
-  // Gider tablosu verilerini getir
-  const fetchExpenseTableData = async () => {
-    try {
-      // Bitiş tarihini günün sonuna ayarla (23:59:59.999)
-      const endDateAdjusted = new Date(dateRange[1]);
-      endDateAdjusted.setHours(23, 59, 59, 999);
-      
-      const { data, error } = await supabase
-        .from('expenses')
-        .select('*')
-        .gte('expense_date', dateRange[0].toISOString())
-        .lte('expense_date', endDateAdjusted.toISOString())
-        .order('created_at', { ascending: false })
-
-      if (error) throw error
-
-      const formattedData = data.map(record => ({
+      setPaidIncomeRows(paidRecords.map(toIncomeRow))
+      setPendingIncomeRows(pendingRecords.map(toIncomeRow))
+      setExpenseRows(expenseRecords.map(record => ({
         id: record.id,
         title: record.description,
         category: record.expense_type,
         date: record.expense_date,
         notes: record.notes || '',
-        amount: record.amount,
+        amount: Number(record.amount) || 0,
         method: record.payment_method
-      }))
-
-      setExpenseTableData(formattedData)
+      })))
+      setLoadFailed(prev => ({ ...prev, period: false }))
     } catch (error) {
-      console.error('Gider tablosu verileri getirilirken hata:', error.message)
+      if (requestId !== periodRequestRef.current) return
+
+      console.error('Gelir/gider verileri getirilirken hata:', error.message)
+      // Önceki dönemin rakamları yeni tarihlerin altında görünmesin
+      setPaidIncomeRows([])
+      setPendingIncomeRows([])
+      setExpenseRows([])
+      setLoadFailed(prev => ({ ...prev, period: true }))
+    } finally {
+      if (requestId === periodRequestRef.current) {
+        setIsLoading(false)
+      }
     }
   }
 
-  // Gider dağılımı verilerini getir
-  const fetchExpenseDistribution = async () => {
+  // Aylık gelir & gider grafiğinin verilerini getir (son `chartRange` ay)
+  const fetchChartData = async () => {
+    const requestId = ++chartRequestRef.current
+    setIsChartLoading(true)
+
     try {
-      // Bitiş tarihini günün sonuna ayarla (23:59:59.999)
-      const endDateAdjusted = new Date(dateRange[1]);
-      endDateAdjusted.setHours(23, 59, 59, 999);
-      
-      const { data, error } = await supabase
-        .from('expenses')
-        .select('expense_type, amount')
-        .gte('expense_date', dateRange[0].toISOString())
-        .lte('expense_date', endDateAdjusted.toISOString())
+      // Grafik tam aylardan oluşur: ilk ay, ayın 1'inden başlar. (Eskiden "bugünden N-1 ay
+      // önce, bugünün günü ve saati"nden başlıyordu; ilk ay eksik çıkıyordu.)
+      const now = new Date()
+      const firstMonth = new Date(now.getFullYear(), now.getMonth() - (chartRange - 1), 1)
 
-      if (error) throw error
+      const [incomeRecords, expenseRecords] = await Promise.all([
+        // Gelirler - hem ilk kayıt hem uzatma işlemleri; ödeme tarihine göre
+        fetchAllRows(() => supabase
+          .from('financial_records')
+          .select('id, amount, payment_date')
+          .in('transaction_type', INCOME_TRANSACTION_TYPES)
+          .eq('payment_status', 'odendi')
+          .gte('payment_date', firstMonth.toISOString())
+          .order('payment_date', { ascending: true })
+          .order('id', { ascending: true })),
+        // Giderler
+        fetchAllRows(() => supabase
+          .from('expenses')
+          .select('id, amount, expense_date')
+          .gte('expense_date', firstMonth.toISOString())
+          .order('expense_date', { ascending: true })
+          .order('id', { ascending: true }))
+      ])
 
-      // Kategorilere göre toplamları hesapla
-      const totals = data.reduce((acc, curr) => {
-        const type = curr.expense_type
-        if (!acc[type]) {
-          acc[type] = {
-            name: type,
-            value: 0,
-            color: type === 'kira' ? '#0071e3'
-              : type === 'elektrik' ? '#34d399'
-              : type === 'su' ? '#fbbf24'
-              : type === 'dogalgaz' ? '#f87171'
-              : type === 'internet' ? '#a78bfa'
-              : type === 'maas' ? '#60a5fa'
-              : type === 'malzeme' ? '#fb923c'
-              : type === 'mutfak' ? '#4ade80'
-              : type === 'reklam' ? '#f472b6'
-              : type === 'filament' ? '#22d3ee'
-              : '#94a3b8'
-          }
-        }
-        acc[type].value += curr.amount
-        return acc
-      }, {})
+      if (requestId !== chartRequestRef.current) return
 
-      // Object değerlerini array'e çevir
-      const distributionData = Object.values(totals)
-
-      setExpenseDistribution(distributionData)
-    } catch (error) {
-      console.error('Gider dağılımı verileri getirilirken hata:', error.message)
-    }
-  }
-
-  // Tüm verileri getir
-  const fetchAllData = async () => {
-    setIsLoading(true)
-    setIsTableLoading(true)
-    
-    try {
-      await fetchSummaryData()
-      await fetchIncomeTableData()
-      await fetchExpenseTableData()
-      await fetchExpenseDistribution()
-      
-      // Son seçilen ay sayısının verilerini getir
-      const selectedMonthsAgo = new Date()
-      selectedMonthsAgo.setMonth(selectedMonthsAgo.getMonth() - (chartRange - 1))
-
-      // Gelirler - hem ilk kayıt hem uzatma işlemlerini dahil edelim
-      const { data: monthlyIncomeData, error: monthlyIncomeError } = await supabase
-        .from('financial_records')
-        .select(`
-          amount, 
-          created_at,
-          payment_date,
-          transaction_type
-        `)
-        .in('transaction_type', ['initial_payment', 'extension_payment'])
-        .eq('payment_status', 'odendi')
-        .gte('created_at', selectedMonthsAgo.toISOString())
-        .order('created_at', { ascending: true })
-
-      if (monthlyIncomeError) throw monthlyIncomeError
-
-      // Giderler
-      const { data: monthlyExpenseData, error: monthlyExpenseError } = await supabase
-        .from('expenses')
-        .select('amount, expense_date')
-        .gte('expense_date', selectedMonthsAgo.toISOString())
-        .order('expense_date', { ascending: true })
-
-      if (monthlyExpenseError) throw monthlyExpenseError
-
-      // Grafik verilerini hazırla
+      // Ay kutuları: ayın 1'i üzerinden kurulur. (Bugünün tarihinden ay çıkarmak, ayın
+      // 29-31'inde bazı ayları iki kez üretip bazılarını atlıyordu.)
+      const monthKeyOf = (date) => `${date.getFullYear()}-${date.getMonth() + 1}`
       const monthlyData = {}
-      const months = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık']
-
-      // Son seçilen ay sayısını döngüye al
-      for (let i = 0; i < chartRange; i++) {
-        const date = new Date()
-        date.setMonth(date.getMonth() - i)
-        const monthKey = `${date.getFullYear()}-${date.getMonth() + 1}`
-        const monthName = months[date.getMonth()]
-        
-        monthlyData[monthKey] = {
-          name: monthName,
-          gelir: 0,
-          gider: 0
-        }
+      for (let i = chartRange - 1; i >= 0; i--) {
+        const month = new Date(now.getFullYear(), now.getMonth() - i, 1)
+        monthlyData[monthKeyOf(month)] = { month, gelir: 0, gider: 0 }
       }
 
-      // Gelirleri ekle - artık ödeme tarihine göre grupluyoruz
-      monthlyIncomeData.forEach(record => {
-        // Ödeme tarihine göre grupla
-        const date = new Date(record.payment_date || record.created_at);
-        const monthKey = `${date.getFullYear()}-${date.getMonth() + 1}`;
-        
-        if (monthlyData[monthKey]) {
-          monthlyData[monthKey].gelir += record.amount;
-        }
-      });
-
-      // Giderleri ekle
-      monthlyExpenseData.forEach(record => {
-        const date = new Date(record.expense_date)
-        const monthKey = `${date.getFullYear()}-${date.getMonth() + 1}`
-        if (monthlyData[monthKey]) {
-          monthlyData[monthKey].gider += record.amount
-        }
+      // Gelirleri ekle - ödeme tarihine göre gruplanır
+      incomeRecords.forEach(record => {
+        const bucket = monthlyData[monthKeyOf(new Date(record.payment_date))]
+        if (bucket) bucket.gelir += Number(record.amount) || 0
       })
 
-      // Grafik verilerini state'e aktar
-      setChartData(Object.values(monthlyData).reverse())
+      // Giderleri ekle
+      expenseRecords.forEach(record => {
+        const bucket = monthlyData[monthKeyOf(new Date(record.expense_date))]
+        if (bucket) bucket.gider += Number(record.amount) || 0
+      })
+
+      setChartData(Object.values(monthlyData))
+      setLoadFailed(prev => ({ ...prev, chart: false }))
     } catch (error) {
-      console.error('Veriler getirilirken hata:', error.message)
+      if (requestId !== chartRequestRef.current) return
+
+      console.error('Grafik verileri getirilirken hata:', error.message)
+      setChartData([])
+      setLoadFailed(prev => ({ ...prev, chart: true }))
     } finally {
-      setIsLoading(false)
-      setIsTableLoading(false)
+      if (requestId === chartRequestRef.current) {
+        setIsChartLoading(false)
+      }
     }
   }
 
-  // Filtreleri uygula
-  const applyFilters = (data, filterType) => {
-    const currentFilters = filterType === 'income' ? incomeFilters : expenseFilters;
-    
-    const filteredData = data.filter(item => {
-      // Search filter for income
-      let searchMatch = true;
-      if (filterType === 'income' && currentFilters.search) {
-        const searchTerm = currentFilters.search.toLowerCase();
-        searchMatch = item.student.toLowerCase().includes(searchTerm) || 
-                     item.parent.toLowerCase().includes(searchTerm);
-      }
-      
-      // Ödeme yöntemi filtresini güncelliyoruz - çoklu seçim kontrolü
-      let methodMatch = true;
-      if (filterType === 'income') {
-        // Boş dizi değilse (hiçbir filtre seçilmediğinde) ve dizi uzunluğu > 0 ise filtre uygula
-        methodMatch = !currentFilters.paymentMethod.length || 
-                      currentFilters.paymentMethod.includes(item.method.toLowerCase());
-      } else {
-        methodMatch = !currentFilters.paymentMethod || item.method.toLowerCase() === currentFilters.paymentMethod;
-      }
-      
-      let statusMatch = true;
-      if (filterType === 'income') {
-        statusMatch = !currentFilters.paymentStatus || item.status === currentFilters.paymentStatus;
-      }
-      
-      let activeStatusMatch = true;
-      if (filterType === 'income' && currentFilters.activeStatus) {
-        activeStatusMatch = 
-          (currentFilters.activeStatus === 'active' && item.is_active) ||
-          (currentFilters.activeStatus === 'inactive' && !item.is_active);
-      }
-      
-      let categoryMatch = true;
-      if (filterType === 'income') {
-        // Burada dateRange kontrolünü düzenliyoruz - null veya boş dizi kontrolü
-        categoryMatch = !currentFilters.dateRange || !currentFilters.dateRange.length || (
-          new Date(item.date) >= currentFilters.dateRange[0] &&
-          new Date(item.date) <= currentFilters.dateRange[1]
-        );
-      } else {
-        categoryMatch = !currentFilters.expenseType || item.category.toLowerCase() === currentFilters.expenseType;
-      }
-      
-      return searchMatch && methodMatch && categoryMatch && statusMatch && activeStatusMatch;
-    });
+  // Tüm verileri getir (gider eklendi/düzenlendi/silindiğinde ve "Tekrar dene"de)
+  const fetchAllData = () => {
+    fetchPeriodData()
+    fetchChartData()
+  }
 
-    // Filtrelemeden sonra toplam tutarları hesaplama
-    if (filterType === 'income') {
-      // Yeni bir filtrelenmiş gelir hesaplaması yapıyoruz
-      const filteredIncome = filteredData.reduce((total, item) => total + item.amount, 0);
-      
-      // Mevcut filtrelenmiş toplam ile farklı ise state güncelleniyor
-      if (filteredSummaryData.filteredIncome !== filteredIncome) {
-        setFilteredSummaryData(prev => ({
-          ...prev,
-          filteredIncome: filteredIncome,
-          // Net gelir hesaplaması - eğer gider filtresi varsa onu, yoksa toplam gideri kullan
-          filteredNetIncome: filteredIncome - (expenseFilters.expenseType || expenseFilters.paymentMethod ? 
-            prev.filteredExpense : summaryData.monthlyExpense)
-        }));
-      }
-    } else if (filterType === 'expense') {
-      // Gider için benzer hesaplama
-      const filteredExpense = filteredData.reduce((total, item) => total + item.amount, 0);
-      if (filteredSummaryData.filteredExpense !== filteredExpense) {
-        setFilteredSummaryData(prev => ({
-          ...prev,
-          filteredExpense: filteredExpense,
-          // Net gelir hesaplaması - eğer gelir filtresi varsa onu, yoksa toplam geliri kullan
-          filteredNetIncome: (incomeFilters.paymentMethod.length || incomeFilters.paymentStatus || incomeFilters.activeStatus ? 
-            prev.filteredIncome : summaryData.monthlyIncome) - filteredExpense
-        }));
-      }
-    }
-    
-    return filteredData;
-  };
-
+  // Tarih aralığı değişince dönem verisi yeniden yüklenir
   useEffect(() => {
     // Eğer dateRange'in her iki değeri de varsa (başlangıç ve bitiş) veriyi getir
     if (dateRange[0] && dateRange[1]) {
-      fetchAllData()
+      fetchPeriodData()
     }
   }, [dateRange])
 
-  // Filtreleri izle ve uygula
+  // Grafik aralığı değişince yalnızca grafik yeniden yüklenir
   useEffect(() => {
-    if (!isTableLoading) {
-      fetchIncomeTableData()
-      fetchExpenseTableData()
-    }
-  }, [incomeFilters, expenseFilters])
+    fetchChartData()
+  }, [chartRange])
 
-  // Yeni useEffect - Filtreler değiştiğinde filtrelenmiş verileri hazırla
-  // Bu sadece veriler hazır olduğunda çalışacak
-  useEffect(() => {
-    if (!isTableLoading && incomeTableData.length > 0) {
-      // Bu useEffect içinde doğrudan applyFilters çağırmıyoruz
-      // Çünkü applyFilters hem filtreleme yapıp hem de state güncellediği için
-      // sonsuz döngüye neden olabilir
-      const filtered = incomeTableData.filter(item => {
-        return !incomeFilters.paymentMethod.length || 
-               incomeFilters.paymentMethod.includes(item.method.toLowerCase());
-      });
-      
-      const filteredIncome = filtered.reduce((total, item) => total + item.amount, 0);
-      setFilteredSummaryData(prev => ({
-        ...prev,
-        filteredIncome: filteredIncome,
-        filteredNetIncome: filteredIncome - (expenseFilters.expenseType || expenseFilters.paymentMethod ? 
-          prev.filteredExpense : summaryData.monthlyExpense)
-      }));
-    }
-  }, [isTableLoading, incomeFilters.paymentMethod, incomeTableData]);
+  // --- Filtreler ve toplamlar: hepsi aynı satırlardan, tek yerde hesaplanır ---
 
-  // Gider filtreleri için yeni useEffect
-  useEffect(() => {
-    if (!isTableLoading && expenseTableData.length > 0) {
-      const filtered = expenseTableData.filter(item => {
-        const methodMatch = !expenseFilters.paymentMethod || item.method.toLowerCase() === expenseFilters.paymentMethod;
-        const categoryMatch = !expenseFilters.expenseType || item.category.toLowerCase() === expenseFilters.expenseType;
-        
-        return methodMatch && categoryMatch;
-      });
-      
-      const filteredExpense = filtered.reduce((total, item) => total + item.amount, 0);
-      setFilteredSummaryData(prev => ({
-        ...prev,
-        filteredExpense: filteredExpense,
-        filteredNetIncome: (incomeFilters.paymentMethod.length || incomeFilters.paymentStatus || incomeFilters.activeStatus ? 
-          prev.filteredIncome : summaryData.monthlyIncome) - filteredExpense
-      }));
-    }
-  }, [isTableLoading, expenseFilters.paymentMethod, expenseFilters.expenseType, expenseTableData]);
+  // "Bekleyen Tahsilatlar" görünümü: tablo bekleyen kayıtları listeler
+  const isPendingView = incomeFilters.paymentStatus === 'beklemede'
+
+  // Ödeme yöntemi ve öğrenci durumu filtreleri
+  const matchesIncomeFilters = (item) => {
+    const methodMatch = !incomeFilters.paymentMethod.length || incomeFilters.paymentMethod.includes(item.method)
+    const activeStatusMatch = !incomeFilters.activeStatus ||
+      (incomeFilters.activeStatus === 'active' ? Boolean(item.is_active) : !item.is_active)
+    return methodMatch && activeStatusMatch
+  }
+
+  // Gelir kartı: aralıktaki ödenmiş gelir (yöntem / öğrenci durumu filtreleriyle).
+  // Arama kutusu yalnızca tabloyu süzer, kartları değiştirmez.
+  const filteredPaidIncome = useMemo(
+    () => paidIncomeRows.filter(matchesIncomeFilters),
+    [paidIncomeRows, incomeFilters.paymentMethod, incomeFilters.activeStatus]
+  )
+
+  // Gelir tablosu: varsayılan olarak ödenmiş kayıtlar; bekleyenler görünümünde bekleyen kayıtlar
+  const incomeTableRows = useMemo(() => {
+    const rows = isPendingView ? pendingIncomeRows.filter(matchesIncomeFilters) : filteredPaidIncome
+    const search = incomeFilters.search.trim()
+    if (!search) return rows
+    return rows.filter(item => matchesSearch(item.student, search) || matchesSearch(item.parent, search))
+  }, [isPendingView, pendingIncomeRows, filteredPaidIncome, incomeFilters.paymentMethod, incomeFilters.activeStatus, incomeFilters.search])
+
+  const expenseTableRows = useMemo(
+    () => expenseRows.filter(item => (
+      (!expenseFilters.paymentMethod || item.method === expenseFilters.paymentMethod) &&
+      (!expenseFilters.expenseType || item.category === expenseFilters.expenseType)
+    )),
+    [expenseRows, expenseFilters.paymentMethod, expenseFilters.expenseType]
+  )
+
+  const hasIncomeCardFilter = incomeFilters.paymentMethod.length > 0 || Boolean(incomeFilters.activeStatus)
+  const hasExpenseFilter = Boolean(expenseFilters.expenseType || expenseFilters.paymentMethod)
+
+  // Kartlar: Net Kazanç her zaman Gelir kartı eksi Gider kartıdır
+  const incomeTotal = useMemo(() => sumAmounts(filteredPaidIncome), [filteredPaidIncome])
+  const expenseTotal = useMemo(() => sumAmounts(expenseTableRows), [expenseTableRows])
+  const netIncome = incomeTotal - expenseTotal
+  const pendingCount = pendingIncomeRows.length
+
+  // Gider dağılımı (kategorilere göre, tutara göre büyükten küçüğe): aralıktaki tüm giderler
+  const expenseDistribution = useMemo(() => {
+    const totals = {}
+    expenseRows.forEach(item => {
+      if (!totals[item.category]) {
+        totals[item.category] = {
+          name: item.category,
+          value: 0,
+          color: EXPENSE_TYPE_COLORS[item.category] || EXPENSE_TYPE_COLORS.diger
+        }
+      }
+      totals[item.category].value += item.amount
+    })
+    return Object.values(totals).sort((a, b) => b.value - a.value)
+  }, [expenseRows])
+
+  // Grafikte ay adları arayüz diliyle yazılır
+  const chartRows = useMemo(
+    () => chartData.map(row => ({
+      name: row.month.toLocaleString(language === 'tr' ? 'tr-TR' : 'en-US', { month: 'long' }),
+      gelir: row.gelir,
+      gider: row.gider
+    })),
+    [chartData, language]
+  )
 
   // Para formatı
   const formatCurrency = (amount) => {
@@ -1007,6 +791,11 @@ export default function IncomeExpense() {
     return formatCurrency(value)
   }
 
+  // Grafik ekseni için kısa para yazımı ("360.000 ₺"); tam yazım eksene sığmayıp kesiliyordu
+  const formatAxisValue = (value) => {
+    return `${new Intl.NumberFormat('tr-TR', { maximumFractionDigits: 0 }).format(value)} ₺`
+  }
+
   // Handle update
   const handleUpdate = () => {
     fetchAllData()
@@ -1016,31 +805,6 @@ export default function IncomeExpense() {
   const handleDelete = () => {
     fetchAllData()
   }
-
-  // State for active dropdown
-  const [activeDropdown, setActiveDropdown] = useState(null)
-
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      const dropdownButton = event.target.closest('.dropdown-toggle');
-      const dropdownMenu = event.target.closest('.dropdown-menu');
-      
-      if (!dropdownButton && !dropdownMenu) {
-        setActiveDropdown(null);
-      }
-    }
-
-    document.addEventListener('click', handleClickOutside)
-    return () => {
-      document.removeEventListener('click', handleClickOutside)
-    }
-  }, [activeDropdown])
-
-  // Add new useEffect for chartRange
-  useEffect(() => {
-    fetchAllData()
-  }, [chartRange])
 
   return (
     <div>
@@ -1063,7 +827,7 @@ export default function IncomeExpense() {
               {language === 'tr' ? 'Bugün' : 'Today'}
             </button>
             <button
-              onClick={() => handleQuickDateSelect('next14')}
+              onClick={() => handleQuickDateSelect('last14')}
               className="h-9 px-4 rounded-lg text-sm font-medium bg-white dark:bg-[#121621] text-[#1d1d1f] dark:text-white border border-[#d2d2d7] dark:border-[#2a3241] hover:border-[#0071e3] dark:hover:border-[#0071e3] transition-colors whitespace-nowrap"
             >
               {language === 'tr' ? 'Son 14 Gün' : 'Last 14 Days'}
@@ -1098,7 +862,7 @@ export default function IncomeExpense() {
               className="h-10 pl-4 pr-4 rounded-lg text-sm font-medium bg-white dark:bg-[#121621] text-[#1d1d1f] dark:text-white border border-[#d2d2d7] dark:border-[#2a3241] hover:border-[#0071e3] dark:hover:border-[#0071e3] transition-all cursor-pointer w-full lg:w-[210px] focus:outline-none focus:ring-2 focus:ring-[#0071e3] focus:ring-opacity-50 focus:border-[#0071e3]"
               placeholderText={language === 'tr' ? 'Tarih Aralığı Seçin' : 'Select Date Range'}
               showPopperArrow={false}
-              isClearable={true}
+              popperClassName="ie-range-popper"
               renderCustomHeader={({
                 date,
                 decreaseMonth,
@@ -1168,7 +932,7 @@ export default function IncomeExpense() {
               </h3>
               <div className="flex gap-2">
                 <button
-                  onClick={() => setIncomeFilters(prev => ({ ...prev, activeStatus: 'active' }))}
+                  onClick={() => setIncomeFilters(prev => ({ ...prev, activeStatus: prev.activeStatus === 'active' ? '' : 'active' }))}
                   className={`
                     h-9 px-4 rounded-lg text-sm font-medium transition-colors flex-1 whitespace-nowrap
                     ${incomeFilters.activeStatus === 'active'
@@ -1180,7 +944,7 @@ export default function IncomeExpense() {
                   {language === 'tr' ? 'Aktif' : 'Active'}
                 </button>
                 <button
-                  onClick={() => setIncomeFilters(prev => ({ ...prev, activeStatus: 'inactive' }))}
+                  onClick={() => setIncomeFilters(prev => ({ ...prev, activeStatus: prev.activeStatus === 'inactive' ? '' : 'inactive' }))}
                   className={`
                     h-9 px-4 rounded-lg text-sm font-medium transition-colors flex-1 whitespace-nowrap
                     ${incomeFilters.activeStatus === 'inactive'
@@ -1276,7 +1040,7 @@ export default function IncomeExpense() {
               </h3>
               <div className="flex gap-2">
                 <button
-                  onClick={() => setIncomeFilters(prev => ({ ...prev, paymentStatus: 'odendi' }))}
+                  onClick={() => setIncomeFilters(prev => ({ ...prev, paymentStatus: prev.paymentStatus === 'odendi' ? '' : 'odendi' }))}
                   className={`
                     h-9 px-4 rounded-lg text-sm font-medium transition-colors flex-1 whitespace-nowrap
                     ${incomeFilters.paymentStatus === 'odendi'
@@ -1288,7 +1052,7 @@ export default function IncomeExpense() {
                   {language === 'tr' ? 'Ödendi' : 'Paid'}
                 </button>
                 <button
-                  onClick={() => setIncomeFilters(prev => ({ ...prev, paymentStatus: 'beklemede' }))}
+                  onClick={() => setIncomeFilters(prev => ({ ...prev, paymentStatus: prev.paymentStatus === 'beklemede' ? '' : 'beklemede' }))}
                   className={`
                     h-9 px-4 rounded-lg text-sm font-medium transition-colors flex-1 whitespace-nowrap
                     ${incomeFilters.paymentStatus === 'beklemede'
@@ -1308,14 +1072,7 @@ export default function IncomeExpense() {
             <div className="flex items-center gap-3">
               <button
                 onClick={() => {
-                  // Filtreleri temizlerken paymentMethod'u [] olarak ayarlıyoruz
-                  setIncomeFilters({
-                    paymentMethod: [],  // Boş array olarak ayarla
-                    dateRange: [],
-                    paymentStatus: '',
-                    activeStatus: '',
-                    search: ''
-                  })
+                  setIncomeFilters(INITIAL_INCOME_FILTERS)
                   setIsIncomeFilterSheetOpen(false)
                 }}
                 className="flex-1 h-10 bg-gray-100 dark:bg-[#1d1d1f] text-[#1d1d1f] dark:text-white font-medium rounded-xl hover:bg-gray-200 dark:hover:bg-[#2a3241] focus:outline-none transition-colors"
@@ -1360,10 +1117,10 @@ export default function IncomeExpense() {
                 {language === 'tr' ? 'Gider Türü' : 'Expense Type'}
               </h3>
               <div className="grid grid-cols-3 gap-2">
-                {['kira', 'elektrik', 'su', 'internet', 'maas', 'malzeme', 'mutfak', 'reklam', 'filament', 'diger'].map((type) => (
+                {EXPENSE_TYPES.map((type) => (
                   <button
                     key={type}
-                    onClick={() => setExpenseFilters(prev => ({ ...prev, expenseType: type }))}
+                    onClick={() => setExpenseFilters(prev => ({ ...prev, expenseType: prev.expenseType === type ? '' : type }))}
                     className={`
                       h-9 px-4 rounded-lg text-sm font-medium transition-colors whitespace-nowrap
                       ${expenseFilters.expenseType === type
@@ -1372,19 +1129,7 @@ export default function IncomeExpense() {
                       }
                     `}
                   >
-                    {language === 'tr'
-                      ? type.charAt(0).toUpperCase() + type.slice(1)
-                      : type === 'kira' ? 'Rent'
-                      : type === 'elektrik' ? 'Electricity'
-                      : type === 'su' ? 'Water'
-                      : type === 'internet' ? 'Internet'
-                      : type === 'maas' ? 'Salary'
-                      : type === 'malzeme' ? 'Materials'
-                      : type === 'mutfak' ? 'Kitchen'
-                      : type === 'reklam' ? 'Advertising'
-                      : type === 'filament' ? 'Filament'
-                      : 'Other'
-                    }
+                    {expenseTypeLabel(type, language)}
                   </button>
                 ))}
               </div>
@@ -1397,7 +1142,7 @@ export default function IncomeExpense() {
               </h3>
               <div className="flex gap-2">
                 <button
-                  onClick={() => setExpenseFilters(prev => ({ ...prev, paymentMethod: 'banka' }))}
+                  onClick={() => setExpenseFilters(prev => ({ ...prev, paymentMethod: prev.paymentMethod === 'banka' ? '' : 'banka' }))}
                   className={`
                     h-9 px-4 rounded-lg text-sm font-medium transition-colors flex-1 whitespace-nowrap
                     ${expenseFilters.paymentMethod === 'banka'
@@ -1409,7 +1154,7 @@ export default function IncomeExpense() {
                   {language === 'tr' ? 'Banka' : 'Bank'}
                 </button>
                 <button
-                  onClick={() => setExpenseFilters(prev => ({ ...prev, paymentMethod: 'nakit' }))}
+                  onClick={() => setExpenseFilters(prev => ({ ...prev, paymentMethod: prev.paymentMethod === 'nakit' ? '' : 'nakit' }))}
                   className={`
                     h-9 px-4 rounded-lg text-sm font-medium transition-colors flex-1 whitespace-nowrap
                     ${expenseFilters.paymentMethod === 'nakit'
@@ -1421,7 +1166,7 @@ export default function IncomeExpense() {
                   {language === 'tr' ? 'Nakit' : 'Cash'}
                 </button>
                 <button
-                  onClick={() => setExpenseFilters(prev => ({ ...prev, paymentMethod: 'kart' }))}
+                  onClick={() => setExpenseFilters(prev => ({ ...prev, paymentMethod: prev.paymentMethod === 'kart' ? '' : 'kart' }))}
                   className={`
                     h-9 px-4 rounded-lg text-sm font-medium transition-colors flex-1 whitespace-nowrap
                     ${expenseFilters.paymentMethod === 'kart'
@@ -1441,12 +1186,7 @@ export default function IncomeExpense() {
             <div className="flex items-center gap-3">
               <button
                 onClick={() => {
-                  // Gider filtreleri için de aynı şekilde dateRange'i [] olarak ayarlıyoruz
-                  setExpenseFilters({
-                    expenseType: '',
-                    paymentMethod: '',
-                    dateRange: []  // null yerine boş dizi
-                  })
+                  setExpenseFilters(INITIAL_EXPENSE_FILTERS)
                   setIsExpenseFilterSheetOpen(false)
                 }}
                 className="flex-1 h-10 bg-gray-100 dark:bg-[#1d1d1f] text-[#1d1d1f] dark:text-white font-medium rounded-xl hover:bg-gray-200 dark:hover:bg-[#2a3241] focus:outline-none transition-colors"
@@ -1477,6 +1217,26 @@ export default function IncomeExpense() {
 
       {/* Content */}
       <div className="p-6 space-y-6">
+        {/* Veriler yüklenemediyse: eski rakamları göstermek yerine açıkça söyle */}
+        {(loadFailed.period || loadFailed.chart) && !isLoading && !isChartLoading && (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-[#d2d2d7] dark:border-[#2a3241] bg-white dark:bg-[#121621] px-5 py-4">
+            <div className="flex items-center gap-3">
+              <ExclamationTriangleIcon className="w-5 h-5 shrink-0 text-[#d4a014] dark:text-[#fbbf24]" />
+              <p className="text-sm text-[#1d1d1f] dark:text-white">
+                {language === 'tr'
+                  ? 'Veriler yüklenemedi. Bağlantınızı kontrol edip tekrar deneyin.'
+                  : 'The data could not be loaded. Check your connection and try again.'}
+              </p>
+            </div>
+            <button
+              onClick={fetchAllData}
+              className="h-9 px-4 rounded-lg text-sm font-medium bg-[#1d1d1f] dark:bg-[#0071e3] text-white hover:bg-black dark:hover:bg-[#0077ed] transition-colors whitespace-nowrap"
+            >
+              {language === 'tr' ? 'Tekrar Dene' : 'Try Again'}
+            </button>
+          </div>
+        )}
+
         {/* Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {isLoading ? (
@@ -1497,17 +1257,14 @@ export default function IncomeExpense() {
                       {language === 'tr' ? 'Gelir' : 'Income'}
                       {incomeFilters.paymentMethod.length > 0 && (
                         <span className="ml-1 text-xs">
-                          ({language === 'tr' ? 
-                            (incomeFilters.paymentMethod.map(method => 
-                              method === 'nakit' ? 'Nakit' : 
-                              method === 'banka' ? 'Banka' : 
-                              method === 'kart' ? 'Kredi Kartı' : ''
-                            ).join(', ')) : 
-                            (incomeFilters.paymentMethod.map(method => 
-                              method === 'nakit' ? 'Cash' : 
-                              method === 'banka' ? 'Bank' : 
-                              method === 'kart' ? 'Credit Card' : ''
-                            ).join(', '))})
+                          ({incomeFilters.paymentMethod.map(method => paymentMethodLabel(method, language)).join(', ')})
+                        </span>
+                      )}
+                      {incomeFilters.activeStatus && (
+                        <span className="ml-1 text-xs">
+                          ({incomeFilters.activeStatus === 'active'
+                            ? (language === 'tr' ? 'Aktif' : 'Active')
+                            : (language === 'tr' ? 'Pasif' : 'Inactive')})
                         </span>
                       )}
                     </p>
@@ -1517,12 +1274,7 @@ export default function IncomeExpense() {
                   </div>
                   <div className="flex items-end gap-1">
                     <h3 className="text-2xl font-semibold text-[#1d1d1f] dark:text-white">
-                      {isLoading ? '...' : 
-                        // Filtre varsa filtrelenmiş geliri göster, yoksa tüm geliri göster
-                        formatCurrency(incomeFilters.paymentMethod.length || incomeFilters.paymentStatus || incomeFilters.activeStatus ? 
-                          filteredSummaryData.filteredIncome : 
-                          summaryData.monthlyIncome)
-                      }
+                      {formatCurrency(incomeTotal)}
                     </h3>
                   </div>
                 </div>
@@ -1537,29 +1289,12 @@ export default function IncomeExpense() {
                       {language === 'tr' ? 'Gider' : 'Expense'}
                       {expenseFilters.paymentMethod && (
                         <span className="ml-1 text-xs">
-                          ({language === 'tr' ? 
-                            (expenseFilters.paymentMethod === 'nakit' ? 'Nakit' : 
-                             expenseFilters.paymentMethod === 'banka' ? 'Banka' : 
-                             expenseFilters.paymentMethod === 'kart' ? 'Kredi Kartı' : '') : 
-                            (expenseFilters.paymentMethod === 'nakit' ? 'Cash' : 
-                             expenseFilters.paymentMethod === 'banka' ? 'Bank' : 
-                             expenseFilters.paymentMethod === 'kart' ? 'Credit Card' : '')})
+                          ({paymentMethodLabel(expenseFilters.paymentMethod, language)})
                         </span>
                       )}
                       {expenseFilters.expenseType && (
                         <span className="ml-1 text-xs">
-                          ({language === 'tr'
-                            ? expenseFilters.expenseType.charAt(0).toUpperCase() + expenseFilters.expenseType.slice(1)
-                            : expenseFilters.expenseType === 'kira' ? 'Rent'
-                            : expenseFilters.expenseType === 'elektrik' ? 'Electricity'
-                            : expenseFilters.expenseType === 'su' ? 'Water'
-                            : expenseFilters.expenseType === 'internet' ? 'Internet'
-                            : expenseFilters.expenseType === 'maas' ? 'Salary'
-                            : expenseFilters.expenseType === 'malzeme' ? 'Materials'
-                            : expenseFilters.expenseType === 'mutfak' ? 'Kitchen'
-                            : expenseFilters.expenseType === 'reklam' ? 'Advertising'
-                            : expenseFilters.expenseType === 'filament' ? 'Filament'
-                            : 'Other'})
+                          ({expenseTypeLabel(expenseFilters.expenseType, language)})
                         </span>
                       )}
                     </p>
@@ -1569,8 +1304,7 @@ export default function IncomeExpense() {
                   </div>
                   <div className="flex items-end gap-1">
                     <h3 className="text-2xl font-semibold text-[#1d1d1f] dark:text-white">
-                      {isLoading ? '...' : formatCurrency(expenseFilters.expenseType || expenseFilters.paymentMethod ? 
-                        filteredSummaryData.filteredExpense : summaryData.monthlyExpense)}
+                      {formatCurrency(expenseTotal)}
                     </h3>
                   </div>
                 </div>
@@ -1583,7 +1317,7 @@ export default function IncomeExpense() {
                   <div className="flex items-center justify-between mb-4">
                     <p className="text-[#6e6e73] dark:text-[#86868b] text-sm font-medium">
                       {language === 'tr' ? 'Net Kazanç' : 'Net Income'}
-                      {(incomeFilters.paymentMethod.length || expenseFilters.paymentMethod || expenseFilters.expenseType) && (
+                      {(hasIncomeCardFilter || hasExpenseFilter) && (
                         <span className="ml-1 text-xs">
                           ({language === 'tr' ? 'Filtrelenmiş' : 'Filtered'})
                         </span>
@@ -1595,24 +1329,17 @@ export default function IncomeExpense() {
                   </div>
                   <div className="flex items-end gap-1">
                     <h3 className="text-2xl font-semibold text-[#1d1d1f] dark:text-white">
-                      {isLoading ? '...' : formatCurrency(
-                        (incomeFilters.paymentMethod.length || incomeFilters.paymentStatus || incomeFilters.activeStatus || 
-                         expenseFilters.paymentMethod || expenseFilters.expenseType) 
-                          ? filteredSummaryData.filteredNetIncome 
-                          : summaryData.netIncome
-                      )}
+                      {formatCurrency(netIncome)}
                     </h3>
                   </div>
                 </div>
               </div>
 
-              {/* Bekleyen Tahsilatlar */}
-              <div 
-                onClick={() => {
-                  setIncomeFilters(prev => ({ ...prev, paymentStatus: 'beklemede' }));
-                  fetchIncomeTableData();
-                }}
-                className="bg-white dark:bg-[#121621] rounded-2xl border border-[#d2d2d7] dark:border-[#2a3241] overflow-hidden group hover:border-[#0071e3] dark:hover:border-[#0071e3] hover:shadow-lg dark:hover:shadow-[#0071e3]/10 transition-all duration-200 cursor-pointer"
+              {/* Bekleyen Tahsilatlar: aktif öğrencilerin ödenmemiş kayıtları. Karta basınca aşağıdaki
+                  tablo bu kayıtları listeler; yeniden basınca ödenmiş gelirlere döner. */}
+              <div
+                onClick={() => setIncomeFilters(prev => ({ ...prev, paymentStatus: prev.paymentStatus === 'beklemede' ? '' : 'beklemede' }))}
+                className={`bg-white dark:bg-[#121621] rounded-2xl border overflow-hidden group hover:border-[#0071e3] dark:hover:border-[#0071e3] hover:shadow-lg dark:hover:shadow-[#0071e3]/10 transition-all duration-200 cursor-pointer ${isPendingView ? 'border-[#fbbf24] dark:border-[#fbbf24]' : 'border-[#d2d2d7] dark:border-[#2a3241]'}`}
               >
                 <div className="h-1 w-full bg-[#fbbf24]" />
                 <div className="p-5">
@@ -1626,7 +1353,7 @@ export default function IncomeExpense() {
                   </div>
                   <div className="flex items-end gap-1">
                     <h3 className="text-2xl font-semibold text-[#1d1d1f] dark:text-white">
-                      {isLoading ? '...' : summaryData.pendingCount}
+                      {pendingCount}
                     </h3>
                   </div>
                 </div>
@@ -1636,7 +1363,7 @@ export default function IncomeExpense() {
         </div>
 
         {/* Income Table */}
-        {isTableLoading ? (
+        {isLoading ? (
           <TableSkeleton />
         ) : (
           <div className="bg-white dark:bg-[#121621] rounded-2xl border border-[#d2d2d7] dark:border-[#2a3241] overflow-hidden">
@@ -1646,10 +1373,12 @@ export default function IncomeExpense() {
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
                     <h2 className="text-xl font-semibold text-[#1d1d1f] dark:text-white">
-                      {language === 'tr' ? 'Gelir Detayları' : 'Income Details'}
+                      {isPendingView
+                        ? (language === 'tr' ? 'Bekleyen Tahsilatlar' : 'Pending Payments')
+                        : (language === 'tr' ? 'Gelir Detayları' : 'Income Details')}
                     </h2>
                     <span className="text-sm font-medium text-[#424245] dark:text-[#86868b]">
-                      ({applyFilters(incomeTableData, 'income').length})
+                      ({incomeTableRows.length})
                     </span>
                   </div>
                 </div>
@@ -1673,11 +1402,9 @@ export default function IncomeExpense() {
                     title={language === 'tr' ? 'Filtre' : 'Filter'}
                   >
                     <AdjustmentsHorizontalIcon className="w-5 h-5 text-[#424245] dark:text-[#86868b]" />
-                    {(incomeFilters.paymentMethod.length || 
-                      incomeFilters.paymentStatus || 
-                      incomeFilters.activeStatus || 
-                      incomeFilters.search || 
-                      (incomeFilters.dateRange && incomeFilters.dateRange.length > 0)) && (
+                    {(incomeFilters.paymentMethod.length > 0 ||
+                      incomeFilters.paymentStatus ||
+                      incomeFilters.activeStatus) && (
                       <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-[#0071e3] rounded-full ring-2 ring-white dark:ring-[#121621] " />
                     )}
                   </button>
@@ -1687,18 +1414,28 @@ export default function IncomeExpense() {
 
             {/* Table */}
             <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
-              {applyFilters(incomeTableData, 'income').length === 0 ? (
+              {incomeTableRows.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 px-4">
                   <div className="w-16 h-16 mb-4 rounded-full bg-[#f5f5f7] dark:bg-[#1d1d1f] flex items-center justify-center">
                     <BanknotesIcon className="w-8 h-8 text-[#86868b]" />
                   </div>
                   <h3 className="text-lg font-medium text-[#1d1d1f] dark:text-white mb-2">
-                    {language === 'tr' ? 'Gelir kaydı bulunamadı' : 'No income records found'}
+                    {isPendingView
+                      ? (language === 'tr' ? 'Bekleyen tahsilat yok' : 'No pending payments')
+                      : (language === 'tr' ? 'Gelir kaydı bulunamadı' : 'No income records found')}
                   </h3>
                   <p className="text-sm text-[#6e6e73] dark:text-[#86868b] text-center max-w-sm">
-                    {language === 'tr' 
-                      ? 'Seçilen tarih aralığında herhangi bir gelir kaydı bulunmamaktadır.' 
-                      : 'There are no income records for the selected date range.'}
+                    {incomeFilters.search.trim() || hasIncomeCardFilter
+                      ? (language === 'tr'
+                        ? 'Arama ya da filtrelere uygun kayıt bulunmamaktadır.'
+                        : 'No records match the search or filters.')
+                      : isPendingView
+                        ? (language === 'tr'
+                          ? 'Aktif öğrencilerin ödenmemiş kaydı bulunmamaktadır.'
+                          : 'Active students have no unpaid records.')
+                        : (language === 'tr'
+                          ? 'Seçilen tarih aralığında herhangi bir gelir kaydı bulunmamaktadır.'
+                          : 'There are no income records for the selected date range.')}
                   </p>
                 </div>
               ) : (
@@ -1753,7 +1490,7 @@ export default function IncomeExpense() {
                     </tr>
                   </thead>
                   <tbody>
-                    {applyFilters(incomeTableData, 'income').map((item, index) => (
+                    {incomeTableRows.map((item, index) => (
                       <tr 
                         key={item.id}
                         className={`
@@ -1778,14 +1515,7 @@ export default function IncomeExpense() {
                         </td>
                         <td className="py-4 px-6">
                           <span className="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-medium bg-gradient-to-r from-[#0071e3]/5 to-[#34d399]/5 dark:from-[#0071e3]/10 dark:to-[#34d399]/10 text-[#0071e3] group-hover:from-[#0071e3]/10 group-hover:to-[#34d399]/10 dark:group-hover:from-[#0071e3]/20 dark:group-hover:to-[#34d399]/20 transition-all">
-                            {item.package === 'ucretsiz' ? 'Ücretsiz'
-                              : item.package === '3ay-hafta-1' ? '3 Aylık - 12 Atölye'
-                              : item.package === '3ay-hafta-2' ? '3 Aylık - 24 Atölye'
-                              : item.package === 'hafta-1' ? 'Haftada 1'
-                              : item.package === 'hafta-2' ? 'Haftada 2'
-                              : item.package === 'hafta-3' ? 'Haftada 3'
-                              : item.package === 'hafta-4' ? 'Haftada 4'
-                              : 'Tek Seferlik'}
+                            {packageShortLabel(item.package, language)}
                           </span>
                         </td>
                         <td className="py-4 px-6">
@@ -1798,7 +1528,7 @@ export default function IncomeExpense() {
                         <td className="py-4 px-6">
                           <div className="flex flex-col">
                             <span className="text-sm text-[#424245] dark:text-[#86868b]">
-                              {new Date(item.payment_date).toLocaleDateString('tr-TR')}
+                              {item.payment_date ? new Date(item.payment_date).toLocaleDateString('tr-TR') : '—'}
                             </span>
                           </div>
                         </td>
@@ -1832,7 +1562,7 @@ export default function IncomeExpense() {
                         </td>
                         <td className="py-4 px-6">
                           <span className="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-medium bg-[#f5f5f7] dark:bg-[#1d1d1f] text-[#424245] dark:text-white border border-[#d2d2d7] dark:border-[#2a3241] group-hover:bg-white dark:group-hover:bg-[#121621] transition-colors">
-                            {item.method.charAt(0).toUpperCase() + item.method.slice(1)}
+                            {paymentMethodLabel(item.method, language)}
                           </span>
                         </td>
                         <td className="py-4 px-6">
@@ -1844,12 +1574,12 @@ export default function IncomeExpense() {
                             {item.status === 'odendi' ? (
                               <>
                                 <CheckCircleIcon className="w-4 h-4" />
-                                <span>Ödendi</span>
+                                <span>{paymentStatusLabel('odendi', language)}</span>
                               </>
                             ) : (
                               <>
                                 <ClockIcon className="w-4 h-4" />
-                                <span>Beklemede</span>
+                                <span>{paymentStatusLabel('beklemede', language)}</span>
                               </>
                             )}
                           </span>
@@ -1864,7 +1594,7 @@ export default function IncomeExpense() {
         )}
 
         {/* Expense Table and Pie Chart Container */}
-        {isTableLoading ? (
+        {isLoading ? (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2">
               <TableSkeleton />
@@ -1874,7 +1604,7 @@ export default function IncomeExpense() {
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 lg:items-start gap-6">
             {/* Expense Table */}
             <div className="lg:col-span-2 bg-white dark:bg-[#121621] rounded-2xl border border-[#d2d2d7] dark:border-[#2a3241] overflow-hidden">
               <div className="p-6 border-b border-[#f5f5f7] dark:border-[#2a3241]">
@@ -1885,7 +1615,7 @@ export default function IncomeExpense() {
                         {language === 'tr' ? 'Gider Detayları' : 'Expense Details'}
                       </h2>
                       <span className="text-sm font-medium text-[#424245] dark:text-[#86868b]">
-                        ({applyFilters(expenseTableData, 'expense').length})
+                        ({expenseTableRows.length})
                       </span>
                     </div>
                   </div>
@@ -1895,9 +1625,7 @@ export default function IncomeExpense() {
                       className="h-9 w-full sm:w-9 flex items-center justify-center rounded-xl border border-[#d2d2d7] dark:border-[#2a3241] hover:border-[#0071e3] dark:hover:border-[#0071e3] transition-colors relative group"
                     >
                       <AdjustmentsHorizontalIcon className="w-5 h-5 text-[#424245] dark:text-[#86868b]" />
-                      {(expenseFilters.expenseType || 
-                        expenseFilters.paymentMethod || 
-                        (expenseFilters.dateRange && expenseFilters.dateRange.length > 0)) && (
+                      {hasExpenseFilter && (
                         <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-[#0071e3] rounded-full ring-2 ring-white dark:ring-[#121621] " />
                       )}
                     </button>
@@ -1914,7 +1642,7 @@ export default function IncomeExpense() {
 
               {/* Table */}
               <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
-                {applyFilters(expenseTableData, 'expense').length === 0 ? (
+                {expenseTableRows.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-12 px-4">
                     <div className="w-16 h-16 mb-4 rounded-full bg-[#f5f5f7] dark:bg-[#1d1d1f] flex items-center justify-center">
                       <ArrowTrendingDownIcon className="w-8 h-8 text-[#86868b]" />
@@ -1923,46 +1651,50 @@ export default function IncomeExpense() {
                       {language === 'tr' ? 'Gider kaydı bulunamadı' : 'No expense records found'}
                     </h3>
                     <p className="text-sm text-[#6e6e73] dark:text-[#86868b] text-center max-w-sm">
-                      {language === 'tr' 
-                        ? 'Seçilen tarih aralığında herhangi bir gider kaydı bulunmamaktadır.' 
-                        : 'There are no expense records for the selected date range.'}
+                      {hasExpenseFilter
+                        ? (language === 'tr'
+                          ? 'Seçili filtrelere uygun gider kaydı bulunmamaktadır.'
+                          : 'No expense records match the selected filters.')
+                        : (language === 'tr'
+                          ? 'Seçilen tarih aralığında herhangi bir gider kaydı bulunmamaktadır.'
+                          : 'There are no expense records for the selected date range.')}
                     </p>
                   </div>
                 ) : (
                   <table className="w-full">
                     <thead>
                       <tr className="border-b-2 border-[#d2d2d7] dark:border-[#2a3241]">
-                        <th className="py-4 px-6 text-left bg-[#f5f5f7]/50 dark:bg-[#161922]">
+                        <th className="py-4 px-4 text-left bg-[#f5f5f7]/50 dark:bg-[#161922]">
                           <span className="text-xs font-medium uppercase tracking-wider text-[#6e6e73] dark:text-[#86868b]">
                             {language === 'tr' ? 'Başlık' : 'Title'}
                           </span>
                         </th>
-                        <th className="py-4 px-6 text-left bg-[#f5f5f7]/50 dark:bg-[#161922]">
+                        <th className="py-4 px-4 text-left bg-[#f5f5f7]/50 dark:bg-[#161922]">
                           <span className="text-xs font-medium uppercase tracking-wider text-[#6e6e73] dark:text-[#86868b]">
                             {language === 'tr' ? 'Kategori' : 'Category'}
                           </span>
                         </th>
-                        <th className="py-4 px-6 text-left bg-[#f5f5f7]/50 dark:bg-[#161922]">
+                        <th className="py-4 px-4 text-left bg-[#f5f5f7]/50 dark:bg-[#161922]">
                           <span className="text-xs font-medium uppercase tracking-wider text-[#6e6e73] dark:text-[#86868b]">
                             {language === 'tr' ? 'Tarih' : 'Date'}
                           </span>
                         </th>
-                        <th className="py-4 px-6 text-right bg-[#f5f5f7]/50 dark:bg-[#161922]">
+                        <th className="py-4 px-4 text-right bg-[#f5f5f7]/50 dark:bg-[#161922]">
                           <span className="text-xs font-medium uppercase tracking-wider text-[#6e6e73] dark:text-[#86868b]">
                             {language === 'tr' ? 'Tutar' : 'Amount'}
                           </span>
                         </th>
-                        <th className="py-4 px-6 text-left bg-[#f5f5f7]/50 dark:bg-[#161922]">
+                        <th className="py-4 px-4 text-left bg-[#f5f5f7]/50 dark:bg-[#161922]">
                           <span className="text-xs font-medium uppercase tracking-wider text-[#6e6e73] dark:text-[#86868b]">
                             {language === 'tr' ? 'Yöntem' : 'Method'}
                           </span>
                         </th>
-                        <th className="py-4 px-6 text-left bg-[#f5f5f7]/50 dark:bg-[#161922]">
+                        <th className="py-4 px-4 text-left bg-[#f5f5f7]/50 dark:bg-[#161922]">
                           <span className="text-xs font-medium uppercase tracking-wider text-[#6e6e73] dark:text-[#86868b]">
                             {language === 'tr' ? 'Not' : 'Note'}
                           </span>
                         </th>
-                        <th className="py-4 px-6 text-right bg-[#f5f5f7]/50 dark:bg-[#161922] w-[100px]">
+                        <th className="py-4 px-4 text-right bg-[#fafafb] dark:bg-[#161922] w-[104px] sticky right-0">
                           <span className="text-xs font-medium uppercase tracking-wider text-[#6e6e73] dark:text-[#86868b]">
                             {language === 'tr' ? 'İşlemler' : 'Actions'}
                           </span>
@@ -1970,7 +1702,7 @@ export default function IncomeExpense() {
                       </tr>
                     </thead>
                     <tbody>
-                      {applyFilters(expenseTableData, 'expense').map((item, index) => {
+                      {expenseTableRows.map((item, index) => {
                         // Sabit kategori renkleri
                         const categoryColors = {
                           'kira': { bg: 'from-[#0071e3]/5 to-[#34d399]/5', text: 'text-[#0071e3]' },
@@ -1986,7 +1718,7 @@ export default function IncomeExpense() {
                           'diger': { bg: 'from-[#6b7280]/5 to-[#9ca3af]/5', text: 'text-[#6b7280]' }
                         };
 
-                        const color = categoryColors[item.category.toLowerCase()] || categoryColors['diger'];
+                        const color = categoryColors[item.category] || categoryColors['diger'];
 
                         return (
                           <tr 
@@ -2001,91 +1733,62 @@ export default function IncomeExpense() {
                           ${index % 2 === 0 ? 'bg-white dark:bg-[#121621]' : 'bg-[#f5f5f7]/30 dark:bg-[#161922]/30'}
                             `}
                           >
-                            <td className="py-4 px-6">
+                            <td className="py-4 px-4">
                               <span className="text-sm font-medium text-[#1d1d1f] dark:text-white">
                                 {item.title}
                               </span>
                             </td>
-                            <td className="py-4 px-6">
+                            <td className="py-4 px-4">
                               <span className={`inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-medium bg-gradient-to-r ${color.bg} dark:from-opacity-10 dark:to-opacity-10 ${color.text} transition-all`}>
-                                {item.category.charAt(0).toUpperCase() + item.category.slice(1)}
+                                {expenseTypeLabel(item.category, language)}
                               </span>
                             </td>
-                            <td className="py-4 px-6">
+                            <td className="py-4 px-4">
                               <span className="text-sm text-[#424245] dark:text-[#86868b]">
                                 {new Date(item.date).toLocaleDateString('tr-TR')}
                               </span>
                             </td>
-                            <td className="py-4 px-6 text-right">
+                            <td className="py-4 px-4 text-right">
                               <span className="text-sm font-semibold bg-gradient-to-r from-[#3b82f6] to-[#8b5cf6] bg-clip-text text-transparent">
                                 {formatCurrency(item.amount)}
                               </span>
                             </td>
-                            <td className="py-4 px-6">
+                            <td className="py-4 px-4">
                               <span className="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-medium bg-[#f5f5f7] dark:bg-[#1d1d1f] text-[#424245] dark:text-white border border-[#d2d2d7] dark:border-[#2a3241] group-hover:bg-white dark:group-hover:bg-[#121621] transition-colors">
-                                {item.method.charAt(0).toUpperCase() + item.method.slice(1)}
+                                {paymentMethodLabel(item.method, language)}
                               </span>
                             </td>
-                            <td className="py-4 px-6">
+                            <td className="py-4 px-4">
                               <span className="text-sm text-[#6e6e73] dark:text-[#86868b]">
                                   {item.notes && item.notes.length > 20 ? `${item.notes.substring(0, 20)}...` : item.notes}
                               </span>
                             </td>
-                            <td className="py-4 px-6">
-                                <div className="flex items-center justify-end">
-                                  <div className="relative">
+                            <td className={`py-4 px-4 sticky right-0 ${index % 2 === 0 ? 'bg-white dark:bg-[#121621]' : 'bg-[#fcfcfd] dark:bg-[#131722]'}`}>
+                              {/* Satır içi iki düğme (yukarı açılan menü, kaydırılan listenin en üst
+                                  satırında kutunun dışına taşıp kesiliyordu) */}
+                              <div className="flex items-center justify-end gap-2">
                                 <button
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        const currentRow = item.id
-                                        setActiveDropdown(activeDropdown === currentRow ? null : currentRow)
-                                      }}
-                                      className="w-8 h-8 flex items-center justify-center rounded-lg border border-[#d2d2d7] dark:border-[#2a3241] hover:border-[#0071e3] dark:hover:border-[#0071e3] transition-colors dropdown-toggle"
-                                    >
-                                      <svg className="w-4 h-4 text-[#424245] dark:text-[#86868b]" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 4 15">
-                                        <path d="M3.5 1.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Zm0 6.041a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Zm0 5.959a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Z"/>
-                                      </svg>
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedExpense(item)
+                                    setIsUpdateModalOpen(true)
+                                  }}
+                                  className="w-8 h-8 flex items-center justify-center rounded-lg border border-[#d2d2d7] dark:border-[#2a3241] text-[#424245] dark:text-[#86868b] hover:text-[#0071e3] hover:border-[#0071e3] dark:hover:text-[#0071e3] dark:hover:border-[#0071e3] transition-colors"
+                                  title={language === 'tr' ? 'Düzenle' : 'Edit'}
+                                >
+                                  <PencilSquareIcon className="w-4 h-4" />
                                 </button>
-
-                                    {/* Dropdown Menu */}
-                                    {activeDropdown === item.id && (
-                                      <div 
-                                        className="absolute right-full mr-2 bottom-0 w-48 rounded-xl bg-white dark:bg-[#1d1d1f] shadow-lg border border-[#d2d2d7] dark:border-[#2a3241] py-2 z-[999] dropdown-menu"
-                                        style={{
-                                          filter: 'drop-shadow(0 0 20px rgba(0,0,0,0.1))',
-                                          transformOrigin: 'right'
-                                        }}
-                                      >
                                 <button
-                                          onClick={() => {
-                                            setSelectedExpense(item)
-                                            setIsUpdateModalOpen(true)
-                                            setActiveDropdown(null)
-                                          }}
-                                          className="w-full px-4 py-2 text-left text-sm text-[#1d1d1f] dark:text-white hover:bg-[#f5f5f7] dark:hover:bg-[#2a3241] transition-colors flex items-center gap-2"
-                                        >
-                                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4 text-[#424245] dark:text-[#86868b]">
-                                            <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
-                                          </svg>
-                                          {language === 'tr' ? 'Düzenle' : 'Edit'}
-                                        </button>
-                                        <div className="h-[1px] w-full bg-[#d2d2d7] dark:bg-[#2a3241]" />
-                                        <button
-                                          onClick={() => {
-                                            setSelectedExpense(item)
-                                            setIsDeleteModalOpen(true)
-                                            setActiveDropdown(null)
-                                          }}
-                                          className="w-full px-4 py-2 text-left text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors flex items-center gap-2"
-                                        >
-                                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
-                                            <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
-                                          </svg>
-                                          {language === 'tr' ? 'Sil' : 'Delete'}
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedExpense(item)
+                                    setIsDeleteModalOpen(true)
+                                  }}
+                                  className="w-8 h-8 flex items-center justify-center rounded-lg border border-[#d2d2d7] dark:border-[#2a3241] text-[#424245] dark:text-[#86868b] hover:text-red-600 hover:border-red-600 dark:hover:text-red-500 dark:hover:border-red-500 transition-colors"
+                                  title={language === 'tr' ? 'Sil' : 'Delete'}
+                                >
+                                  <TrashIcon className="w-4 h-4" />
                                 </button>
-                                      </div>
-                                    )}
-                                  </div>
                               </div>
                             </td>
                           </tr>
@@ -2098,7 +1801,7 @@ export default function IncomeExpense() {
             </div>
 
             {/* Expense Distribution Pie Chart - Takes up 1/3 */}
-            <div className="bg-white dark:bg-[#121621] rounded-2xl border border-[#d2d2d7] dark:border-[#2a3241] p-6 max-h-[485px] overflow-auto">
+            <div className="bg-white dark:bg-[#121621] rounded-2xl border border-[#d2d2d7] dark:border-[#2a3241] p-6">
               <div className="space-y-1 mb-6">
                 <h2 className="text-[15px] font-medium text-[#1d1d1f] dark:text-white">
                   {language === 'tr' ? 'Gider Dağılımı' : 'Expense Distribution'}
@@ -2127,7 +1830,7 @@ export default function IncomeExpense() {
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
-                        data={[...expenseDistribution].sort((a, b) => b.value - a.value)}
+                        data={expenseDistribution}
                         cx="50%"
                         cy="50%"
                         innerRadius={70}
@@ -2138,9 +1841,10 @@ export default function IncomeExpense() {
                         startAngle={90}
                         endAngle={-270}
                       >
-                        {expenseDistribution.map((entry, index) => (
-                          <Cell 
-                            key={`cell-${index}`} 
+                        {/* Renkler dilimlerle aynı (tutara göre sıralı) diziden üretilir */}
+                        {expenseDistribution.map((entry) => (
+                          <Cell
+                            key={entry.name}  
                             fill={entry.color}
                             stroke="none"
                             style={{
@@ -2166,19 +1870,7 @@ export default function IncomeExpense() {
                         }}
                         formatter={(value, name) => [
                           formatCurrency(value),
-                          language === 'tr'
-                            ? name.charAt(0).toUpperCase() + name.slice(1)
-                            : name === 'kira' ? 'Rent'
-                            : name === 'elektrik' ? 'Electricity'
-                            : name === 'su' ? 'Water'
-                            : name === 'dogalgaz' ? 'Natural Gas'
-                            : name === 'internet' ? 'Internet'
-                            : name === 'maas' ? 'Salary'
-                            : name === 'malzeme' ? 'Materials'
-                            : name === 'mutfak' ? 'Kitchen'
-                            : name === 'reklam' ? 'Advertising'
-                            : name === 'filament' ? 'Filament'
-                            : 'Other'
+                          expenseTypeLabel(name, language)
                         ]}
                         labelStyle={{ 
                           color: 'white', 
@@ -2196,27 +1888,12 @@ export default function IncomeExpense() {
               {/* Legend */}
               {expenseDistribution.length > 0 && (
                 <div className="mt-6 space-y-2">
-                  {[...expenseDistribution]
-                    .sort((a, b) => b.value - a.value)
-                    .map((item, index) => (
-                      <div key={index} className="flex items-center justify-between">
+                  {expenseDistribution.map((item) => (
+                      <div key={item.name} className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <div className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }} />
                           <span className="text-sm text-[#1d1d1f] dark:text-white">
-                            {language === 'tr'
-                              ? item.name.charAt(0).toUpperCase() + item.name.slice(1)
-                              : item.name === 'kira' ? 'Rent'
-                              : item.name === 'elektrik' ? 'Electricity'
-                              : item.name === 'su' ? 'Water'
-                              : item.name === 'dogalgaz' ? 'Natural Gas'
-                              : item.name === 'internet' ? 'Internet'
-                              : item.name === 'maas' ? 'Salary'
-                              : item.name === 'malzeme' ? 'Materials'
-                              : item.name === 'mutfak' ? 'Kitchen'
-                              : item.name === 'reklam' ? 'Advertising'
-                              : item.name === 'filament' ? 'Filament'
-                              : 'Other'
-                            }
+                            {expenseTypeLabel(item.name, language)}
                           </span>
                         </div>
                         <span className="text-sm font-medium text-[#424245] dark:text-[#86868b]">
@@ -2231,7 +1908,7 @@ export default function IncomeExpense() {
         )}
 
         {/* Chart */}
-        {isLoading ? (
+        {isChartLoading ? (
           <ChartSkeleton />
         ) : (
           <div className="bg-white dark:bg-[#121621] rounded-2xl border border-[#d2d2d7] dark:border-[#2a3241] p-6">
@@ -2263,7 +1940,7 @@ export default function IncomeExpense() {
             <div className="h-[400px] w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart
-                  data={chartData}
+                  data={chartRows}
                   margin={{
                     top: 5,
                     right: 10,
@@ -2289,13 +1966,13 @@ export default function IncomeExpense() {
                     axisLine={false}
                     dy={10}
                   />
-                  <YAxis 
+                  <YAxis
                     stroke="#86868b"
                     fontSize={12}
-                    tickFormatter={formatTooltipValue}
+                    tickFormatter={formatAxisValue}
                     tickLine={false}
                     axisLine={false}
-                    dx={-10}
+                    width={84}
                   />
                   <Tooltip 
                     contentStyle={{ 
@@ -2379,8 +2056,9 @@ export default function IncomeExpense() {
       </div>
 
       {/* Create Expense Modal */}
-      <CreateExpenses 
+      <CreateExpenses
         isOpen={isCreateExpenseModalOpen}
+        visibleRange={dateRange}
         onClose={() => setIsCreateExpenseModalOpen(false)}
         onSuccess={() => {
           fetchAllData()

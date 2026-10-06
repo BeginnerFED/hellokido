@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
   HomeIcon, 
@@ -10,37 +10,25 @@ import {
   DocumentTextIcon,
   Cog6ToothIcon,
   ArrowRightOnRectangleIcon,
-  XMarkIcon,
-  LightBulbIcon
+  XMarkIcon
 } from '@heroicons/react/24/outline';
 import { FaChild } from 'react-icons/fa';
 import { useLanguage } from '../context/LanguageContext';
+import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
+import Toast from './ui/Toast';
 
 const Sidebar = ({ onClose }) => {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
+  const { user } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const [userEmail, setUserEmail] = useState('');
-  const [userInitials, setUserInitials] = useState('');
+  const [logoutFailed, setLogoutFailed] = useState(false);
 
-  useEffect(() => {
-    const getUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        setUserEmail(user.email);
-        // Email adresinden baş harfleri al
-        const initials = user.email
-          .split('@')[0] // @ işaretinden önceki kısmı al
-          .match(/\b\w/g) // Kelimelerin ilk harflerini al
-          .join('') // Harfleri birleştir
-          .toUpperCase(); // Büyük harfe çevir
-        setUserInitials(initials);
-      }
-    };
-    
-    getUser();
-  }, []);
+  // Oturumdaki kullanıcı (ayrı bir sunucu isteği gerekmez)
+  const userEmail = user?.email || '';
+  // Email adresinden baş harfleri al: @ işaretinden önceki kısımdaki kelimelerin ilk harfleri
+  const userInitials = (userEmail.split('@')[0].match(/\b\w/g) || []).join('').toUpperCase();
 
   const menuItems = [
     { icon: HomeIcon, text: 'home', path: '/' },
@@ -50,21 +38,30 @@ const Sidebar = ({ onClose }) => {
     { icon: BanknotesIcon, text: 'incomeExpense', path: '/income-expense' },
     { icon: QueueListIcon, text: 'waitlist', path: '/waitlist' },
     { icon: DocumentTextIcon, text: 'notes', path: '/notes' },
-    { icon: LightBulbIcon, text: 'ideaCenter', path: '/idea-center' },
   ];
 
   const handleLogout = async () => {
     try {
-      const { error } = await supabase.auth.signOut();
+      // Yalnızca bu cihazdaki oturum kapatılır (varsayılan, hesabın tüm cihazlardaki
+      // oturumlarını kapatıyordu)
+      const { error } = await supabase.auth.signOut({ scope: 'local' });
       if (error) throw error;
       navigate('/login');
     } catch (error) {
       console.error('Logout error:', error.message);
+      setLogoutFailed(true);
     }
   };
 
   return (
     <div className={`min-w-[256px] max-w-[256px] h-screen overflow-y-auto flex flex-col bg-[#f6f7f9] dark:bg-[#121621] text-gray-800 dark:text-white transition-colors duration-300`}>
+      <Toast
+        message={language === 'tr' ? 'Çıkış yapılamadı, bağlantınızı kontrol edin.' : 'Could not log out, check your connection.'}
+        type="error"
+        isVisible={logoutFailed}
+        onClose={() => setLogoutFailed(false)}
+      />
+
       {/* Close Button - Only visible on mobile */}
       <button
         onClick={onClose}

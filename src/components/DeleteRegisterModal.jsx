@@ -1,15 +1,38 @@
-import React, { useState } from 'react'
-import { createClient } from '@supabase/supabase-js'
+import React, { useEffect, useState } from 'react'
 import { useLanguage } from '../context/LanguageContext'
-import { XMarkIcon, ExclamationTriangleIcon, ArchiveBoxXMarkIcon } from '@heroicons/react/24/outline'
-
-const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY
-)
+import { supabase } from '../lib/supabase'
+import { XMarkIcon, ArchiveBoxXMarkIcon } from '@heroicons/react/24/outline'
 
 export default function DeleteRegisterModal({ isOpen, onClose, onConfirm, entry, isLoading }) {
   const { language } = useLanguage()
+  // Öğrencinin henüz yapılmamış derslerdeki "planlandı" kayıtları (katılım satırı id'leri)
+  const [futureLessonIds, setFutureLessonIds] = useState([])
+  const [removeFutureLessons, setRemoveFutureLessons] = useState(true)
+
+  // Arşivlenen öğrenci ileri tarihli derslerde kalırsa o derslerde yer tutmaya devam eder
+  // (herkese açık takvimde boş yer az görünür). Pencere açılınca kaç derste olduğu sayılır.
+  useEffect(() => {
+    if (!isOpen || !entry?.id) {
+      setFutureLessonIds([])
+      setRemoveFutureLessons(true)
+      return
+    }
+
+    let cancelled = false
+    supabase
+      .from('event_participants')
+      .select('id, events!inner(event_date)')
+      .eq('registration_id', entry.id)
+      .eq('status', 'scheduled')
+      .gt('events.event_date', new Date().toISOString())
+      .then(({ data, error }) => {
+        // Sayım yapılamazsa seçenek gösterilmez; arşivleme eskisi gibi çalışır
+        if (cancelled || error) return
+        setFutureLessonIds((data || []).map(row => row.id))
+      })
+
+    return () => { cancelled = true }
+  }, [isOpen, entry?.id])
 
   if (!isOpen) return null
 
@@ -24,6 +47,7 @@ export default function DeleteRegisterModal({ isOpen, onClose, onConfirm, entry,
           {/* Close Button */}
           <button
             onClick={onClose}
+            disabled={isLoading}
             className="absolute right-4 top-4 p-2 rounded-full hover:bg-gray-100 dark:hover:bg-[#2a3241] transition-colors"
           >
             <XMarkIcon className="w-5 h-5 text-gray-500 dark:text-gray-400" />
@@ -40,7 +64,7 @@ export default function DeleteRegisterModal({ isOpen, onClose, onConfirm, entry,
                   {language === 'tr' ? 'Kaydı Arşivle' : 'Archive Record'}
                 </h2>
                 <p className="text-[#6e6e73] dark:text-[#86868b] text-sm">
-                  {language === 'tr' 
+                  {language === 'tr'
                     ? 'Bu kayıt arşive taşınacak'
                     : 'This record will be moved to archive'}
                 </p>
@@ -80,10 +104,35 @@ export default function DeleteRegisterModal({ isOpen, onClose, onConfirm, entry,
                 </div>
               </div>
 
+              {/* İleri tarihli dersler */}
+              {futureLessonIds.length > 0 && (
+                <label className="flex items-start gap-3 rounded-xl border border-[#d2d2d7] dark:border-[#2a3241] p-4 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={removeFutureLessons}
+                    onChange={(e) => setRemoveFutureLessons(e.target.checked)}
+                    disabled={isLoading}
+                    className="mt-0.5 h-4 w-4 rounded border-[#d2d2d7] text-[#0071e3] focus:ring-[#0071e3]"
+                  />
+                  <span>
+                    <span className="block text-sm font-medium text-[#1d1d1f] dark:text-white">
+                      {language === 'tr'
+                        ? `İleri tarihli ${futureLessonIds.length} dersten de çıkar`
+                        : `Also remove from ${futureLessonIds.length} upcoming lesson${futureLessonIds.length === 1 ? '' : 's'}`}
+                    </span>
+                    <span className="block mt-0.5 text-xs text-[#6e6e73] dark:text-[#86868b]">
+                      {language === 'tr'
+                        ? 'Öğrenci henüz yapılmamış derslerin listesinden silinir; o derslerde yeri boşalır. Yapılmış derslerin kayıtları değişmez.'
+                        : 'The student is removed from lessons that have not taken place yet, freeing those seats. Past lessons are not changed.'}
+                    </span>
+                  </span>
+                </label>
+              )}
+
               {/* Uyarı Mesajı */}
               <div className="rounded-xl bg-yellow-50 dark:bg-yellow-900/20 p-4 border border-yellow-200 dark:border-yellow-900/30">
                 <p className="text-sm text-yellow-800 dark:text-yellow-200">
-                  {language === 'tr' 
+                  {language === 'tr'
                     ? 'Kayıt arşive taşındıktan sonra aktif kayıtlar listesinde görünmeyecektir. Gerektiğinde arşiv görünümünden tekrar aktifleştirilebilir.'
                     : 'After archiving, the record will not appear in the active records list. You can reactivate it from the archive view when needed.'}
                 </p>
@@ -102,7 +151,7 @@ export default function DeleteRegisterModal({ isOpen, onClose, onConfirm, entry,
               </button>
               <button
                 type="button"
-                onClick={() => onConfirm(entry)}
+                onClick={() => onConfirm(entry, { futureLessonIds: removeFutureLessons ? futureLessonIds : [] })}
                 className="flex-1 h-11 bg-red-600 text-white font-medium rounded-xl hover:bg-red-700 focus:outline-none transition-all transform hover:scale-[1.01] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 disabled={isLoading}
               >
@@ -127,4 +176,4 @@ export default function DeleteRegisterModal({ isOpen, onClose, onConfirm, entry,
       </div>
     </div>
   )
-} 
+}

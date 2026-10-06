@@ -1,42 +1,141 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useLanguage } from '../context/LanguageContext';
 import { supabase } from '../lib/supabase';
 import { fetchLessonUsageMap } from '../lib/lessonUsage';
+import { matchesSearch } from '../lib/text';
+import { isAttendanceOverdue } from '../lib/attendance';
+import Toast from '../components/ui/Toast';
 import { format } from 'date-fns';
 import { tr, enUS } from 'date-fns/locale';
 import { MagnifyingGlassIcon, AdjustmentsHorizontalIcon, XMarkIcon, ChevronLeftIcon } from '@heroicons/react/24/outline';
+
+// Filtre sayfasındaki paket türleri
+const PACKAGE_FILTERS = [
+  { value: 'hafta-1', tr: 'Haftada 1', en: '1 Day/Week' },
+  { value: 'hafta-2', tr: 'Haftada 2', en: '2 Days/Week' },
+  { value: 'hafta-3', tr: 'Haftada 3', en: '3 Days/Week' },
+  { value: 'hafta-4', tr: 'Haftada 4', en: '4 Days/Week' },
+  { value: '3ay-hafta-1', tr: '3 Ay - 12 Atölye', en: '3 Mo - 12 Workshops' },
+  { value: '3ay-hafta-2', tr: '3 Ay - 24 Atölye', en: '3 Mo - 24 Workshops' },
+  { value: 'tek-seferlik', tr: 'Tek Seferlik', en: 'One Time' },
+  { value: 'ucretsiz', tr: 'Ücretsiz', en: 'Free' }
+];
+
+// Ders kartındaki yoklama düğmeleri
+const STATUS_BUTTONS = [
+  {
+    status: 'attended',
+    tr: 'Katıldı',
+    en: 'Joined',
+    active: 'bg-emerald-400/10 text-emerald-700 ring-1 ring-emerald-500/20 dark:bg-emerald-400/10 dark:text-emerald-300 dark:ring-emerald-400/20 hover:bg-emerald-400/30 dark:hover:bg-emerald-400/30',
+    idle: 'bg-emerald-400/5 text-emerald-700/30 ring-1 ring-emerald-500/10 dark:bg-emerald-400/5 dark:text-emerald-300/30 dark:ring-emerald-400/10 hover:bg-emerald-400/20 dark:hover:bg-emerald-400/20 hover:text-emerald-700 dark:hover:text-emerald-300'
+  },
+  {
+    status: 'no_show',
+    tr: 'Gelmedi',
+    en: 'Absent',
+    active: 'bg-red-400/10 text-red-700 ring-1 ring-red-500/20 dark:bg-red-400/10 dark:text-red-300 dark:ring-red-400/20 hover:bg-red-400/30 dark:hover:bg-red-400/30',
+    idle: 'bg-red-400/5 text-red-700/30 ring-1 ring-red-500/10 dark:bg-red-400/5 dark:text-red-300/30 dark:ring-red-400/10 hover:bg-red-400/20 dark:hover:bg-red-400/20 hover:text-red-700 dark:hover:text-red-300'
+  },
+  {
+    status: 'postponed',
+    tr: 'Ertelendi',
+    en: 'Delayed',
+    active: 'bg-amber-400/10 text-amber-700 ring-1 ring-amber-500/20 dark:bg-amber-400/10 dark:text-amber-300 dark:ring-amber-400/20 hover:bg-amber-400/30 dark:hover:bg-amber-400/30',
+    idle: 'bg-amber-400/5 text-amber-700/30 ring-1 ring-amber-500/10 dark:bg-amber-400/5 dark:text-amber-300/30 dark:ring-amber-400/10 hover:bg-amber-400/20 dark:hover:bg-amber-400/20 hover:text-amber-700 dark:hover:text-amber-300'
+  },
+  {
+    status: 'makeup',
+    tr: 'Telafi',
+    en: 'Makeup',
+    active: 'bg-blue-400/10 text-blue-700 ring-1 ring-blue-500/20 dark:bg-blue-400/10 dark:text-blue-300 dark:ring-blue-400/20 hover:bg-blue-400/30 dark:hover:bg-blue-400/30',
+    idle: 'bg-blue-400/5 text-blue-700/30 ring-1 ring-blue-500/10 dark:bg-blue-400/5 dark:text-blue-300/30 dark:ring-blue-400/10 hover:bg-blue-400/20 dark:hover:bg-blue-400/20 hover:text-blue-700 dark:hover:text-blue-300'
+  }
+];
+
+// Liste satırı: kayıt + güncel paket dönemindeki ders kullanımı.
+// Liste ve detay paneli aynı satırı kullanır; ikisi birbirinden farklı sayı gösteremez.
+const toStudentRow = (registration, usage) => ({
+  registration_id: registration.id,
+  student_name: registration.student_name,
+  parent_name: registration.parent_name,
+  package_type: registration.package_type,
+  package_start_date: registration.package_start_date,
+  package_end_date: registration.package_end_date,
+  payment_status: registration.payment_status,
+  is_active: registration.is_active,
+  is_free: usage.isFree,
+  remaining_lessons: usage.remaining,
+  carried_lessons: usage.carried,
+  attended_lessons: usage.attended,
+  no_show_lessons: usage.noShow,
+  makeup_completed: usage.makeup,
+  postponed_lessons: usage.postponed,
+  // Günü geçtiği halde yoklaması işaretlenmemiş dersler (ücretsiz katılımda ders hakkı izlenmez)
+  unmarked_past: usage.isFree ? 0 : usage.unmarkedPast,
+  // Tek öğrencinin kullanımını yeniden hesaplayabilmek için kaydın kendisi
+  registration
+});
 
 const RemainingUsage = () => {
   const { language } = useLanguage();
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
+  // Liste yüklenemediyse "kayıt yok" yerine "yüklenemedi" gösterilir
+  const [loadFailed, setLoadFailed] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [packageFilter, setPackageFilter] = useState('all');
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
-  const [selectedStudent, setSelectedStudent] = useState(null);
+  const [selectedStudentId, setSelectedStudentId] = useState(null);
   const [showDetailView, setShowDetailView] = useState(false);
   const [studentLessons, setStudentLessons] = useState([]);
   const [loadingLessons, setLoadingLessons] = useState(false);
-  const [statusUpdateLoading, setStatusUpdateLoading] = useState(false);
-  const [studentDetails, setStudentDetails] = useState(null);
+  const [lessonsFailed, setLessonsFailed] = useState(false);
+  // Kaydı süren ders satırları: aynı satıra ikinci dokunuş yeni istek göndermez
+  const [updatingLessonIds, setUpdatingLessonIds] = useState(() => new Set());
+  const inFlightLessonsRef = useRef(new Set());
   const [visibleLessonsCount, setVisibleLessonsCount] = useState(10);
+  const [toast, setToast] = useState({ message: '', type: 'success', isVisible: false });
+
+  // Geç gelen yanıtın günceli ezmemesi için istek sayaçları
+  const listRequestRef = useRef(0);
+  const lessonsRequestRef = useRef(0);
+  const usageRequestRef = useRef({});
+
+  // Detay paneli her zaman listedeki güncel satırı gösterir
+  const selectedStudent = selectedStudentId
+    ? students.find(student => student.registration_id === selectedStudentId) || null
+    : null;
+
+  const showToast = (message, type = 'success') => {
+    setToast({ message, type, isVisible: true });
+  };
 
   useEffect(() => {
     fetchStudents();
   }, []);
 
   useEffect(() => {
-    if (selectedStudent) {
-      fetchStudentLessons(selectedStudent.registration_id);
-      fetchStudentDetails(selectedStudent.registration_id);
-      setVisibleLessonsCount(10); // Reset visible lessons when selecting a new student
+    if (!selectedStudentId) return;
+
+    setVisibleLessonsCount(10); // Reset visible lessons when selecting a new student
+    fetchStudentLessons(selectedStudentId);
+  }, [selectedStudentId]);
+
+  // Liste yenilendiğinde seçili öğrenci artık listede yoksa (başka cihazdan arşivlenmiş) panel kapanır
+  useEffect(() => {
+    if (selectedStudentId && !loading && !selectedStudent) {
+      handleCloseDetail();
     }
-  }, [selectedStudent]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [students, loading]);
 
   const fetchStudents = async () => {
+    const requestId = ++listRequestRef.current;
+
     try {
       setLoading(true);
-      
+
       // First, fetch registrations that are active
       const { data: registrationsData, error: registrationsError } = await supabase
         .from('registrations')
@@ -45,186 +144,154 @@ const RemainingUsage = () => {
         .order('student_name');
 
       if (registrationsError) throw registrationsError;
-      
-      // If registrations found, fetch additional data to calculate usage statistics
-      if (registrationsData && registrationsData.length > 0) {
-        // Ders kullanımı ortak util'den: kullanılan = katıldı + gelmedi,
-        // sayım güncel paket döneminden itibaren (bkz. src/lib/lessonUsage.js)
-        const usageMap = await fetchLessonUsageMap(registrationsData);
 
-        const processedStudents = registrationsData.map(registration => {
-          const usage = usageMap[registration.id];
+      // Ders kullanımı ortak util'den: kullanılan = katıldı + gelmedi,
+      // sayım güncel paket döneminden itibaren (bkz. src/lib/lessonUsage.js)
+      const registrations = registrationsData || [];
+      const usageMap = await fetchLessonUsageMap(registrations);
 
-          return {
-            registration_id: registration.id,
-            student_name: registration.student_name,
-            parent_name: registration.parent_name,
-            package_type: registration.package_type,
-            package_start_date: registration.package_start_date,
-            package_end_date: registration.package_end_date,
-            payment_status: registration.payment_status,
-            is_active: registration.is_active,
-            is_free: usage.isFree,
-            remaining_lessons: usage.remaining,
-            attended_lessons: usage.attended,
-            no_show_lessons: usage.noShow,
-            makeup_completed: usage.makeup,
-            postponed_lessons: usage.postponed
-          };
-        });
+      // Bu sırada yeni bir istek gönderildiyse eski yanıt yok sayılır
+      if (requestId !== listRequestRef.current) return;
 
-        setStudents(processedStudents);
-      } else {
-        setStudents([]);
-      }
+      setStudents(registrations.map(registration => toStudentRow(registration, usageMap[registration.id])));
+      setLoadFailed(false);
     } catch (error) {
+      if (requestId !== listRequestRef.current) return;
+
       console.error('Error fetching students:', error);
+      setStudents([]);
+      setLoadFailed(true);
     } finally {
-      setLoading(false);
+      if (requestId === listRequestRef.current) {
+        setLoading(false);
+      }
     }
   };
 
-  const fetchStudentDetails = async (registrationId) => {
-    try {
-      // First get registration details
-      const { data: registrationData, error: registrationError } = await supabase
-        .from('registrations')
-        .select('*')
-        .eq('id', registrationId)
-        .single();
-      
-      if (registrationError) throw registrationError;
-      
-      // Ders kullanımı ortak util'den (kullanılan = katıldı + gelmedi, dönem-kapsamlı)
-      const usageMap = await fetchLessonUsageMap([registrationData]);
-      const usage = usageMap[registrationData.id];
+  // Yalnızca bir öğrencinin kalan dersini yeniden hesaplar (yoklama değişince liste baştan yüklenmez)
+  const refreshStudentUsage = async (registration) => {
+    const requestId = (usageRequestRef.current[registration.id] || 0) + 1;
+    usageRequestRef.current[registration.id] = requestId;
 
-      // Construct student details object
-      const studentDetails = {
-        registration_id: registrationData.id,
-        student_name: registrationData.student_name,
-        parent_name: registrationData.parent_name,
-        package_type: registrationData.package_type,
-        package_start_date: registrationData.package_start_date,
-        package_end_date: registrationData.package_end_date,
-        payment_status: registrationData.payment_status,
-        is_active: registrationData.is_active,
-        is_free: usage.isFree,
-        remaining_lessons: usage.remaining,
-        attended_lessons: usage.attended,
-        no_show_lessons: usage.noShow,
-        makeup_completed: usage.makeup,
-        postponed_lessons: usage.postponed
-      };
+    const usageMap = await fetchLessonUsageMap([registration]);
+    const usage = usageMap[registration.id];
 
-      setStudentDetails(studentDetails);
-    } catch (error) {
-      console.error('Error fetching student details:', error);
-    }
+    // Aynı öğrenci için daha yeni bir hesap başladıysa bu sonuç yok sayılır
+    if (!usage || usageRequestRef.current[registration.id] !== requestId) return;
+
+    setStudents(prev => prev.map(student => (
+      student.registration_id === registration.id ? toStudentRow(student.registration, usage) : student
+    )));
   };
 
   const fetchStudentLessons = async (registrationId) => {
+    const requestId = ++lessonsRequestRef.current;
+
     try {
+      // Önceki öğrencinin dersleri yeni öğrencinin adı altında görünmesin
+      setStudentLessons([]);
+      setLessonsFailed(false);
       setLoadingLessons(true);
-      
+
       const { data, error } = await supabase
         .from('event_participants')
-        .select(`
-          id,
-          status,
-          is_makeup,
-          event_id,
-          registration_id,
-          makeup_for_id,
-          postponed_to_id,
-          postponed_from_id,
-          makeup_notes,
-          postponed_notes,
-          cancellation_reason,
-          cancellation_date,
-          created_at
-        `)
+        .select('id, status, is_makeup, makeup_notes, postponed_notes, cancellation_reason, events(id, event_date, event_type, custom_description)')
         .eq('registration_id', registrationId);
 
+      // Bu sırada başka bir öğrenci açıldıysa ya da panel kapandıysa yanıt yok sayılır
+      if (requestId !== lessonsRequestRef.current) return;
       if (error) throw error;
-      
-      if (data && data.length > 0) {
-        const eventIds = data.map(participant => participant.event_id);
-        const { data: eventsData, error: eventsError } = await supabase
-          .from('events')
-          .select('*')
-          .in('id', eventIds);
-          
-        if (eventsError) throw eventsError;
-        
-        const mergedData = data.map(participant => {
-          const event = eventsData.find(event => event.id === participant.event_id);
-          return {
-            ...participant,
-            events: event || null
-          };
-        });
-        
-        const sortedData = mergedData.sort((a, b) => {
-          if (!a.events || !b.events) return 0;
-          return new Date(b.events.event_date) - new Date(a.events.event_date);
-        });
-        
-        setStudentLessons(sortedData);
-      } else {
-        setStudentLessons([]);
-      }
+
+      const sortedData = (data || [])
+        .filter(lesson => lesson.events)
+        .sort((a, b) => new Date(b.events.event_date) - new Date(a.events.event_date));
+
+      setStudentLessons(sortedData);
     } catch (error) {
+      if (requestId !== lessonsRequestRef.current) return;
+
       console.error('Error fetching student lessons:', error);
+      setStudentLessons([]);
+      setLessonsFailed(true);
     } finally {
-      setLoadingLessons(false);
+      if (requestId === lessonsRequestRef.current) {
+        setLoadingLessons(false);
+      }
     }
   };
 
-  const updateLessonStatus = async (lessonId, newStatus) => {
+  const updateLessonStatus = async (lesson, newStatus) => {
+    // Aynı duruma yeniden dokunmak istek göndermez; kaydı süren satır kilitlidir
+    if (!selectedStudent || lesson.status === newStatus) return;
+    if (inFlightLessonsRef.current.has(lesson.id)) return;
+
+    const registration = selectedStudent.registration;
+    const previousStatus = lesson.status;
+    const setLessonStatus = (status) => {
+      setStudentLessons(prev => prev.map(item => (item.id === lesson.id ? { ...item, status } : item)));
+    };
+
+    inFlightLessonsRef.current.add(lesson.id);
+    setUpdatingLessonIds(new Set(inFlightLessonsRef.current));
+    setLessonStatus(newStatus); // Sonuç beklenmeden ekranda gösterilir; kayıt başarısız olursa geri alınır
+
     try {
-      setStatusUpdateLoading(true);
-      
-      const updateData = { status: newStatus };
-      
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('event_participants')
-        .update(updateData)
-        .eq('id', lessonId);
+        .update({ status: newStatus })
+        .eq('id', lesson.id)
+        .select('id');
 
       if (error) throw error;
-      
-      // Güncelleme sonrası verileri yenile
-      await fetchStudents();
-      await fetchStudentLessons(selectedStudent.registration_id);
-      // Öğrenci detaylarını da yenile
-      await fetchStudentDetails(selectedStudent.registration_id);
-      
+      // Hata dönmeden hiçbir satır değişmediyse (ders başka cihazdan silinmiş ya da yetki yok) kayıt yapılmamıştır
+      if (!data || data.length === 0) throw new Error('no_rows_updated');
     } catch (error) {
       console.error('Error updating lesson status:', error);
+      setLessonStatus(previousStatus);
+      showToast(
+        language === 'tr'
+          ? 'Durum kaydedilemedi. Bağlantınızı kontrol edip tekrar deneyin.'
+          : 'The status could not be saved. Check your connection and try again.',
+        'error'
+      );
+      return;
     } finally {
-      setStatusUpdateLoading(false);
+      inFlightLessonsRef.current.delete(lesson.id);
+      setUpdatingLessonIds(new Set(inFlightLessonsRef.current));
+    }
+
+    // Kayıt yapıldı; öğrencinin kalan dersi yeniden hesaplanır
+    try {
+      await refreshStudentUsage(registration);
+    } catch (error) {
+      console.error('Error refreshing lesson usage:', error);
+      showToast(
+        language === 'tr'
+          ? 'Durum kaydedildi ama kalan ders sayısı yenilenemedi. Sayfayı yenileyin.'
+          : 'The status was saved but the remaining lessons could not be refreshed. Reload the page.',
+        'warning'
+      );
     }
   };
 
   const handleDetailClick = (student) => {
-    setSelectedStudent(student);
+    setSelectedStudentId(student.registration_id);
     setShowDetailView(true);
   };
 
   const handleCloseDetail = () => {
+    lessonsRequestRef.current += 1; // Bekleyen ders yanıtı kapalı panele yazılmasın
     setShowDetailView(false);
-    setSelectedStudent(null);
-    setStudentDetails(null);
+    setSelectedStudentId(null);
+    setStudentLessons([]);
+    setLessonsFailed(false);
+    setLoadingLessons(false);
     setVisibleLessonsCount(10); // Reset visible lessons count
   };
 
   const handleFilterClick = () => {
     if (showDetailView) {
-      setShowDetailView(false);
-      setSelectedStudent(null);
-      setStudentDetails(null);
-      setVisibleLessonsCount(10); // Reset visible lessons count
+      handleCloseDetail();
     }
     setIsFilterSheetOpen(true);
   };
@@ -234,12 +301,15 @@ const RemainingUsage = () => {
   };
 
   const filteredStudents = students.filter(student => {
-    const matchesSearch = student.student_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         student.parent_name.toLowerCase().includes(searchTerm.toLowerCase());
+    // Türkçe'ye duyarlı arama: "irem" yazınca "İrem" bulunur, sondaki boşluk yok sayılır
+    const matchesText = matchesSearch(student.student_name, searchTerm) ||
+      matchesSearch(student.parent_name, searchTerm);
     const matchesPackage = packageFilter === 'all' || student.package_type === packageFilter;
-    
-    return matchesSearch && matchesPackage;
+
+    return matchesText && matchesPackage;
   });
+
+  const isFiltered = searchTerm.trim() !== '' || packageFilter !== 'all';
 
   // Format date with the correct locale
   const formatDate = (date, formatStr) => {
@@ -281,21 +351,40 @@ const RemainingUsage = () => {
   // Translate lesson status
   const translateLessonStatus = (status) => {
     if (language === 'tr') {
-      return status === 'scheduled' ? 'Planlandı' : 
-        status === 'attended' ? 'Katıldı' : 
-        status === 'no_show' ? 'Gelmedi' : 
-        status === 'cancelled' ? 'İptal Edildi' : 
-        status === 'makeup' ? 'Telafi Dersi' : 
+      return status === 'scheduled' ? 'Planlandı' :
+        status === 'attended' ? 'Katıldı' :
+        status === 'no_show' ? 'Gelmedi' :
+        status === 'cancelled' ? 'İptal Edildi' :
+        status === 'makeup' ? 'Telafi Dersi' :
         status === 'postponed' ? 'Ertelendi' : '';
     } else {
-      return status === 'scheduled' ? 'Scheduled' : 
-        status === 'attended' ? 'Joined' : 
-        status === 'no_show' ? 'Absent' : 
-        status === 'cancelled' ? 'Cancelled' : 
-        status === 'makeup' ? 'Makeup' : 
+      return status === 'scheduled' ? 'Scheduled' :
+        status === 'attended' ? 'Joined' :
+        status === 'no_show' ? 'Absent' :
+        status === 'cancelled' ? 'Cancelled' :
+        status === 'makeup' ? 'Makeup' :
         status === 'postponed' ? 'Delayed' : '';
     }
   };
+
+  // Dar ekranda yalnızca Öğrenci, Kalan Ders ve Detay sütunları gösterilir; diğer dört sütun
+  // sığdığı genişlikte görünür. Detay paneli açıkken tablo daraldığı için eşik daha yüksektir.
+  // (Yedi sütun birden sığmadığında "Kalan Ders" ve "Detay" yana kaydırmanın arkasında kalıyordu.)
+  const secondaryColumn = showDetailView ? 'hidden min-[1700px]:table-cell' : 'hidden md:table-cell';
+  const secondaryCaption = showDetailView ? 'min-[1700px]:hidden' : 'md:hidden';
+  const headerCell = 'py-4 px-3 sm:px-6 bg-[#f5f5f7]/50 dark:bg-[#161922]';
+  const bodyCell = 'px-3 sm:px-6 py-4 whitespace-nowrap';
+  const headerLabel = 'text-xs font-medium uppercase tracking-wider text-[#6e6e73] dark:text-[#86868b]';
+  const shimmer = <div className="absolute inset-0 -translate-x-full animate-[shimmer_2s_infinite] bg-gradient-to-r from-transparent via-white/20 dark:via-white/5 to-transparent" />;
+
+  const packageStart = selectedStudent && !selectedStudent.is_free && selectedStudent.package_start_date
+    ? new Date(selectedStudent.package_start_date)
+    : null;
+  const visibleLessons = studentLessons.slice(0, visibleLessonsCount);
+  // Güncel paketten önceki ilk ders: üstüne "Önceki paketler" ayırıcısı konur
+  const firstOlderLessonId = packageStart
+    ? (visibleLessons.find(lesson => new Date(lesson.events.event_date) < packageStart)?.id ?? null)
+    : null;
 
   return (
     <div className={`flex flex-col ${showDetailView ? 'lg:mr-96' : ''} transition-all duration-300`}>
@@ -325,6 +414,7 @@ const RemainingUsage = () => {
           {/* Filtre Butonu */}
           <button
             onClick={handleFilterClick}
+            aria-label={language === 'tr' ? 'Filtreler' : 'Filters'}
             className="h-10 sm:h-8 px-3 bg-white dark:bg-[#121621] text-[#424245] dark:text-[#86868b] text-sm font-medium rounded-lg border border-[#d2d2d7] dark:border-[#2a3241] hover:border-[#0071e3] dark:hover:border-[#0071e3] focus:outline-none transition-colors flex items-center justify-center gap-2 relative"
           >
             <AdjustmentsHorizontalIcon className="w-4 h-4" />
@@ -343,9 +433,9 @@ const RemainingUsage = () => {
             <table className="w-full">
               <thead>
                 <tr className="border-b-2 border-[#d2d2d7] dark:border-[#2a3241]">
-                  <th className="py-4 px-6 text-left bg-[#f5f5f7]/50 dark:bg-[#161922]">
+                  <th className={`${headerCell} text-left`}>
                     <div className="flex flex-col">
-                      <span className="text-xs font-medium uppercase tracking-wider text-[#6e6e73] dark:text-[#86868b]">
+                      <span className={headerLabel}>
                         {language === 'tr' ? 'Öğrenci' : 'Student'}
                       </span>
                       <span className="text-[10px] font-medium uppercase tracking-wider text-[#6e6e73] dark:text-[#86868b] opacity-75">
@@ -353,33 +443,33 @@ const RemainingUsage = () => {
                       </span>
                     </div>
                   </th>
-                  <th className="py-4 px-6 text-left bg-[#f5f5f7]/50 dark:bg-[#161922]">
-                    <span className="text-xs font-medium uppercase tracking-wider text-[#6e6e73] dark:text-[#86868b]">
+                  <th className={`${headerCell} text-left ${secondaryColumn}`}>
+                    <span className={headerLabel}>
                       {language === 'tr' ? 'Paket Türü' : 'Package Type'}
                     </span>
                   </th>
-                  <th className="py-4 px-6 text-left bg-[#f5f5f7]/50 dark:bg-[#161922]">
-                    <span className="text-xs font-medium uppercase tracking-wider text-[#6e6e73] dark:text-[#86868b]">
-                      {language === 'tr' ? 'Kayıt Tarihi' : 'Start Date'}
+                  <th className={`${headerCell} text-left ${secondaryColumn}`}>
+                    <span className={headerLabel}>
+                      {language === 'tr' ? 'Paket Başlangıcı' : 'Start Date'}
                     </span>
                   </th>
-                  <th className="py-4 px-6 text-left bg-[#f5f5f7]/50 dark:bg-[#161922]">
-                    <span className="text-xs font-medium uppercase tracking-wider text-[#6e6e73] dark:text-[#86868b]">
+                  <th className={`${headerCell} text-left ${secondaryColumn}`}>
+                    <span className={headerLabel}>
                       {language === 'tr' ? 'Bitiş Tarihi' : 'End Date'}
                     </span>
                   </th>
-                  <th className="py-4 px-6 text-center bg-[#f5f5f7]/50 dark:bg-[#161922]">
-                    <span className="text-xs font-medium uppercase tracking-wider text-[#6e6e73] dark:text-[#86868b]">
+                  <th className={`${headerCell} text-center`}>
+                    <span className={headerLabel}>
                       {language === 'tr' ? 'Kalan Ders' : 'Remaining'}
                     </span>
                   </th>
-                  <th className="py-4 px-6 text-center bg-[#f5f5f7]/50 dark:bg-[#161922]">
-                    <span className="text-xs font-medium uppercase tracking-wider text-[#6e6e73] dark:text-[#86868b]">
+                  <th className={`${headerCell} text-center ${secondaryColumn}`}>
+                    <span className={headerLabel}>
                       {language === 'tr' ? 'Ödeme Durumu' : 'Payment Status'}
                     </span>
                   </th>
-                  <th className="py-4 px-6 text-right bg-[#f5f5f7]/50 dark:bg-[#161922] w-[100px]">
-                    <span className="text-xs font-medium uppercase tracking-wider text-[#6e6e73] dark:text-[#86868b]">
+                  <th className={`${headerCell} text-right w-[100px]`}>
+                    <span className={headerLabel}>
                       {language === 'tr' ? 'İşlemler' : 'Actions'}
                     </span>
                   </th>
@@ -390,54 +480,74 @@ const RemainingUsage = () => {
                   // Skeleton Loading
                   [...Array(5)].map((_, index) => (
                     <tr key={index}>
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className={bodyCell}>
                         <div className="flex flex-col gap-2">
                           <div className="h-4 bg-[#f5f5f7] dark:bg-[#2a3241] rounded-md w-32 relative overflow-hidden">
-                            <div className="absolute inset-0 -translate-x-full animate-[shimmer_2s_infinite] bg-gradient-to-r from-transparent via-white/20 dark:via-white/5 to-transparent" />
+                            {shimmer}
                           </div>
                           <div className="h-3 bg-[#f5f5f7] dark:bg-[#2a3241] rounded-md w-24 relative overflow-hidden">
-                            <div className="absolute inset-0 -translate-x-full animate-[shimmer_2s_infinite] bg-gradient-to-r from-transparent via-white/20 dark:via-white/5 to-transparent" />
+                            {shimmer}
                           </div>
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className={`${bodyCell} ${secondaryColumn}`}>
                         <div className="h-7 bg-[#f5f5f7] dark:bg-[#2a3241] rounded-lg w-24 relative overflow-hidden">
-                          <div className="absolute inset-0 -translate-x-full animate-[shimmer_2s_infinite] bg-gradient-to-r from-transparent via-white/20 dark:via-white/5 to-transparent" />
+                          {shimmer}
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className={`${bodyCell} ${secondaryColumn}`}>
                         <div className="h-4 bg-[#f5f5f7] dark:bg-[#2a3241] rounded-md w-24 relative overflow-hidden">
-                          <div className="absolute inset-0 -translate-x-full animate-[shimmer_2s_infinite] bg-gradient-to-r from-transparent via-white/20 dark:via-white/5 to-transparent" />
+                          {shimmer}
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className={`${bodyCell} ${secondaryColumn}`}>
                         <div className="h-4 bg-[#f5f5f7] dark:bg-[#2a3241] rounded-md w-24 relative overflow-hidden">
-                          <div className="absolute inset-0 -translate-x-full animate-[shimmer_2s_infinite] bg-gradient-to-r from-transparent via-white/20 dark:via-white/5 to-transparent" />
+                          {shimmer}
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className={bodyCell}>
                         <div className="flex justify-center">
                           <div className="h-6 bg-[#f5f5f7] dark:bg-[#2a3241] rounded-full w-8 relative overflow-hidden">
-                            <div className="absolute inset-0 -translate-x-full animate-[shimmer_2s_infinite] bg-gradient-to-r from-transparent via-white/20 dark:via-white/5 to-transparent" />
+                            {shimmer}
                           </div>
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className={`${bodyCell} ${secondaryColumn}`}>
                         <div className="flex justify-center">
                           <div className="h-6 bg-[#f5f5f7] dark:bg-[#2a3241] rounded-full w-20 relative overflow-hidden">
-                            <div className="absolute inset-0 -translate-x-full animate-[shimmer_2s_infinite] bg-gradient-to-r from-transparent via-white/20 dark:via-white/5 to-transparent" />
+                            {shimmer}
                           </div>
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className={bodyCell}>
                         <div className="flex justify-end">
                           <div className="h-8 bg-[#f5f5f7] dark:bg-[#2a3241] rounded-lg w-16 relative overflow-hidden">
-                            <div className="absolute inset-0 -translate-x-full animate-[shimmer_2s_infinite] bg-gradient-to-r from-transparent via-white/20 dark:via-white/5 to-transparent" />
+                            {shimmer}
                           </div>
                         </div>
                       </td>
                     </tr>
                   ))
+                ) : loadFailed ? (
+                  // Yükleme hatası: "kayıt yok" sanılmasın
+                  <tr>
+                    <td colSpan="7" className="px-6 py-8 text-center">
+                      <div className="flex flex-col items-center justify-center">
+                        <p className="text-[#1d1d1f] dark:text-white font-medium mb-1">
+                          {language === 'tr' ? 'Liste Yüklenemedi' : 'The List Could Not Be Loaded'}
+                        </p>
+                        <p className="text-sm text-[#6e6e73] dark:text-[#86868b]">
+                          {language === 'tr' ? 'Bağlantınızı kontrol edip tekrar deneyin.' : 'Check your connection and try again.'}
+                        </p>
+                        <button
+                          onClick={() => fetchStudents()}
+                          className="mt-4 h-10 sm:h-8 px-4 bg-[#1d1d1f] dark:bg-[#0071e3] text-white text-sm font-medium rounded-lg hover:bg-black dark:hover:bg-[#0077ed] focus:outline-none transition-colors"
+                        >
+                          {language === 'tr' ? 'Tekrar Dene' : 'Try Again'}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
                 ) : filteredStudents.length === 0 ? (
                   <tr>
                     <td colSpan="7" className="px-6 py-8 text-center">
@@ -449,8 +559,8 @@ const RemainingUsage = () => {
                           {language === 'tr' ? 'Kayıt Bulunamadı' : 'No Records Found'}
                         </p>
                         <p className="text-sm text-[#6e6e73] dark:text-[#86868b]">
-                          {searchTerm 
-                            ? (language === 'tr' ? 'Arama kriterlerinize uygun kayıt bulunamadı.' : 'No records match your search criteria.') 
+                          {isFiltered
+                            ? (language === 'tr' ? 'Arama ya da filtreye uygun kayıt bulunamadı.' : 'No records match your search or filter.')
                             : (language === 'tr' ? 'Henüz kayıt eklenmemiş.' : 'No records have been added yet.')}
                         </p>
                       </div>
@@ -462,12 +572,12 @@ const RemainingUsage = () => {
                       key={student.registration_id}
                       // Detay paneli açık olan öğrencinin satırı vurgulanır
                       className={`group ${
-                        showDetailView && selectedStudent?.registration_id === student.registration_id
+                        showDetailView && selectedStudentId === student.registration_id
                           ? 'bg-[#0071e3]/[0.07] dark:bg-[#0071e3]/10 shadow-[inset_3px_0_0_0_#0071e3]'
                           : 'hover:bg-[#f5f5f7] dark:hover:bg-[#161922]'
                       }`}
                     >
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className={bodyCell}>
                         <div className="flex flex-col">
                           <span className="text-sm font-medium text-[#1d1d1f] dark:text-white">
                             {student.student_name}
@@ -475,41 +585,56 @@ const RemainingUsage = () => {
                           <span className="text-xs text-[#6e6e73] dark:text-[#86868b]">
                             {student.parent_name}
                           </span>
+                          {/* Paket sütunu gizlendiğinde paket adı ismin altında görünür */}
+                          <span className={`${secondaryCaption} mt-0.5 text-[11px] text-[#0071e3]`}>
+                            {translatePackageType(student.package_type)}
+                          </span>
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className={`${bodyCell} ${secondaryColumn}`}>
                         <span className="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-medium bg-gradient-to-r from-[#0071e3]/5 to-[#34d399]/5 dark:from-[#0071e3]/10 dark:to-[#34d399]/10 text-[#0071e3] group-hover:from-[#0071e3]/10 group-hover:to-[#34d399]/10 dark:group-hover:from-[#0071e3]/20 dark:group-hover:to-[#34d399]/20 transition-all">
                           {translatePackageType(student.package_type)}
                         </span>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className={`${bodyCell} ${secondaryColumn}`}>
                         <span className="text-sm text-[#424245] dark:text-[#86868b]">
                           {formatDate(student.package_start_date)}
                         </span>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className={`${bodyCell} ${secondaryColumn}`}>
                         <span className="text-sm text-[#424245] dark:text-[#86868b]">
                           {student.is_free
                             ? (language === 'tr' ? 'Süresiz' : 'Unlimited')
                             : formatDate(student.package_end_date)}
                         </span>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-center">
-                        <span className={`inline-flex items-center justify-center min-w-[2rem] px-3 py-1.5 rounded-lg text-xs font-medium ring-1 ring-inset ${
-                          student.is_free
-                            ? 'bg-gray-400/10 text-gray-700 ring-gray-500/20 dark:bg-gray-400/10 dark:text-gray-300 dark:ring-gray-400/20'
-                            : student.remaining_lessons <= 0
-                            ? 'bg-red-400/10 text-red-700 ring-red-500/20 dark:bg-red-400/10 dark:text-red-300 dark:ring-red-400/20'
-                            : student.remaining_lessons <= 2
-                            ? 'bg-amber-400/10 text-amber-700 ring-amber-500/20 dark:bg-amber-400/10 dark:text-amber-300 dark:ring-amber-400/20'
-                            : 'bg-emerald-400/10 text-emerald-700 ring-emerald-500/20 dark:bg-emerald-400/10 dark:text-emerald-300 dark:ring-emerald-400/20'
-                        }`}>
-                          {student.is_free
-                            ? (language === 'tr' ? 'Ücretsiz' : 'Free')
-                            : student.remaining_lessons}
+                      <td className={`${bodyCell} text-center`}>
+                        <span className="inline-flex items-center justify-center gap-1.5">
+                          <span className={`inline-flex items-center justify-center min-w-[2rem] px-3 py-1.5 rounded-lg text-xs font-medium ring-1 ring-inset ${
+                            student.is_free
+                              ? 'bg-gray-400/10 text-gray-700 ring-gray-500/20 dark:bg-gray-400/10 dark:text-gray-300 dark:ring-gray-400/20'
+                              : student.remaining_lessons <= 0
+                              ? 'bg-red-400/10 text-red-700 ring-red-500/20 dark:bg-red-400/10 dark:text-red-300 dark:ring-red-400/20'
+                              : student.remaining_lessons <= 2
+                              ? 'bg-amber-400/10 text-amber-700 ring-amber-500/20 dark:bg-amber-400/10 dark:text-amber-300 dark:ring-amber-400/20'
+                              : 'bg-emerald-400/10 text-emerald-700 ring-emerald-500/20 dark:bg-emerald-400/10 dark:text-emerald-300 dark:ring-emerald-400/20'
+                          }`}>
+                            {student.is_free
+                              ? (language === 'tr' ? 'Ücretsiz' : 'Free')
+                              : student.remaining_lessons}
+                          </span>
+                          {/* Geçmiş bir dersin yoklaması işaretlenmemişse kalan ders olduğundan fazla görünür */}
+                          {student.unmarked_past > 0 && (
+                            <span
+                              className="w-2 h-2 rounded-full bg-amber-400 shrink-0"
+                              title={language === 'tr'
+                                ? `${student.unmarked_past} geçmiş dersin yoklaması işaretlenmemiş`
+                                : `Attendance not marked for ${student.unmarked_past} past lesson${student.unmarked_past === 1 ? '' : 's'}`}
+                            />
+                          )}
                         </span>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                      <td className={`${bodyCell} text-center ${secondaryColumn}`}>
                         <span className={`inline-flex items-center justify-center px-3 py-1.5 rounded-lg text-xs font-medium ring-1 ring-inset ${
                           student.payment_status === 'ucretsiz'
                             ? 'bg-gray-400/10 text-gray-700 ring-gray-500/20 dark:bg-gray-400/10 dark:text-gray-300 dark:ring-gray-400/20'
@@ -520,7 +645,7 @@ const RemainingUsage = () => {
                           {translatePaymentStatus(student.payment_status)}
                         </span>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right">
+                      <td className={`${bodyCell} text-right`}>
                         <button
                           onClick={() => handleDetailClick(student)}
                           className="inline-flex items-center justify-center h-8 px-4 text-xs font-medium rounded-lg bg-white dark:bg-[#121621] text-[#1d1d1f] dark:text-white border border-[#d2d2d7] dark:border-[#2a3241] hover:bg-[#1d1d1f] dark:hover:bg-[#0071e3] hover:text-white dark:hover:text-white hover:border-[#1d1d1f] dark:hover:border-[#0071e3] focus:outline-none transition-all duration-200"
@@ -564,102 +689,22 @@ const RemainingUsage = () => {
                 {language === 'tr' ? 'Paket Türü' : 'Package Type'}
               </h3>
               <div className="grid grid-cols-2 gap-2">
-                <button
-                  onClick={() => setPackageFilter('hafta-1')}
-                  className={`
-                    h-9 px-4 rounded-lg text-sm font-medium
-                    ${packageFilter === 'hafta-1'
-                      ? 'bg-[#1d1d1f] dark:bg-[#0071e3] text-white'
-                      : 'bg-white dark:bg-[#1d1d1f] text-[#1d1d1f] dark:text-white border border-[#d2d2d7] dark:border-[#2a3241] hover:border-[#0071e3] dark:hover:border-[#0071e3]'
-                    }
-                  `}
-                >
-                  {language === 'tr' ? 'Haftada 1' : '1 Day/Week'}
-                </button>
-                <button
-                  onClick={() => setPackageFilter('hafta-2')}
-                  className={`
-                    h-9 px-4 rounded-lg text-sm font-medium
-                    ${packageFilter === 'hafta-2'
-                      ? 'bg-[#1d1d1f] dark:bg-[#0071e3] text-white'
-                      : 'bg-white dark:bg-[#1d1d1f] text-[#1d1d1f] dark:text-white border border-[#d2d2d7] dark:border-[#2a3241] hover:border-[#0071e3] dark:hover:border-[#0071e3]'
-                    }
-                  `}
-                >
-                  {language === 'tr' ? 'Haftada 2' : '2 Days/Week'}
-                </button>
-                <button
-                  onClick={() => setPackageFilter('hafta-3')}
-                  className={`
-                    h-9 px-4 rounded-lg text-sm font-medium 
-                    ${packageFilter === 'hafta-3'
-                      ? 'bg-[#1d1d1f] dark:bg-[#0071e3] text-white'
-                      : 'bg-white dark:bg-[#1d1d1f] text-[#1d1d1f] dark:text-white border border-[#d2d2d7] dark:border-[#2a3241] hover:border-[#0071e3] dark:hover:border-[#0071e3]'
-                    }
-                  `}
-                >
-                  {language === 'tr' ? 'Haftada 3' : '3 Days/Week'}
-                </button>
-                <button
-                  onClick={() => setPackageFilter('hafta-4')}
-                  className={`
-                    h-9 px-4 rounded-lg text-sm font-medium 
-                    ${packageFilter === 'hafta-4'
-                      ? 'bg-[#1d1d1f] dark:bg-[#0071e3] text-white'
-                      : 'bg-white dark:bg-[#1d1d1f] text-[#1d1d1f] dark:text-white border border-[#d2d2d7] dark:border-[#2a3241] hover:border-[#0071e3] dark:hover:border-[#0071e3]'
-                    }
-                  `}
-                >
-                  {language === 'tr' ? 'Haftada 4' : '4 Days/Week'}
-                </button>
-                <button
-                  onClick={() => setPackageFilter('3ay-hafta-1')}
-                  className={`
-                    h-9 px-4 rounded-lg text-sm font-medium
-                    ${packageFilter === '3ay-hafta-1'
-                      ? 'bg-[#1d1d1f] dark:bg-[#0071e3] text-white'
-                      : 'bg-white dark:bg-[#1d1d1f] text-[#1d1d1f] dark:text-white border border-[#d2d2d7] dark:border-[#2a3241] hover:border-[#0071e3] dark:hover:border-[#0071e3]'
-                    }
-                  `}
-                >
-                  {language === 'tr' ? '3 Ay - 12 Atölye' : '3 Mo - 12 Wks'}
-                </button>
-                <button
-                  onClick={() => setPackageFilter('3ay-hafta-2')}
-                  className={`
-                    h-9 px-4 rounded-lg text-sm font-medium
-                    ${packageFilter === '3ay-hafta-2'
-                      ? 'bg-[#1d1d1f] dark:bg-[#0071e3] text-white'
-                      : 'bg-white dark:bg-[#1d1d1f] text-[#1d1d1f] dark:text-white border border-[#d2d2d7] dark:border-[#2a3241] hover:border-[#0071e3] dark:hover:border-[#0071e3]'
-                    }
-                  `}
-                >
-                  {language === 'tr' ? '3 Ay - 24 Atölye' : '3 Mo - 24 Wks'}
-                </button>
-                <button
-                  onClick={() => setPackageFilter('tek-seferlik')}
-                  className={`
-                    h-9 px-4 rounded-lg text-sm font-medium 
-                    ${packageFilter === 'tek-seferlik'
-                      ? 'bg-[#1d1d1f] dark:bg-[#0071e3] text-white'
-                      : 'bg-white dark:bg-[#1d1d1f] text-[#1d1d1f] dark:text-white border border-[#d2d2d7] dark:border-[#2a3241] hover:border-[#0071e3] dark:hover:border-[#0071e3]'
-                    }
-                  `}
-                >
-                  {language === 'tr' ? 'Tek Seferlik' : 'One Time'}
-                </button>
-                <button
-                  onClick={() => setPackageFilter('ucretsiz')}
-                  className={`
-                    h-9 px-4 rounded-lg text-sm font-medium
-                    ${packageFilter === 'ucretsiz'
-                      ? 'bg-[#1d1d1f] dark:bg-[#0071e3] text-white'
-                      : 'bg-white dark:bg-[#1d1d1f] text-[#1d1d1f] dark:text-white border border-[#d2d2d7] dark:border-[#2a3241] hover:border-[#0071e3] dark:hover:border-[#0071e3]'
-                    }
-                  `}
-                >
-                  {language === 'tr' ? 'Ücretsiz' : 'Free'}
-                </button>
+                {PACKAGE_FILTERS.map(option => (
+                  <button
+                    key={option.value}
+                    // Seçili filtreye yeniden dokunmak filtreyi kaldırır
+                    onClick={() => setPackageFilter(packageFilter === option.value ? 'all' : option.value)}
+                    className={`
+                      h-9 px-4 rounded-lg text-sm font-medium
+                      ${packageFilter === option.value
+                        ? 'bg-[#1d1d1f] dark:bg-[#0071e3] text-white'
+                        : 'bg-white dark:bg-[#1d1d1f] text-[#1d1d1f] dark:text-white border border-[#d2d2d7] dark:border-[#2a3241] hover:border-[#0071e3] dark:hover:border-[#0071e3]'
+                      }
+                    `}
+                  >
+                    {language === 'tr' ? option.tr : option.en}
+                  </button>
+                ))}
               </div>
             </div>
           </div>
@@ -785,6 +830,74 @@ const RemainingUsage = () => {
                   </div>
                 </div>
 
+                {/* Kullanım Durumu — ders listesinin üstünde: sayılar güncel pakete aittir */}
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="text-sm font-medium text-[#1d1d1f] dark:text-white uppercase tracking-wider">
+                      {language === 'tr' ? 'Kullanım Durumu' : 'Usage Status'}
+                    </h3>
+                    {packageStart && (
+                      <p className="mt-1 text-[11px] text-[#6e6e73] dark:text-[#86868b]">
+                        {language === 'tr'
+                          ? `Güncel paket (${formatDate(packageStart)} tarihinden itibaren)`
+                          : `Current package (since ${formatDate(packageStart)})`}
+                      </p>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-[#f5f5f7] dark:bg-[#161922] p-4 rounded-xl flex items-center">
+                      <div>
+                      <label className="block text-xs text-[#6e6e73] dark:text-[#86868b] uppercase tracking-wider mb-1">
+                        {language === 'tr' ? 'Kalan Ders' : 'Remaining Lessons'}
+                      </label>
+                      <span className={`font-medium ${
+                          selectedStudent.is_free
+                          ? 'text-base text-gray-700 dark:text-gray-300'
+                            : selectedStudent.remaining_lessons <= 0
+                          ? 'text-2xl text-red-700 dark:text-red-400'
+                            : selectedStudent.remaining_lessons <= 2
+                          ? 'text-2xl text-amber-700 dark:text-amber-400'
+                          : 'text-2xl text-emerald-700 dark:text-emerald-400'
+                      }`}>
+                          {selectedStudent.is_free
+                            ? (language === 'tr' ? 'Ücretsiz' : 'Free')
+                            : selectedStudent.remaining_lessons}
+                      </span>
+                      {!selectedStudent.is_free && selectedStudent.carried_lessons > 0 && (
+                        <p className="mt-1 text-[11px] text-[#6e6e73] dark:text-[#86868b]">
+                          {language === 'tr'
+                            ? `${selectedStudent.carried_lessons} ders önceki paketten devretti`
+                            : `${selectedStudent.carried_lessons} carried over from the previous package`}
+                        </p>
+                      )}
+                    </div>
+                    </div>
+                    <div className="bg-[#f5f5f7] dark:bg-[#161922] p-4 rounded-xl flex items-center">
+                      <div>
+                          <label className="block text-xs text-[#6e6e73] dark:text-[#86868b] uppercase tracking-wider mb-1">
+                            {language === 'tr' ? 'Ödeme Durumu' : 'Payment Status'}
+                          </label>
+                        <span className={`inline-flex w-auto items-center px-3 py-1.5 rounded-lg text-xs font-medium ${
+                          selectedStudent.payment_status === 'ucretsiz'
+                              ? 'bg-gray-400/10 text-gray-700 ring-1 ring-gray-500/20 dark:bg-gray-400/10 dark:text-gray-300 dark:ring-gray-400/20'
+                              : selectedStudent.payment_status === 'odendi'
+                              ? 'bg-emerald-400/10 text-emerald-700 ring-1 ring-emerald-500/20 dark:bg-emerald-400/10 dark:text-emerald-300 dark:ring-emerald-400/20'
+                              : 'bg-amber-400/10 text-amber-700 ring-1 ring-amber-500/20 dark:bg-amber-400/10 dark:text-amber-300 dark:ring-amber-400/20'
+                          }`}>
+                          {translatePaymentStatus(selectedStudent.payment_status)}
+                          </span>
+                      </div>
+                    </div>
+                  </div>
+                  {selectedStudent.unmarked_past > 0 && (
+                    <p className="text-xs text-amber-700 dark:text-amber-400">
+                      {language === 'tr'
+                        ? `${selectedStudent.unmarked_past} geçmiş dersin yoklaması işaretlenmemiş; işaretlenene kadar kalan dersten düşmez.`
+                        : `Attendance is not marked for ${selectedStudent.unmarked_past} past lesson${selectedStudent.unmarked_past === 1 ? '' : 's'}; they are not deducted until marked.`}
+                    </p>
+                  )}
+                </div>
+
                 {/* Katıldığı Dersler */}
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
@@ -792,28 +905,41 @@ const RemainingUsage = () => {
                       {language === 'tr' ? 'Dersler' : 'Lessons'}
                     </h3>
                   </div>
-                  
+
                   {loadingLessons ? (
                     // Loading state
-                  <div className="space-y-2">
+                    <div className="space-y-2">
                       {[...Array(3)].map((_, index) => (
                         <div key={index} className="bg-[#f5f5f7] dark:bg-[#161922] p-4 rounded-xl">
-                      <div className="flex items-center justify-between">
+                          <div className="flex items-center justify-between">
                             <div className="space-y-1 w-1/2">
                               <div className="h-4 bg-[#e5e5ea] dark:bg-[#2a3241] rounded-md w-32 relative overflow-hidden">
-                                <div className="absolute inset-0 -translate-x-full animate-[shimmer_2s_infinite] bg-gradient-to-r from-transparent via-white/20 dark:via-white/5 to-transparent" />
+                                {shimmer}
                               </div>
                               <div className="h-3 bg-[#e5e5ea] dark:bg-[#2a3241] rounded-md w-24 relative overflow-hidden">
-                                <div className="absolute inset-0 -translate-x-full animate-[shimmer_2s_infinite] bg-gradient-to-r from-transparent via-white/20 dark:via-white/5 to-transparent" />
+                                {shimmer}
                               </div>
                             </div>
                             <div className="h-7 bg-[#e5e5ea] dark:bg-[#2a3241] rounded-lg w-20 relative overflow-hidden">
-                              <div className="absolute inset-0 -translate-x-full animate-[shimmer_2s_infinite] bg-gradient-to-r from-transparent via-white/20 dark:via-white/5 to-transparent" />
+                              {shimmer}
                             </div>
                           </div>
                         </div>
                       ))}
-                      </div>
+                    </div>
+                  ) : lessonsFailed ? (
+                    // Dersler yüklenemediyse "ders yok" sanılmasın
+                    <div className="bg-[#f5f5f7] dark:bg-[#161922] p-6 rounded-xl text-center">
+                      <p className="text-[#1d1d1f] dark:text-white font-medium">
+                        {language === 'tr' ? 'Dersler yüklenemedi' : 'The lessons could not be loaded'}
+                      </p>
+                      <button
+                        onClick={() => fetchStudentLessons(selectedStudent.registration_id)}
+                        className="mt-3 h-8 px-4 bg-[#1d1d1f] dark:bg-[#0071e3] text-white text-xs font-medium rounded-lg hover:bg-black dark:hover:bg-[#0077ed] focus:outline-none transition-colors"
+                      >
+                        {language === 'tr' ? 'Tekrar Dene' : 'Try Again'}
+                      </button>
+                    </div>
                   ) : studentLessons.length === 0 ? (
                     <div className="bg-[#f5f5f7] dark:bg-[#161922] p-6 rounded-xl text-center">
                       <p className="text-[#1d1d1f] dark:text-white font-medium">
@@ -825,112 +951,99 @@ const RemainingUsage = () => {
                     </div>
                   ) : (
                     <div className="space-y-3">
-                      {studentLessons.slice(0, visibleLessonsCount).map((lesson) => (
-                        <div key={lesson.id} className="bg-[#f5f5f7] dark:bg-[#161922] rounded-xl overflow-hidden">
-                          {/* Üst kısım - Ders bilgileri ve statü */}
-                          <div className="p-4">
-                      <div className="flex items-center justify-between">
-                              <div className="flex-1">
-                          <span className="block text-sm font-medium text-[#1d1d1f] dark:text-white">
-                                  {lesson.events.event_type === 'ingilizce' 
-                                    ? language === 'tr' ? 'İngilizce Oyun Dersi' : 'English Game Class'
-                                    : lesson.events.event_type === 'duyusal' 
-                                    ? language === 'tr' ? 'Duyusal Gelişim Dersi' : 'Sensory Development Class'
-                                    : lesson.events.custom_description || (language === 'tr' ? 'Özel Ders' : 'Custom Class')}
-                                  {lesson.is_makeup && (language === 'tr' ? ' (Telafi)' : ' (Makeup)')}
+                      {visibleLessons.map((lesson) => {
+                        const isUpdating = updatingLessonIds.has(lesson.id);
+                        // Günü geçmiş ama hâlâ "planlandı" duran ders: yoklaması unutulmuş
+                        const isUnmarked = isAttendanceOverdue(lesson.status, lesson.events.event_date);
+
+                        return (
+                          <React.Fragment key={lesson.id}>
+                            {lesson.id === firstOlderLessonId && (
+                              <div className="flex items-center gap-3 pt-2">
+                                <span className="text-[11px] font-medium uppercase tracking-wider text-[#6e6e73] dark:text-[#86868b]">
+                                  {language === 'tr' ? 'Önceki paketler' : 'Earlier packages'}
                                 </span>
-                                <span className="text-xs text-[#6e6e73] dark:text-[#86868b] mt-1">
-                                  {lesson.events && formatDate(lesson.events.event_date, 'dd MMMM yyyy, HH:mm')}
-                                </span>
-                                
-                                {/* Ek notlar */}
-                                {lesson.cancellation_reason && (
-                                  <span className="block text-xs text-red-500 mt-1">
-                                    {language === 'tr' ? 'İptal sebebi:' : 'Cancellation reason:'} {lesson.cancellation_reason}
-                                  </span>
-                                )}
-                                {lesson.makeup_notes && (
-                                  <span className="block text-xs text-blue-500 mt-1">
-                                    {language === 'tr' ? 'Telafi notu:' : 'Makeup note:'} {lesson.makeup_notes}
-                                  </span>
-                                )}
-                                {lesson.postponed_notes && (
-                                  <span className="block text-xs text-amber-500 mt-1">
-                                    {language === 'tr' ? 'Erteleme notu:' : 'Postponement note:'} {lesson.postponed_notes}
-                                  </span>
-                                )}
-                        </div>
-                              
-                              <div>
-                                {/* Durum etiketi */}
-                                <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium
-                                  ${lesson.status === 'scheduled' ? 'bg-[#0071e3]/10 text-[#0071e3] ring-1 ring-inset ring-[#0071e3]/20' : 
-                                    lesson.status === 'attended' ? 'bg-emerald-400/10 text-emerald-700 dark:text-emerald-300 ring-1 ring-inset ring-emerald-500/20 dark:ring-emerald-400/20' : 
-                                    lesson.status === 'no_show' ? 'bg-red-400/10 text-red-700 dark:text-red-300 ring-1 ring-inset ring-red-500/20 dark:ring-red-400/20' :
-                                    lesson.status === 'cancelled' ? 'bg-gray-400/10 text-gray-700 dark:text-gray-300 ring-1 ring-inset ring-gray-500/20 dark:ring-gray-400/20' :
-                                    lesson.status === 'makeup' ? 'bg-blue-400/10 text-blue-700 dark:text-blue-300 ring-1 ring-inset ring-blue-500/20 dark:ring-blue-400/20' :
-                                    lesson.status === 'postponed' ? 'bg-amber-400/10 text-amber-700 dark:text-amber-300 ring-1 ring-inset ring-amber-500/20 dark:ring-amber-400/20' :
-                                    'bg-gray-400/10 text-gray-700'
-                                  }`}>
-                                  {translateLessonStatus(lesson.status)}
-                        </span>
-                      </div>
-                    </div>
-                          </div>
-                          
-                          {/* Border */}
-                          <hr className="border-[#d2d2d7] dark:border-[#2a3241]" />
-                          
-                          {/* Alt kısım - Butonlar (Her zaman göster) */}
-                          <div className="p-3 bg-[#f5f5f7]/50 dark:bg-[#161922]/70 flex items-center justify-between gap-2">
-                            <button
-                              onClick={() => updateLessonStatus(lesson.id, 'attended')}
-                              disabled={statusUpdateLoading}
-                              className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-lg ${
-                                lesson.status === 'attended' 
-                                  ? 'bg-emerald-400/10 text-emerald-700 ring-1 ring-emerald-500/20 dark:bg-emerald-400/10 dark:text-emerald-300 dark:ring-emerald-400/20 hover:bg-emerald-400/30 dark:hover:bg-emerald-400/30'
-                                  : 'bg-emerald-400/5 text-emerald-700/30 ring-1 ring-emerald-500/10 dark:bg-emerald-400/5 dark:text-emerald-300/30 dark:ring-emerald-400/10 hover:bg-emerald-400/20 dark:hover:bg-emerald-400/20 hover:text-emerald-700 dark:hover:text-emerald-300'
-                              } transition-colors`}
-                            >
-                              {language === 'tr' ? 'Katıldı' : 'Joined'}
-                            </button>
-                            <button
-                              onClick={() => updateLessonStatus(lesson.id, 'no_show')}
-                              disabled={statusUpdateLoading}
-                              className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-lg ${
-                                lesson.status === 'no_show' 
-                                  ? 'bg-red-400/10 text-red-700 ring-1 ring-red-500/20 dark:bg-red-400/10 dark:text-red-300 dark:ring-red-400/20 hover:bg-red-400/30 dark:hover:bg-red-400/30'
-                                  : 'bg-red-400/5 text-red-700/30 ring-1 ring-red-500/10 dark:bg-red-400/5 dark:text-red-300/30 dark:ring-red-400/10 hover:bg-red-400/20 dark:hover:bg-red-400/20 hover:text-red-700 dark:hover:text-red-300'
-                              } transition-colors`}
-                            >
-                              {language === 'tr' ? 'Gelmedi' : 'Absent'}
-                            </button>
-                            <button
-                              onClick={() => updateLessonStatus(lesson.id, 'postponed')}
-                              disabled={statusUpdateLoading}
-                              className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-lg ${
-                                lesson.status === 'postponed' 
-                                  ? 'bg-amber-400/10 text-amber-700 ring-1 ring-amber-500/20 dark:bg-amber-400/10 dark:text-amber-300 dark:ring-amber-400/20 hover:bg-amber-400/30 dark:hover:bg-amber-400/30'
-                                  : 'bg-amber-400/5 text-amber-700/30 ring-1 ring-amber-500/10 dark:bg-amber-400/5 dark:text-amber-300/30 dark:ring-amber-400/10 hover:bg-amber-400/20 dark:hover:bg-amber-400/20 hover:text-amber-700 dark:hover:text-amber-300'
-                              } transition-colors`}
-                            >
-                              {language === 'tr' ? 'Ertelendi' : 'Delayed'}
-                            </button>
-                            <button
-                              onClick={() => updateLessonStatus(lesson.id, 'makeup')}
-                              disabled={statusUpdateLoading}
-                              className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-lg ${
-                                lesson.status === 'makeup' 
-                                  ? 'bg-blue-400/10 text-blue-700 ring-1 ring-blue-500/20 dark:bg-blue-400/10 dark:text-blue-300 dark:ring-blue-400/20 hover:bg-blue-400/30 dark:hover:bg-blue-400/30'
-                                  : 'bg-blue-400/5 text-blue-700/30 ring-1 ring-blue-500/10 dark:bg-blue-400/5 dark:text-blue-300/30 dark:ring-blue-400/10 hover:bg-blue-400/20 dark:hover:bg-blue-400/20 hover:text-blue-700 dark:hover:text-blue-300'
-                              } transition-colors`}
-                            >
-                              {language === 'tr' ? 'Telafi' : 'Makeup'}
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                      
+                                <span className="flex-1 h-px bg-[#d2d2d7] dark:bg-[#2a3241]"></span>
+                              </div>
+                            )}
+                            <div className="bg-[#f5f5f7] dark:bg-[#161922] rounded-xl overflow-hidden">
+                              {/* Üst kısım - Ders bilgileri ve statü */}
+                              <div className="p-4">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex-1">
+                                    <span className="block text-sm font-medium text-[#1d1d1f] dark:text-white">
+                                      {lesson.events.event_type === 'ingilizce'
+                                        ? language === 'tr' ? 'İngilizce Oyun Dersi' : 'English Game Class'
+                                        : lesson.events.event_type === 'duyusal'
+                                        ? language === 'tr' ? 'Duyusal Gelişim Dersi' : 'Sensory Development Class'
+                                        : lesson.events.custom_description || (language === 'tr' ? 'Özel Ders' : 'Custom Class')}
+                                      {lesson.is_makeup && (language === 'tr' ? ' (Telafi)' : ' (Makeup)')}
+                                    </span>
+                                    <span className="text-xs text-[#6e6e73] dark:text-[#86868b] mt-1">
+                                      {formatDate(lesson.events.event_date, 'dd MMMM yyyy, HH:mm')}
+                                    </span>
+
+                                    {/* Ek notlar */}
+                                    {lesson.cancellation_reason && (
+                                      <span className="block text-xs text-red-500 mt-1">
+                                        {language === 'tr' ? 'İptal sebebi:' : 'Cancellation reason:'} {lesson.cancellation_reason}
+                                      </span>
+                                    )}
+                                    {lesson.makeup_notes && (
+                                      <span className="block text-xs text-blue-500 mt-1">
+                                        {language === 'tr' ? 'Telafi notu:' : 'Makeup note:'} {lesson.makeup_notes}
+                                      </span>
+                                    )}
+                                    {lesson.postponed_notes && (
+                                      <span className="block text-xs text-amber-500 mt-1">
+                                        {language === 'tr' ? 'Erteleme notu:' : 'Postponement note:'} {lesson.postponed_notes}
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <div>
+                                    {/* Durum etiketi */}
+                                    <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium
+                                      ${isUnmarked ? 'bg-amber-400/10 text-amber-700 dark:text-amber-300 ring-1 ring-inset ring-amber-500/20 dark:ring-amber-400/20' :
+                                        lesson.status === 'scheduled' ? 'bg-[#0071e3]/10 text-[#0071e3] ring-1 ring-inset ring-[#0071e3]/20' :
+                                        lesson.status === 'attended' ? 'bg-emerald-400/10 text-emerald-700 dark:text-emerald-300 ring-1 ring-inset ring-emerald-500/20 dark:ring-emerald-400/20' :
+                                        lesson.status === 'no_show' ? 'bg-red-400/10 text-red-700 dark:text-red-300 ring-1 ring-inset ring-red-500/20 dark:ring-red-400/20' :
+                                        lesson.status === 'cancelled' ? 'bg-gray-400/10 text-gray-700 dark:text-gray-300 ring-1 ring-inset ring-gray-500/20 dark:ring-gray-400/20' :
+                                        lesson.status === 'makeup' ? 'bg-blue-400/10 text-blue-700 dark:text-blue-300 ring-1 ring-inset ring-blue-500/20 dark:ring-blue-400/20' :
+                                        lesson.status === 'postponed' ? 'bg-amber-400/10 text-amber-700 dark:text-amber-300 ring-1 ring-inset ring-amber-500/20 dark:ring-amber-400/20' :
+                                        'bg-gray-400/10 text-gray-700'
+                                      }`}>
+                                      {isUnmarked
+                                        ? (language === 'tr' ? 'İşaretlenmedi' : 'Not marked')
+                                        : translateLessonStatus(lesson.status)}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Border */}
+                              <hr className="border-[#d2d2d7] dark:border-[#2a3241]" />
+
+                              {/* Alt kısım - Butonlar (Her zaman göster) */}
+                              <div className="p-3 bg-[#f5f5f7]/50 dark:bg-[#161922]/70 flex items-center justify-between gap-2">
+                                {STATUS_BUTTONS.map(button => (
+                                  <button
+                                    key={button.status}
+                                    onClick={() => updateLessonStatus(lesson, button.status)}
+                                    disabled={isUpdating}
+                                    className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-lg ${
+                                      lesson.status === button.status ? button.active : button.idle
+                                    } transition-colors disabled:opacity-50 disabled:cursor-wait`}
+                                  >
+                                    {language === 'tr' ? button.tr : button.en}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          </React.Fragment>
+                        );
+                      })}
+
                       {/* Load More Button */}
                       {visibleLessonsCount < studentLessons.length && (
                         <div className="flex justify-center pt-4">
@@ -951,63 +1064,25 @@ const RemainingUsage = () => {
                   )}
                 </div>
 
-                {/* Kullanım Durumu */}
-                <div className="space-y-4">
-                  <h3 className="text-sm font-medium text-[#1d1d1f] dark:text-white uppercase tracking-wider">
-                    {language === 'tr' ? 'Kullanım Durumu' : 'Usage Status'}
-                  </h3>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="bg-[#f5f5f7] dark:bg-[#161922] p-4 rounded-xl flex items-center">
-                      <div>
-                      <label className="block text-xs text-[#6e6e73] dark:text-[#86868b] uppercase tracking-wider mb-1">
-                        {language === 'tr' ? 'Kalan Ders' : 'Remaining Lessons'}
-                      </label>
-                      <span className={`font-medium ${
-                          studentDetails?.is_free
-                          ? 'text-base text-gray-700 dark:text-gray-300'
-                            : studentDetails?.remaining_lessons <= 0
-                          ? 'text-2xl text-red-700 dark:text-red-400'
-                            : studentDetails?.remaining_lessons <= 2
-                          ? 'text-2xl text-amber-700 dark:text-amber-400'
-                          : 'text-2xl text-emerald-700 dark:text-emerald-400'
-                      }`}>
-                          {studentDetails?.is_free
-                            ? (language === 'tr' ? 'Ücretsiz' : 'Free')
-                            : studentDetails?.remaining_lessons}
-                      </span>
-                    </div>
-                    </div>
-                    <div className="bg-[#f5f5f7] dark:bg-[#161922] p-4 rounded-xl flex items-center">
-                      <div>
-                          <label className="block text-xs text-[#6e6e73] dark:text-[#86868b] uppercase tracking-wider mb-1">
-                            {language === 'tr' ? 'Ödeme Durumu' : 'Payment Status'}
-                          </label>
-                        <span className={`inline-flex w-auto items-center px-3 py-1.5 rounded-lg text-xs font-medium ${
-                          studentDetails?.payment_status === 'ucretsiz'
-                              ? 'bg-gray-400/10 text-gray-700 ring-1 ring-gray-500/20 dark:bg-gray-400/10 dark:text-gray-300 dark:ring-gray-400/20'
-                              : studentDetails?.payment_status === 'odendi'
-                              ? 'bg-emerald-400/10 text-emerald-700 ring-1 ring-emerald-500/20 dark:bg-emerald-400/10 dark:text-emerald-300 dark:ring-emerald-400/20'
-                              : 'bg-amber-400/10 text-amber-700 ring-1 ring-amber-500/20 dark:bg-amber-400/10 dark:text-amber-300 dark:ring-amber-400/20'
-                          }`}>
-                          {translatePaymentStatus(studentDetails?.payment_status)}
-                          </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
                 {/* İstatistikler */}
                 <div className="space-y-4">
-                  <h3 className="text-sm font-medium text-[#1d1d1f] dark:text-white uppercase tracking-wider">
-                    {language === 'tr' ? 'İstatistikler' : 'Statistics'}
-                  </h3>
+                  <div>
+                    <h3 className="text-sm font-medium text-[#1d1d1f] dark:text-white uppercase tracking-wider">
+                      {language === 'tr' ? 'İstatistikler' : 'Statistics'}
+                    </h3>
+                    {packageStart && (
+                      <p className="mt-1 text-[11px] text-[#6e6e73] dark:text-[#86868b]">
+                        {language === 'tr' ? 'Yalnızca güncel paket' : 'Current package only'}
+                      </p>
+                    )}
+                  </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="bg-[#f5f5f7] dark:bg-[#161922] p-4 rounded-xl">
                       <label className="block text-[10px] text-[#6e6e73] dark:text-[#86868b] uppercase tracking-wider mb-1">
                         {language === 'tr' ? 'Katıldığı Dersler' : 'Attended Lessons'}
                       </label>
                       <span className="text-2xl font-medium text-[#1d1d1f] dark:text-white">
-                        {studentDetails?.attended_lessons || 0}
+                        {selectedStudent.attended_lessons || 0}
                       </span>
                     </div>
                     <div className="bg-[#f5f5f7] dark:bg-[#161922] p-4 rounded-xl">
@@ -1015,7 +1090,7 @@ const RemainingUsage = () => {
                         {language === 'tr' ? 'Gelmeyen' : 'Absents'}
                       </label>
                       <span className="text-2xl font-medium text-[#1d1d1f] dark:text-white">
-                        {studentDetails?.no_show_lessons || 0}
+                        {selectedStudent.no_show_lessons || 0}
                       </span>
                     </div>
                     <div className="bg-[#f5f5f7] dark:bg-[#161922] p-4 rounded-xl">
@@ -1023,7 +1098,7 @@ const RemainingUsage = () => {
                         {language === 'tr' ? 'Telafi Dersleri' : 'Makeup Lessons'}
                       </label>
                       <span className="text-2xl font-medium text-[#1d1d1f] dark:text-white">
-                        {studentDetails?.makeup_completed || 0}
+                        {selectedStudent.makeup_completed || 0}
                       </span>
                     </div>
                     <div className="bg-[#f5f5f7] dark:bg-[#161922] p-4 rounded-xl">
@@ -1031,7 +1106,7 @@ const RemainingUsage = () => {
                         {language === 'tr' ? 'Ertelenen Dersler' : 'Postponed Lessons'}
                       </label>
                       <span className="text-2xl font-medium text-[#1d1d1f] dark:text-white">
-                        {studentDetails?.postponed_lessons || 0}
+                        {selectedStudent.postponed_lessons || 0}
                       </span>
                     </div>
                   </div>
@@ -1044,13 +1119,21 @@ const RemainingUsage = () => {
 
       {/* Mobile Overlay */}
       {showDetailView && (
-        <div 
+        <div
           className="lg:hidden fixed inset-0 bg-black/25 backdrop-blur-sm z-40"
           onClick={handleCloseDetail}
         />
       )}
+
+      {/* Toast */}
+      <Toast
+        message={toast.message}
+        type={toast.type}
+        isVisible={toast.isVisible}
+        onClose={() => setToast(prev => ({ ...prev, isVisible: false }))}
+      />
     </div>
   );
 };
 
-export default RemainingUsage; 
+export default RemainingUsage;

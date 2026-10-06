@@ -1,7 +1,12 @@
 import React, { useState, useEffect } from 'react'
-import { createClient } from '@supabase/supabase-js'
+import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
+import { capitalizeName, capitalizeWords, upperFirst } from '../lib/text'
+import { phoneDigits, isValidPhone } from '../lib/phone'
+import { changeKeepingCaret } from '../lib/caret'
+import { localDateKey } from '../lib/dates'
 import DatePicker, { registerLocale } from 'react-datepicker'
+import { parseISO } from 'date-fns'
 import { tr } from 'date-fns/locale'
 import "react-datepicker/dist/react-datepicker.css"
 import { 
@@ -19,43 +24,81 @@ import {
 // Türkçe lokalizasyonu kaydet
 registerLocale('tr', tr)
 
-const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY
-)
+const inputClasses = "w-full h-[46px] pl-11 pr-4 rounded-xl border border-[#e5e5e5] dark:border-[#2a3241] bg-white dark:bg-[#121621] text-[#1d1d1f] dark:text-white placeholder:text-[#86868b] focus:ring-2 focus:ring-[#0071e3] focus:border-transparent transition-all text-sm"
+const iconClasses = "w-5 h-5 text-[#86868b]"
+const iconWrapperClasses = "absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"
+
+// Kaydı form alanlarına çevirir (notes veritabanında NULL olabilir)
+const toFormData = (entry) => ({
+  parent_name: entry.parent_name ?? '',
+  parent_phone: entry.parent_phone ?? '',
+  student_name: entry.student_name ?? '',
+  student_age: entry.student_age ?? '',
+  package_type: entry.package_type ?? '',
+  // "YYYY-AA-GG" yerel gün olarak okunur (new Date() UTC sayar, batıdaki saat dilimlerinde bir gün kayar)
+  contact_date: parseISO(entry.contact_date),
+  status: entry.status ?? '',
+  notes: entry.notes ?? ''
+})
+
+// Formu kaydedilecek alanlara çevirir: metinler kırpılır, contact_date yerel gün olarak yazılır
+const toPayload = (formData) => ({
+  parent_name: formData.parent_name.trim(),
+  parent_phone: phoneDigits(formData.parent_phone),
+  student_name: formData.student_name.trim(),
+  student_age: formData.student_age.trim(),
+  package_type: formData.package_type,
+  contact_date: localDateKey(formData.contact_date),
+  status: formData.status,
+  notes: formData.notes.trim()
+})
+
+// DatePicker özel stil
+// Bileşenin dışında tanımlı: içeride tanımlanınca her render'da input yeniden oluşturuluyordu.
+// onKeyDown iletilir ki Enter/Escape/ok tuşları takvime ulaşsın ve Enter formu göndermesin.
+// onFocus/onBlur bilerek iletilmez: iletilirse gün seçildikten sonra takvim yeniden açılabiliyor.
+const DateInput = React.forwardRef(function DateInput({ value, onClick, onKeyDown, placeholder }, ref) {
+  return (
+    <div className="relative w-full">
+      <div className={iconWrapperClasses}>
+        <CalendarDaysIcon className={iconClasses} />
+      </div>
+      <input
+        type="text"
+        ref={ref}
+        onClick={onClick}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') e.preventDefault()
+          onKeyDown?.(e)
+        }}
+        value={value}
+        readOnly
+        className={`${inputClasses} cursor-pointer`}
+        placeholder={placeholder}
+      />
+    </div>
+  )
+})
 
 export default function UpdateWaitlistModal({ isOpen, onClose, onSuccess, entry }) {
   const { language } = useLanguage()
   const [isLoading, setIsLoading] = useState(false)
-  const [formData, setFormData] = useState({
-    parent_name: '',
-    parent_phone: '',
-    student_name: '',
-    student_age: '',
-    package_type: '',
-    contact_date: new Date(),
-    status: '',
-    notes: ''
-  })
+  // Form, açılan kaydın değerleriyle başlar; modal her kayıt için yeniden oluşturulur (Waitlist.jsx)
+  const [formData, setFormData] = useState(() => toFormData(entry))
 
   // Form validasyonu için state
   const [isFormValid, setIsFormValid] = useState(false)
 
-  // Entry değiştiğinde form verilerini güncelle
-  useEffect(() => {
-    if (entry) {
-      setFormData({
-        ...entry,
-        contact_date: new Date(entry.contact_date)
-      })
-    }
-  }, [entry])
+  // Telefon yalnızca değiştirildiyse denetlenir: eski kayıttaki kısa numara diğer düzenlemeleri engellemesin
+  const isPhoneOk =
+    phoneDigits(formData.parent_phone) === phoneDigits(entry.parent_phone) ||
+    isValidPhone(formData.parent_phone)
 
   // Form validasyonunu kontrol et
   useEffect(() => {
-    const isValid = 
+    const isValid =
       formData.parent_name.trim() !== '' &&
-      formData.parent_phone.trim() !== '' &&
+      isPhoneOk &&
       formData.student_name.trim() !== '' &&
       formData.student_age.trim() !== '' &&
       formData.package_type !== '' &&
@@ -63,11 +106,11 @@ export default function UpdateWaitlistModal({ isOpen, onClose, onSuccess, entry 
       formData.status !== ''
 
     setIsFormValid(isValid)
-  }, [formData])
+  }, [formData, isPhoneOk])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    
+
     if (!isFormValid) {
       return
     }
@@ -75,17 +118,40 @@ export default function UpdateWaitlistModal({ isOpen, onClose, onSuccess, entry 
     setIsLoading(true)
 
     try {
-      const { error } = await supabase
+      // Yalnızca bu formda değiştirilen alanlar gönderilir: kart açıkken başka bir yöneticinin
+      // diğer alanlarda yaptığı değişiklik (ör. durum) eski değerlerle ezilmesin.
+      const payload = toPayload(formData)
+      const original = toPayload(toFormData(entry))
+      const changes = Object.fromEntries(
+        Object.entries(payload).filter(([field, value]) => value !== original[field])
+      )
+
+      // Değişiklik yoksa istek göndermeden kapat
+      if (Object.keys(changes).length === 0) {
+        onClose()
+        return
+      }
+
+      const { data, error } = await supabase
         .from('waitlist')
-        .update({
-          ...formData,
-          contact_date: formData.contact_date.toISOString().split('T')[0]
-        })
+        .update(changes)
         .eq('id', entry.id)
+        .select('id')
 
       if (error) throw error
 
-      const successMessage = language === 'tr' 
+      // Hata yok ama güncellenen satır da yok: kayıt bu sırada başkası tarafından silinmiş
+      if (!data || data.length === 0) {
+        const goneMessage = language === 'tr'
+          ? 'Kayıt güncellenemedi: kayıt silinmiş olabilir. Liste yenilendi.'
+          : 'The record could not be updated: it may have been deleted. The list was refreshed.'
+
+        onSuccess?.(goneMessage, 'error', { refresh: true })
+        onClose()
+        return
+      }
+
+      const successMessage = language === 'tr'
         ? 'Kayıt başarıyla güncellendi.' 
         : 'Record updated successfully.'
 
@@ -102,27 +168,14 @@ export default function UpdateWaitlistModal({ isOpen, onClose, onSuccess, entry 
     }
   }
 
-  const inputClasses = "w-full h-[46px] pl-11 pr-4 rounded-xl border border-[#e5e5e5] dark:border-[#2a3241] bg-white dark:bg-[#121621] text-[#1d1d1f] dark:text-white placeholder:text-[#86868b] focus:ring-2 focus:ring-[#0071e3] focus:border-transparent transition-all text-sm"
-  const iconClasses = "w-5 h-5 text-[#86868b]"
-  const iconWrapperClasses = "absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"
+  // Alanı yazılırken düzeltir (baş harf büyütme, yalnızca rakam) ve imleci yerinde tutar
+  const handleTextChange = (field, transform) => (e) => {
+    changeKeepingCaret(e, transform, (value) => {
+      setFormData(prev => ({ ...prev, [field]: value }))
+    })
+  }
 
-  // DatePicker özel stil
-  const CustomInput = React.forwardRef(({ value, onClick }, ref) => (
-    <div className="relative w-full">
-      <div className={iconWrapperClasses}>
-        <CalendarDaysIcon className={iconClasses} />
-      </div>
-      <input
-        type="text"
-        ref={ref}
-        onClick={onClick}
-        value={value}
-        readOnly
-        className={`${inputClasses} cursor-pointer`}
-        placeholder={language === 'tr' ? "Tarih Seçin" : "Select Date"}
-      />
-    </div>
-  ))
+  const showPhoneHint = formData.parent_phone !== '' && !isPhoneOk
 
   if (!isOpen) return null
 
@@ -205,9 +258,8 @@ export default function UpdateWaitlistModal({ isOpen, onClose, onSuccess, entry 
             font-weight: 500;
           }
           .react-datepicker__day--keyboard-selected {
-            background-color: #0071e3;
-            color: white;
-            font-weight: 500;
+            background-color: transparent;
+            box-shadow: inset 0 0 0 1.5px #0071e3;
           }
           .react-datepicker__day--outside-month {
             color: #86868b;
@@ -286,16 +338,7 @@ export default function UpdateWaitlistModal({ isOpen, onClose, onSuccess, entry 
                     type="text"
                     required
                     value={formData.parent_name}
-                    onChange={(e) => {
-                      const words = e.target.value.split(' ')
-                      const capitalizedWords = words.map(word => 
-                        word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
-                      )
-                      setFormData(prev => ({
-                        ...prev,
-                        parent_name: capitalizedWords.join(' ')
-                      }))
-                    }}
+                    onChange={handleTextChange('parent_name', capitalizeName)}
                     className={inputClasses}
                     placeholder={language === 'tr' ? "Veli İsmi" : "Parent Name"}
                     tabIndex={1}
@@ -312,18 +355,17 @@ export default function UpdateWaitlistModal({ isOpen, onClose, onSuccess, entry 
                     type="tel"
                     required
                     value={formData.parent_phone}
-                    onChange={(e) => {
-                      const value = e.target.value.replace(/\D/g, '')
-                      setFormData(prev => ({
-                        ...prev,
-                        parent_phone: value
-                      }))
-                    }}
+                    onChange={handleTextChange('parent_phone', phoneDigits)}
                     className={inputClasses}
                     placeholder={language === 'tr' ? "Telefon Numarası" : "Phone Number"}
                     tabIndex={2}
                     autoComplete="off"
                   />
+                  {showPhoneHint && (
+                    <p className="absolute left-1 top-full text-[11px] leading-4 text-[#6e6e73] dark:text-[#86868b]">
+                      {language === 'tr' ? 'Telefon numarası 10-15 haneli olmalı' : 'Phone number must be 10-15 digits'}
+                    </p>
+                  )}
                 </div>
 
                 {/* Çocuk Adı */}
@@ -335,16 +377,7 @@ export default function UpdateWaitlistModal({ isOpen, onClose, onSuccess, entry 
                     type="text"
                     required
                     value={formData.student_name}
-                    onChange={(e) => {
-                      const words = e.target.value.split(' ')
-                      const capitalizedWords = words.map(word => 
-                        word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
-                      )
-                      setFormData(prev => ({
-                        ...prev,
-                        student_name: capitalizedWords.join(' ')
-                      }))
-                    }}
+                    onChange={handleTextChange('student_name', capitalizeName)}
                     className={inputClasses}
                     placeholder={language === 'tr' ? "Öğrenci İsmi" : "Student Name"}
                     tabIndex={3}
@@ -361,16 +394,7 @@ export default function UpdateWaitlistModal({ isOpen, onClose, onSuccess, entry 
                     type="text"
                     required
                     value={formData.student_age}
-                    onChange={(e) => {
-                      const words = e.target.value.split(' ')
-                      const capitalizedWords = words.map(word => 
-                        word.charAt(0).toUpperCase() + word.slice(1)
-                      )
-                      setFormData(prev => ({
-                        ...prev,
-                        student_age: capitalizedWords.join(' ')
-                      }))
-                    }}
+                    onChange={handleTextChange('student_age', capitalizeWords)}
                     className={inputClasses}
                     placeholder={language === 'tr' ? "Yaş/Aylık - Örn:24 Aylık / 2 Yaş" : "Age/Months - Ex:24 Months / 2 Years"}
                     tabIndex={4}
@@ -430,11 +454,9 @@ export default function UpdateWaitlistModal({ isOpen, onClose, onSuccess, entry 
                   onChange={(date) => setFormData(prev => ({ ...prev, contact_date: date }))}
                   dateFormat="dd.MM.yyyy"
                   locale={language === 'tr' ? 'tr' : 'en'}
-                  customInput={<CustomInput />}
-                  minDate={new Date('2024-01-01')}
-                  maxDate={new Date('2025-12-31')}
+                  customInput={<DateInput />}
+                  placeholderText={language === 'tr' ? "Tarih Seçin" : "Select Date"}
                   showPopperArrow={false}
-                  required
                 />
 
                 {/* Durum */}
@@ -470,13 +492,7 @@ export default function UpdateWaitlistModal({ isOpen, onClose, onSuccess, entry 
                   <input
                     type="text"
                     value={formData.notes}
-                    onChange={(e) => {
-                      const value = e.target.value
-                      setFormData(prev => ({
-                        ...prev,
-                        notes: value.charAt(0).toUpperCase() + value.slice(1)
-                      }))
-                    }}
+                    onChange={handleTextChange('notes', upperFirst)}
                     className={inputClasses}
                     placeholder={language === 'tr' ? "Not ekle..." : "Add note..."}
                     tabIndex={8}

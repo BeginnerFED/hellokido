@@ -17,13 +17,25 @@
       //   /hellokido/%23/takvim  ->  /hellokido/#/takvim
       (function () {
         var loc = window.location;
+        // Sitenin yayınlandığı yol. vite.config.js içindeki 'base' ile AYNI olmalıdır
+        // (bu dosya derlemeden geçmediği için oradan okunamaz).
         var base = '/hellokido/';
+
+        // Herkese açık takvim bağlantısı hangi biçimde bozulmuş olursa olsun (hash düşmüş:
+        // /hellokido/takvim, çift kodlanmış: %2523/takvim, sonuna/önüne izleme parametresi
+        // eklenmiş...) veliyi yönetici giriş ekranına değil takvime götür.
+        // Yönetim rotalarının hiçbirinde "takvim" geçmez, bu yüzden karışmaz.
+        var full = loc.pathname + loc.search + loc.hash;
+        if (/takvim/i.test(full)) {
+          loc.replace(loc.origin + base + '#/takvim');
+          return;
+        }
 
         // Kodlanmış '#' (yani %23) işaretinden sonrası asıl gitmek istenen rotadır.
         var idx = loc.href.indexOf('%23');
 
         if (idx !== -1) {
-          var route = loc.href.substring(idx + 3); // '%23' (3 karakter) sonrası, ör. "/takvim"
+          var route = loc.href.substring(idx + 3); // '%23' (3 karakter) sonrası, ör. "/calendar"
           if (route.charAt(0) !== '/') route = '/' + route;
           loc.replace(loc.origin + base + '#' + route);
           return;
@@ -37,7 +49,7 @@
   <body>
     <p>
       Yönlendiriliyorsunuz… Otomatik yönlenmezseniz
-      <a href="/hellokido/#/takvim">buraya tıklayın</a>.
+      <a id="fallback-link" href="/hellokido/#/takvim">buraya tıklayın</a>.
     </p>
   </body>
 </html>

@@ -1,34 +1,28 @@
-import React, { useState, useEffect } from 'react'
-import { createClient } from '@supabase/supabase-js'
+import React, { useState, useEffect, useRef } from 'react'
+import { supabase } from '../lib/supabase'
+import { matchesSearch } from '../lib/text'
 import { useLanguage } from '../context/LanguageContext'
 import Masonry from 'react-masonry-css'
-import { 
+import {
   PlusIcon,
   MagnifyingGlassIcon,
-  Squares2X2Icon,
-  ListBulletIcon,
-  StarIcon,
   AdjustmentsHorizontalIcon,
   XMarkIcon,
   DocumentTextIcon
 } from '@heroicons/react/24/outline'
-import { StarIcon as StarIconSolid } from '@heroicons/react/24/solid'
 import Toast from '../components/ui/Toast'
 import NoteCard from '../components/NoteCard'
 import CreateNoteModal from '../components/CreateNoteModal'
 import EditNoteModal from '../components/EditNoteModal'
 import DeleteNotesModal from '../components/DeleteNotesModal'
 
-// Supabase istemcisini oluştur
-const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY
-)
-
 export default function Notes() {
   const { language } = useLanguage()
   const [notes, setNotes] = useState([])
   const [isLoading, setIsLoading] = useState(true)
+  const [loadFailed, setLoadFailed] = useState(false)
+  // Art arda gönderilen liste isteklerinden yalnızca sonuncusunun yanıtı kullanılır
+  const requestRef = useRef(0)
   const [searchTerm, setSearchTerm] = useState('')
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false)
   const [filters, setFilters] = useState({
@@ -48,8 +42,10 @@ export default function Notes() {
   const [noteToDelete, setNoteToDelete] = useState(null)
 
   // Notları getir
-  const fetchNotes = async () => {
-    setIsLoading(true)
+  // silent: liste ekrandayken (favori / düzenleme / ekleme sonrası) iskelet göstermeden yenile
+  const fetchNotes = async ({ silent = false } = {}) => {
+    const requestId = ++requestRef.current
+    if (!silent) setIsLoading(true)
     try {
       let query = supabase
         .from('notes')
@@ -68,12 +64,24 @@ export default function Notes() {
       // Sıralama
       query = query.order('created_at', { ascending: filters.sortBy === 'oldest' })
 
+      // Aynı anda oluşturulmuş notların sırası da kararlı olsun
+      query = query.order('id', { ascending: true })
+
       const { data, error } = await query
+
+      // Bu sırada yeni bir istek gönderildiyse eski yanıt yok sayılır
+      if (requestId !== requestRef.current) return
 
       if (error) throw error
       setNotes(data)
+      setLoadFailed(false)
     } catch (error) {
+      if (requestId !== requestRef.current) return
+
       console.error('Notlar getirilirken hata:', error.message)
+      // "Henüz not eklenmemiş" yerine "yüklenemedi" durumu gösterilir
+      setNotes([])
+      setLoadFailed(true)
       showToast(
         language === 'tr'
           ? 'Notlar getirilirken bir hata oluştu.'
@@ -81,7 +89,9 @@ export default function Notes() {
         'error'
       )
     } finally {
-      setIsLoading(false)
+      if (requestId === requestRef.current) {
+        setIsLoading(false)
+      }
     }
   }
 
@@ -108,28 +118,26 @@ export default function Notes() {
   }
 
   // Filtrelenmiş notları al
-  const filteredNotes = notes.filter(note => {
-    const searchLower = searchTerm.toLowerCase()
-    return (
-      note.title?.toLowerCase().includes(searchLower) ||
-      note.content?.toLowerCase().includes(searchLower)
-    )
-  })
+  const filteredNotes = notes.filter(note => (
+    matchesSearch(note.title, searchTerm) ||
+    matchesSearch(note.content, searchTerm)
+  ))
 
   // Not favorileme
   const handleFavorite = async (note) => {
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('notes')
         .update({ is_favorite: !note.is_favorite })
         .eq('id', note.id)
+        .select('id')
 
       if (error) throw error
+      if (!data || data.length === 0) throw new Error('no_rows_updated')
 
-      // Notları güncelle
-      setNotes(notes.map(n => 
-        n.id === note.id ? { ...n, is_favorite: !n.is_favorite } : n
-      ))
+      // Liste, etkin süzgeç ve sıralamayla yeniden okunur ("sadece favoriler" açıkken
+      // favoriden çıkarılan not listede kalmasın)
+      fetchNotes({ silent: true })
 
       showToast(
         language === 'tr'
@@ -164,7 +172,7 @@ export default function Notes() {
       if (error) throw error
 
       // Notları güncelle
-      setNotes(notes.filter(n => n.id !== note.id))
+      setNotes(prev => prev.filter(n => n.id !== note.id))
 
       showToast(
         language === 'tr'
@@ -191,7 +199,7 @@ export default function Notes() {
   // Not güncelleme
   const handleUpdate = async (formData) => {
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('notes')
         .update({
           title: formData.title.trim(),
@@ -200,13 +208,13 @@ export default function Notes() {
           is_favorite: formData.is_favorite
         })
         .eq('id', formData.id)
+        .select('id')
 
       if (error) throw error
+      if (!data || data.length === 0) throw new Error('no_rows_updated')
 
-      // Notları güncelle
-      setNotes(notes.map(note => 
-        note.id === formData.id ? { ...note, ...formData } : note
-      ))
+      // Liste, etkin süzgeç ve sıralamayla yeniden okunur
+      fetchNotes({ silent: true })
 
       showToast(
         language === 'tr'
@@ -228,7 +236,7 @@ export default function Notes() {
   // Not oluşturma
   const handleCreate = async (formData) => {
     try {
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('notes')
         .insert([{
           title: formData.title.trim(),
@@ -236,12 +244,12 @@ export default function Notes() {
           color: formData.color,
           is_favorite: formData.is_favorite
         }])
-        .select()
 
       if (error) throw error
 
-      // Notları güncelle
-      setNotes([data[0], ...notes])
+      // Liste, etkin süzgeç ve sıralamayla yeniden okunur ("en eski" sıralamasında yeni not
+      // en üste, "sadece favoriler"de favori olmayan not listeye eklenmesin)
+      fetchNotes({ silent: true })
 
       showToast(
         language === 'tr'
@@ -355,6 +363,23 @@ export default function Notes() {
               </div>
             ))}
           </Masonry>
+        ) : loadFailed ? (
+          // Yükleme Hatası State
+          <div className="text-center py-12">
+            <DocumentTextIcon className="w-12 h-12 mx-auto text-[#86868b] mb-4" />
+            <h3 className="text-lg font-medium text-[#1d1d1f] dark:text-white mb-1">
+              {language === 'tr' ? 'Notlar Yüklenemedi' : 'The Notes Could Not Be Loaded'}
+            </h3>
+            <p className="text-sm text-[#6e6e73] dark:text-[#86868b]">
+              {language === 'tr' ? 'Bağlantınızı kontrol edip tekrar deneyin.' : 'Check your connection and try again.'}
+            </p>
+            <button
+              onClick={() => fetchNotes()}
+              className="mt-4 h-10 sm:h-8 px-4 bg-[#1d1d1f] dark:bg-[#0071e3] text-white text-sm font-medium rounded-lg hover:bg-black dark:hover:bg-[#0077ed] focus:outline-none transition-colors"
+            >
+              {language === 'tr' ? 'Tekrar Dene' : 'Try Again'}
+            </button>
+          </div>
         ) : filteredNotes.length === 0 ? (
           // Boş State
           <div className="text-center py-12">
@@ -363,9 +388,11 @@ export default function Notes() {
               {language === 'tr' ? 'Not Bulunamadı' : 'No Notes Found'}
             </h3>
             <p className="text-sm text-[#6e6e73] dark:text-[#86868b]">
-              {searchTerm 
+              {searchTerm.trim()
                 ? (language === 'tr' ? 'Arama kriterlerinize uygun not bulunamadı.' : 'No notes match your search criteria.')
-                : (language === 'tr' ? 'Henüz not eklenmemiş.' : 'No notes have been added yet.')}
+                : (filters.showFavorites || filters.color)
+                  ? (language === 'tr' ? 'Seçili filtrelere uygun not yok.' : 'No notes match the selected filters.')
+                  : (language === 'tr' ? 'Henüz not eklenmemiş.' : 'No notes have been added yet.')}
             </p>
           </div>
         ) : (

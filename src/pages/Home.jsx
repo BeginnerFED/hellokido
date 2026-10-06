@@ -1,19 +1,122 @@
-import React, { useState, useEffect } from 'react';
-import { FiClock, FiUsers, FiCalendar, FiInfo, FiPhone, FiDollarSign, FiPackage } from 'react-icons/fi';
+import React, { useState, useEffect, useRef } from 'react';
+import { FiClock, FiUsers, FiInfo, FiPackage } from 'react-icons/fi';
 import { FaWhatsapp, FaLiraSign, FaCheck } from 'react-icons/fa';
 import { useLanguage } from '../context/LanguageContext';
 import { supabase } from '../lib/supabase';
 import { fetchLessonUsageMap } from '../lib/lessonUsage';
-import { format } from 'date-fns';
+import { whatsAppLink } from '../lib/phone';
+import { localDateKey } from '../lib/dates';
+import { holdsSeat } from '../lib/attendance';
+import Toast from '../components/ui/Toast';
+import UnmarkedLessons from '../components/UnmarkedLessons';
+import { format, startOfDay, addDays, differenceInCalendarDays } from 'date-fns';
 import { tr, enUS } from 'date-fns/locale';
 import Masonry from 'react-masonry-css';
 import {
   ArrowPathIcon,
-  CalendarDaysIcon
+  CalendarDaysIcon,
+  ExclamationTriangleIcon
 } from '@heroicons/react/24/outline';
 
+// Hatırlatma gönderildi işaretleri bu tarayıcıda tutulur: { katılımcıId: dersin günü }.
+// İşaret derse bağlıdır (tıklanan güne değil) ve dersin günü geçince silinir.
+const SENT_REMINDERS_KEY = 'sentWhatsAppReminders';
+
+const loadSentReminders = () => {
+  try {
+    const stored = JSON.parse(localStorage.getItem(SENT_REMINDERS_KEY) || '{}');
+    const today = localDateKey();
+    const kept = {};
+    for (const [participantId, lessonDay] of Object.entries(stored || {})) {
+      if (typeof lessonDay === 'string' && lessonDay >= today) kept[participantId] = lessonDay;
+    }
+    localStorage.setItem(SENT_REMINDERS_KEY, JSON.stringify(kept));
+    localStorage.removeItem('sentWhatsAppMessages'); // eski biçim (tıklanan güne göre tutuluyordu)
+    return kept;
+  } catch {
+    // Depolama kullanılamıyor ya da içerik bozuk: işaretsiz başla, sayfa açılsın
+    return {};
+  }
+};
+
+// Yanıt gelmeyen istek 15 sn sonra hata sayılır; bağlantı koptuğunda ekran sonsuza dek
+// "yükleniyor" ya da "kaydedildi" gibi görünmesin.
+const REQUEST_TIMEOUT_MS = 15000;
+
+const withTimeout = async (buildQuery) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    return await buildQuery(controller.signal);
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
+// Bir günün aktif derslerini katılımcıları ve kayıt bilgileriyle getirir
+// (iki istek: dersler + katılımcılar, ardından kayıtlar)
+const fetchEventsOfDay = async (dayStart) => {
+  const { data: events, error: eventsError } = await withTimeout(signal => supabase
+    .from('events')
+    .select('*, event_participants(*)') // katılımcılar: TÜM STATÜLER
+    .gte('event_date', dayStart.toISOString())
+    .lt('event_date', addDays(dayStart, 1).toISOString())
+    .eq('is_active', true)
+    .order('event_date', { ascending: true })
+    .order('created_at', { referencedTable: 'event_participants', ascending: true })
+    .abortSignal(signal));
+
+  if (eventsError) throw eventsError;
+
+  const registrationIds = [...new Set(
+    events.flatMap(event => event.event_participants.map(participant => participant.registration_id))
+  )];
+
+  let registrations = [];
+  if (registrationIds.length > 0) {
+    const { data, error: registrationsError } = await withTimeout(signal => supabase
+      .from('registrations')
+      .select('id, student_name, student_age, parent_name, parent_phone, package_type, package_start_date')
+      .in('id', registrationIds)
+      .abortSignal(signal));
+
+    if (registrationsError) throw registrationsError;
+    registrations = data;
+  }
+
+  const registrationById = new Map(registrations.map(registration => [registration.id, registration]));
+
+  return events.map(({ event_participants: participants, ...event }) => ({
+    ...event,
+    participants: participants
+      // Yapı önceki ile uyumlu olması için kayıt bilgisi "registrations" alanında durur
+      .map(participant => ({ ...participant, registrations: registrationById.get(participant.registration_id) }))
+      // Kaydı bulunamayan katılımcı çizilemez (tüm sayfa boş kalırdı)
+      .filter(participant => participant.registrations)
+  }));
+};
+
+// Liste yüklenemediğinde "kayıt yok" demek yerine gösterilen kart
+const LoadFailed = ({ language, onRetry }) => (
+  <div className="text-center py-12 bg-white dark:bg-[#121621] rounded-xl border border-[#d2d2d7] dark:border-[#2a3241]">
+    <ExclamationTriangleIcon className="w-12 h-12 mx-auto text-[#86868b] mb-4" />
+    <h3 className="text-lg font-medium text-[#1d1d1f] dark:text-white mb-1">
+      {language === 'en' ? 'Could not load' : 'Veriler yüklenemedi'}
+    </h3>
+    <p className="text-sm text-[#6e6e73] dark:text-[#86868b] max-w-md mx-auto">
+      {language === 'en' ? 'Check your connection and try again.' : 'Bağlantınızı kontrol edip tekrar deneyin.'}
+    </p>
+    <button
+      onClick={onRetry}
+      className="mt-4 text-sm font-medium text-[#0071e3] hover:text-[#0077ED]"
+    >
+      {language === 'en' ? 'Try again' : 'Tekrar dene'}
+    </button>
+  </div>
+);
+
 const Home = () => {
-  const { t, language } = useLanguage();
+  const { language } = useLanguage();
   const [tomorrowEvents, setTomorrowEvents] = useState([]);
   const [todayEvents, setTodayEvents] = useState([]);
   const [pendingPayments, setPendingPayments] = useState([]);
@@ -22,159 +125,50 @@ const Home = () => {
   const [isLoadingToday, setIsLoadingToday] = useState(true);
   const [isLoadingPayments, setIsLoadingPayments] = useState(true);
   const [isLoadingPackages, setIsLoadingPackages] = useState(true);
-  const [sentMessages, setSentMessages] = useState({});
-  const [updatingLessonId, setUpdatingLessonId] = useState(null);
+  // Yüklenemeyen bölümler: "ders yok" / "bekleyen ödeme yok" gibi yanlış bir bilgi yerine hata gösterilir
+  const [loadFailed, setLoadFailed] = useState({ tomorrow: false, today: false, payments: false, packages: false });
+  const [sentMessages, setSentMessages] = useState(loadSentReminders);
+  // Kaydı süren yoklamalar (her çocuk kendi isteği bitene kadar kilitli kalır)
+  const inFlightLessonsRef = useRef(new Set());
+  const [updatingLessonIds, setUpdatingLessonIds] = useState(() => new Set());
   const [lessonUsage, setLessonUsage] = useState({}); // registration_id -> kalan ders bilgisi
+  // Gün değişince "yoklaması işaretlenmemiş dersler" bölümü de yenilenir
+  const [unmarkedRefreshKey, setUnmarkedRefreshKey] = useState(0);
+  const [toast, setToast] = useState({ isVisible: false, message: '', type: 'error' });
 
-  // LocalStorage'dan verileri yükle ve eski tarihleri temizle
-  const cleanupOldData = () => {
-    const savedMessages = JSON.parse(localStorage.getItem('sentWhatsAppMessages') || '{}');
-    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD formatı
+  const showToast = (message, type = 'error') => setToast({ isVisible: true, message, type });
 
-    // Bugünden önceki tüm tarihleri temizle
-    const updatedMessages = {};
-    for (const date in savedMessages) {
-      if (date >= today) {
-        updatedMessages[date] = savedMessages[date];
-      }
-    }
-
-    localStorage.setItem('sentWhatsAppMessages', JSON.stringify(updatedMessages));
-    return updatedMessages;
-  };
+  const markLoadFailed = (section, failed) => setLoadFailed(prev => ({ ...prev, [section]: failed }));
 
   // Mesaj durumunu kontrol et
-  const isMessageSent = (participantId) => {
-    const today = new Date().toISOString().split('T')[0];
-    return sentMessages[today]?.includes(participantId) || false;
+  const isMessageSent = (participantId) => Boolean(sentMessages[participantId]);
+
+  // Hatırlatma gönderildi olarak işaretle (bağlantı yeni sekmede WhatsApp'ı açmaya devam eder)
+  const markReminderSent = (participantId, eventDate) => {
+    setSentMessages(prev => {
+      const next = { ...prev, [participantId]: localDateKey(new Date(eventDate)) };
+      try {
+        localStorage.setItem(SENT_REMINDERS_KEY, JSON.stringify(next));
+      } catch {
+        // Depolama kullanılamıyor: işaret yalnızca bu oturumda görünür
+      }
+      return next;
+    });
   };
-
-  // Mesaj durumunu değiştir
-  const toggleMessageSent = (participantId, event) => {
-    // Tıklama olayı olduğunda event parametresini durdurmamız gerekecek
-    if (event) {
-      // Burada yalnızca propagasyonu durdur, ancak varsayılan davranışı engelleme
-      // çünkü WhatsApp'a gitsin istiyoruz
-      event.stopPropagation(); // Event yayılımını engelle
-    }
-
-    const today = new Date().toISOString().split('T')[0];
-    const updatedMessages = { ...sentMessages };
-
-    if (!updatedMessages[today]) {
-      updatedMessages[today] = [];
-    }
-
-    // Sadece ekle, zaten tıklama olayı WhatsApp'a yönlendirmek için
-    if (!updatedMessages[today].includes(participantId)) {
-      updatedMessages[today].push(participantId);
-    }
-
-    setSentMessages(updatedMessages);
-    localStorage.setItem('sentWhatsAppMessages', JSON.stringify(updatedMessages));
-
-    // Bu fonksiyon artık href'in çalışmasını engellemeyecek
-  };
-
-  // Yeni fonksiyon: Sadece mesaj gönderildi olarak işaretle (silme yapma)
-  const addMessageSent = (participantId) => {
-    const today = new Date().toISOString().split('T')[0];
-    const updatedMessages = { ...sentMessages };
-
-    if (!updatedMessages[today]) {
-      updatedMessages[today] = [];
-    }
-
-    // Eğer zaten mesaj gönderilmişse, tekrar ekleme
-    if (!updatedMessages[today].includes(participantId)) {
-      updatedMessages[today].push(participantId);
-      setSentMessages(updatedMessages);
-      localStorage.setItem('sentWhatsAppMessages', JSON.stringify(updatedMessages));
-    }
-  };
-
-  // Component mount olduğunda lokalden verileri yükle
-  useEffect(() => {
-    const currentMessages = cleanupOldData();
-    setSentMessages(currentMessages);
-  }, []);
 
   // Yarınki dersleri ve katılımcıları çeken fonksiyon
   const fetchTomorrowEvents = async () => {
     setIsLoading(true);
 
-    // Yarının başlangıç ve bitiş tarihlerini hesapla
-    const today = new Date();
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-
-    const tomorrowStart = new Date(tomorrow);
-    tomorrowStart.setHours(0, 0, 0, 0);
-
-    const tomorrowEnd = new Date(tomorrow);
-    tomorrowEnd.setHours(23, 59, 59, 999);
-
     try {
-      // Yarınki dersleri sorgula
-      const { data: events, error: eventsError } = await supabase
-        .from('events')
-        .select('*')
-        .gte('event_date', tomorrowStart.toISOString())
-        .lte('event_date', tomorrowEnd.toISOString())
-        .eq('is_active', true)
-        .order('event_date', { ascending: true });
-
-      if (eventsError) throw eventsError;
-
-      // Her ders için katılımcıları getir - ilişkisel sorgu yerine manuel işlemler yapacağız
-      const eventsWithParticipants = await Promise.all(events.map(async (event) => {
-        // 1. Önce event_participants tablosundan katılımcıları çek - TÜM STATÜLER
-        const { data: participants, error: participantsError } = await supabase
-          .from('event_participants')
-          .select('*')
-          .eq('event_id', event.id)
-          .order('created_at');
-
-        if (participantsError) throw participantsError;
-
-        // Katılımcı yoksa, hemen boş bir dizi döndür
-        if (!participants || participants.length === 0) {
-          return {
-            ...event,
-            participants: []
-          };
-        }
-
-        // 2. Katılımcıların registration_id'lerini çıkar
-        const registrationIds = participants.map(p => p.registration_id);
-
-        // 3. Bu registration_id'ler için registrations tablosundan bilgileri çek
-        const { data: registrations, error: registrationsError } = await supabase
-          .from('registrations')
-          .select('id, student_name, student_age, parent_name, parent_phone, package_type, package_start_date')
-          .in('id', registrationIds);
-
-        if (registrationsError) throw registrationsError;
-
-        // 4. Kayıt bilgilerini katılımcılarla birleştir
-        const participantsWithDetails = participants.map(participant => {
-          const registration = registrations.find(r => r.id === participant.registration_id);
-          return {
-            ...participant,
-            registrations: registration // Yapı önceki ile uyumlu olması için "registrations" olarak bırakıyoruz
-          };
-        });
-
-        return {
-          ...event,
-          participants: participantsWithDetails || []
-        };
-      }));
-
-      setTomorrowEvents(eventsWithParticipants);
-      await refreshLessonUsageForEvents(eventsWithParticipants);
+      const events = await fetchEventsOfDay(addDays(startOfDay(new Date()), 1));
+      setTomorrowEvents(events);
+      markLoadFailed('tomorrow', false);
+      await refreshLessonUsageForEvents(events);
     } catch (error) {
       console.error('Yarınki dersler çekilirken hata oluştu:', error);
+      setTomorrowEvents([]);
+      markLoadFailed('tomorrow', true);
     } finally {
       setIsLoading(false);
     }
@@ -184,76 +178,15 @@ const Home = () => {
   const fetchTodayEvents = async () => {
     setIsLoadingToday(true);
 
-    // Bugünün başlangıç ve bitiş tarihlerini hesapla
-    const today = new Date();
-
-    const todayStart = new Date(today);
-    todayStart.setHours(0, 0, 0, 0);
-
-    const todayEnd = new Date(today);
-    todayEnd.setHours(23, 59, 59, 999);
-
     try {
-      // Bugünkü dersleri sorgula
-      const { data: events, error: eventsError } = await supabase
-        .from('events')
-        .select('*')
-        .gte('event_date', todayStart.toISOString())
-        .lte('event_date', todayEnd.toISOString())
-        .eq('is_active', true)
-        .order('event_date', { ascending: true });
-
-      if (eventsError) throw eventsError;
-
-      // Her ders için katılımcıları getir - ilişkisel sorgu yerine manuel işlemler yapacağız
-      const eventsWithParticipants = await Promise.all(events.map(async (event) => {
-        // 1. Önce event_participants tablosundan katılımcıları çek - TÜM STATÜLER
-        const { data: participants, error: participantsError } = await supabase
-          .from('event_participants')
-          .select('*')
-          .eq('event_id', event.id)
-          .order('created_at');
-
-        if (participantsError) throw participantsError;
-
-        // Katılımcı yoksa, hemen boş bir dizi döndür
-        if (!participants || participants.length === 0) {
-          return {
-            ...event,
-            participants: []
-          };
-        }
-
-        // 2. Katılımcıların registration_id'lerini çıkar
-        const registrationIds = participants.map(p => p.registration_id);
-
-        // 3. Bu registration_id'ler için registrations tablosundan bilgileri çek
-        const { data: registrations, error: registrationsError } = await supabase
-          .from('registrations')
-          .select('id, student_name, student_age, parent_name, parent_phone, package_type, package_start_date')
-          .in('id', registrationIds);
-
-        if (registrationsError) throw registrationsError;
-
-        // 4. Kayıt bilgilerini katılımcılarla birleştir
-        const participantsWithDetails = participants.map(participant => {
-          const registration = registrations.find(r => r.id === participant.registration_id);
-          return {
-            ...participant,
-            registrations: registration // Yapı önceki ile uyumlu olması için "registrations" olarak bırakıyoruz
-          };
-        });
-
-        return {
-          ...event,
-          participants: participantsWithDetails || []
-        };
-      }));
-
-      setTodayEvents(eventsWithParticipants);
-      await refreshLessonUsageForEvents(eventsWithParticipants);
+      const events = await fetchEventsOfDay(startOfDay(new Date()));
+      setTodayEvents(events);
+      markLoadFailed('today', false);
+      await refreshLessonUsageForEvents(events);
     } catch (error) {
       console.error('Bugünkü dersler çekilirken hata oluştu:', error);
+      setTodayEvents([]);
+      markLoadFailed('today', true);
     } finally {
       setIsLoadingToday(false);
     }
@@ -264,47 +197,57 @@ const Home = () => {
     setIsLoadingPayments(true);
 
     try {
-      // Ödemesi beklemede olan kayıtları çek
-      const { data, error } = await supabase
+      // Ödemesi beklemede olan aktif kayıtları çek (arşivlenen kayıt listelerden çıkar)
+      const { data, error } = await withTimeout(signal => supabase
         .from('registrations')
         .select('*')
         .eq('payment_status', 'beklemede')
+        .eq('is_active', true)
         .neq('package_type', 'ucretsiz') // Ücretsiz katılımlarda ödeme beklenmez
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .abortSignal(signal));
 
       if (error) throw error;
 
       setPendingPayments(data || []);
+      markLoadFailed('payments', false);
     } catch (error) {
       console.error('Bekleyen ödemeler çekilirken hata oluştu:', error);
+      setPendingPayments([]);
+      markLoadFailed('payments', true);
     } finally {
       setIsLoadingPayments(false);
     }
   };
 
-  // Yakında sona erecek paketleri çeken fonksiyon
+  // Paketi biten ya da yakında bitecek aktif kayıtları çeken fonksiyon
   const fetchExpiringSoonPackages = async () => {
     setIsLoadingPackages(true);
 
     try {
-      // Bitiş tarihine 7 gün kalan paketleri çek
-      const today = new Date();
-      const cutoffDate = new Date(today);
-      cutoffDate.setDate(today.getDate() + 7); // Önümüzdeki 7 gün içinde bitecek olanlar
+      // Bitiş tarihi en geç 7 gün sonra olan paketler. Alt sınır yok: paketi bitmiş ama
+      // yenilenmemiş öğrenci, paket yenilenene ya da kayıt arşivlenene kadar listede kalır
+      // (yenilemeler çoğunlukla bitiş tarihinden sonra giriliyor). Bitiş günü, günün başı
+      // olarak saklandığı için pencere gün sınırlarıyla kurulur; son gün de listede görünür.
+      const windowEnd = addDays(startOfDay(new Date()), 7);
 
-      const { data, error } = await supabase
+      const { data, error } = await withTimeout(signal => supabase
         .from('registrations')
         .select('*')
-        .lte('package_end_date', cutoffDate.toISOString())
-        .gte('package_end_date', today.toISOString()) // Bugün ve sonrası (zaten bitmiş olanları gösterme)
+        .eq('is_active', true)
         .neq('package_type', 'ucretsiz') // Ücretsiz katılımda paket bitiş tarihi uygulanmaz
-        .order('package_end_date', { ascending: true });
+        .lte('package_end_date', windowEnd.toISOString())
+        .order('package_end_date', { ascending: true })
+        .abortSignal(signal));
 
       if (error) throw error;
 
       setExpiringSoonPackages(data || []);
+      markLoadFailed('packages', false);
     } catch (error) {
       console.error('Bitiş tarihi yaklaşan paketler çekilirken hata oluştu:', error);
+      setExpiringSoonPackages([]);
+      markLoadFailed('packages', true);
     } finally {
       setIsLoadingPackages(false);
     }
@@ -358,67 +301,132 @@ const Home = () => {
     return (
       <span className={`inline-flex items-center w-fit mt-1 px-2 py-0.5 rounded-full text-[10px] font-medium ring-1 ring-inset ${colorClass}`}>
         {language === 'en'
-          ? `${usage.remaining} lessons left`
+          ? `${usage.remaining} lesson${usage.remaining === 1 ? '' : 's'} left`
           : `${usage.remaining} ders kaldı`}
       </span>
     );
   };
 
+  // Geçmiş bir dersin yoklaması işaretlenince o öğrencinin kalan ders rozeti yenilenir
+  const refreshUsageOf = async (registration) => {
+    try {
+      const usageMap = await fetchLessonUsageMap([registration]);
+      setLessonUsage(prev => ({ ...prev, ...usageMap }));
+    } catch (error) {
+      // Yoklama kaydedildi; yalnızca rozet yenilenemedi
+      console.error('Kalan ders bilgisi getirilirken hata oluştu:', error);
+    }
+  };
+
+  // Bugünkü listede bir katılımcının statüsünü değiştirir
+  const setParticipantStatus = (lessonId, status) => {
+    setTodayEvents(prevEvents => prevEvents.map(event => ({
+      ...event,
+      participants: event.participants.map(participant => (
+        participant.id === lessonId ? { ...participant, status } : participant
+      ))
+    })));
+  };
+
   // Ders statüsünü güncelleyen fonksiyon
   const updateLessonStatus = async (participant, newStatus) => {
     const lessonId = participant.id;
+    const previousStatus = participant.status;
+
+    // Aynı statüye yeniden dokunmak ya da kayıt sürerken ikinci dokunuş istek göndermez
+    if (previousStatus === newStatus || inFlightLessonsRef.current.has(lessonId)) return;
+
+    inFlightLessonsRef.current.add(lessonId);
+    setUpdatingLessonIds(new Set(inFlightLessonsRef.current));
+
+    // Optimistik UI güncellemesi - API çağrısından önce UI'ı güncelle
+    // Bu sayede sayfa yeniden yüklenmeyecek ve kullanıcı aynı yerde kalacak
+    setParticipantStatus(lessonId, newStatus);
+
     try {
-      setUpdatingLessonId(lessonId);
-
-      // Optimistik UI güncellemesi - API çağrısından önce UI'ı güncelle
-      // Bu sayede sayfa yeniden yüklenmeyecek ve kullanıcı aynı yerde kalacak
-      setTodayEvents(prevEvents => {
-        return prevEvents.map(event => {
-          // Etkinliğin katılımcıları arasında güncellenen katılımcıyı bul
-          const updatedParticipants = event.participants.map(participant => {
-            if (participant.id === lessonId) {
-              // Sadece ilgili katılımcının durumunu güncelle
-              return { ...participant, status: newStatus };
-            }
-            return participant;
-          });
-
-          // Etkinliği güncellenen katılımcılarla birlikte döndür
-          return { ...event, participants: updatedParticipants };
-        });
-      });
-
-      // Optimistik güncelleme sonrası, backend'i güncelle
-      const { error } = await supabase
+      const { data, error } = await withTimeout(signal => supabase
         .from('event_participants')
         .update({ status: newStatus })
-        .eq('id', lessonId);
+        .eq('id', lessonId)
+        .select('id')
+        .abortSignal(signal));
 
-      if (error) {
-        // Hata durumunda, eski verileri geri getirmek için fetchTodayEvents() çağrılabilir
-        console.error('Ders statüsü güncellenirken hata oluştu:', error);
-        fetchTodayEvents(); // Sadece hata durumunda yeniden verileri çek
-      } else if (participant.registrations) {
+      if (error) throw error;
+      // Hata yok ama güncellenen satır da yok: katılımcı bu sırada dersten çıkarılmış
+      if (!data || data.length === 0) throw new Error('no_rows_updated');
+    } catch (error) {
+      console.error('Ders statüsü güncellenirken hata oluştu:', error);
+
+      // Kaydedilmedi: ekrandaki işaret geri alınır ve kullanıcıya söylenir
+      setParticipantStatus(lessonId, previousStatus);
+      showToast(language === 'en'
+        ? 'Could not save. Check your connection and try again.'
+        : 'Kaydedilemedi. Bağlantınızı kontrol edip tekrar deneyin.');
+      if (error.message === 'no_rows_updated') fetchTodayEvents();
+
+      inFlightLessonsRef.current.delete(lessonId);
+      setUpdatingLessonIds(new Set(inFlightLessonsRef.current));
+      return;
+    }
+
+    try {
+      if (participant.registrations) {
         // Katıldı/Gelmedi kalan dersi etkiler — sadece bu kaydın kullanımını yenile
         // (delta yerine hedefli refetch: kota aşımındaki 0'a sabitleme delta ile yanlış sonuç verir)
         const usageMap = await fetchLessonUsageMap([participant.registrations]);
         setLessonUsage(prev => ({ ...prev, ...usageMap }));
       }
-
     } catch (error) {
-      console.error('Ders statüsü güncellenirken hata oluştu:', error);
-      fetchTodayEvents(); // Sadece hata durumunda yeniden verileri çek
+      // Statü kaydedildi; yalnızca rozet yenilenemedi
+      console.error('Kalan ders bilgisi getirilirken hata oluştu:', error);
     } finally {
-      setUpdatingLessonId(null);
+      inFlightLessonsRef.current.delete(lessonId);
+      setUpdatingLessonIds(new Set(inFlightLessonsRef.current));
     }
   };
 
   useEffect(() => {
-    fetchTomorrowEvents();
-    fetchTodayEvents();
-    fetchPendingPayments();
-    fetchExpiringSoonPackages();
+    const loadAll = () => {
+      fetchTomorrowEvents();
+      fetchTodayEvents();
+      fetchPendingPayments();
+      fetchExpiringSoonPackages();
+    };
+
+    loadAll();
+
+    // Sekme gece açık kaldıysa ya da ertesi gün yeniden açıldıysa listeler yeni güne göre
+    // yenilenir; yoksa "Yarınki Dersler" başlığı altında dünün listesi kalıyordu.
+    let loadedDay = localDateKey();
+    const refreshIfDayChanged = () => {
+      if (document.visibilityState !== 'visible') return;
+      const today = localDateKey();
+      if (today === loadedDay) return;
+
+      loadedDay = today;
+      setSentMessages(loadSentReminders());
+      setUnmarkedRefreshKey(key => key + 1);
+      loadAll();
+    };
+
+    document.addEventListener('visibilitychange', refreshIfDayChanged);
+    window.addEventListener('focus', refreshIfDayChanged);
+    const timer = setInterval(refreshIfDayChanged, 60 * 1000);
+
+    return () => {
+      document.removeEventListener('visibilitychange', refreshIfDayChanged);
+      window.removeEventListener('focus', refreshIfDayChanged);
+      clearInterval(timer);
+    };
   }, []);
+
+  // Hatırlatma metninde tarihin yanına yazılan gün: dersin gününden hesaplanır
+  const reminderDayLabel = (eventDate) => {
+    const dayOffset = differenceInCalendarDays(new Date(eventDate), new Date());
+    if (dayOffset === 1) return ' (Yarın)';
+    if (dayOffset === 0) return ' (Bugün)';
+    return '';
+  };
 
   // Format date based on selected language
   const formatDate = (date, formatStr) => {
@@ -432,11 +440,11 @@ const Home = () => {
     'ozel': 'bg-[#ff9500]/10 text-[#ff9500] ring-1 ring-[#ff9500]/20'
   };
 
-  // Event type labels with translations
-  const eventTypeLabels = {
-    'ingilizce': language === 'en' ? 'English' : 'İngilizce',
-    'duyusal': language === 'en' ? 'Sensory' : 'Duyusal',
-    'ozel': language === 'en' ? 'Special Event' : 'Özel Etkinlik'
+  // Velilere giden hatırlatma metni her zaman Türkçedir (yönetim ekranının dilinden bağımsız)
+  const eventTypeLabelsTr = {
+    'ingilizce': 'İngilizce',
+    'duyusal': 'Duyusal',
+    'ozel': 'Özel Etkinlik'
   };
 
   // Etkinlik türüne göre ikonlar
@@ -469,7 +477,7 @@ const Home = () => {
     'scheduled': 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300 border border-blue-300 dark:border-blue-800/50',
     'attended': 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300 border border-green-300 dark:border-green-800/50',
     'no_show': 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300 border border-red-300 dark:border-red-800/50',
-    'canceled': 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-300 border border-gray-300 dark:border-gray-800/50',
+    'cancelled': 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-300 border border-gray-300 dark:border-gray-800/50',
     'makeup': 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300 border border-purple-300 dark:border-purple-800/50',
     'postponed': 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 border border-amber-300 dark:border-amber-800/50'
   };
@@ -478,13 +486,20 @@ const Home = () => {
     'scheduled': { tr: 'Planlandı', en: 'Scheduled' },
     'attended': { tr: 'Katıldı', en: 'Joined' },
     'no_show': { tr: 'Gelmedi', en: 'Absent' },
-    'canceled': { tr: 'İptal', en: 'Canceled' },
+    'cancelled': { tr: 'İptal', en: 'Canceled' },
     'makeup': { tr: 'Telafi', en: 'Makeup' },
     'postponed': { tr: 'Ertelendi', en: 'Delayed' }
   };
 
   return (
     <div>
+      <Toast
+        message={toast.message}
+        type={toast.type}
+        isVisible={toast.isVisible}
+        onClose={() => setToast(prev => ({ ...prev, isVisible: false }))}
+      />
+
       {/* Header */}
       <div className="flex items-center justify-between h-auto sm:h-16 px-6 border-b border-[#d2d2d7] dark:border-[#2a3241] py-4 sm:py-0 gap-4 sm:gap-0">
         <div>
@@ -571,6 +586,8 @@ const Home = () => {
               </div>
             ))}
           </Masonry>
+        ) : loadFailed.tomorrow ? (
+          <LoadFailed language={language} onRetry={fetchTomorrowEvents} />
         ) : tomorrowEvents.length === 0 ? (
           // Boş State
           <div className="text-center py-12 bg-white dark:bg-[#121621] rounded-xl border border-[#d2d2d7] dark:border-[#2a3241]">
@@ -607,7 +624,7 @@ const Home = () => {
                       </h3>
                       <p className="text-[13px] text-[#6e6e73] dark:text-[#86868b] mt-0.5">
                         {language === 'en' ? 'Capacity: ' : 'Kapasite: '}
-                        {event.participants.filter(p => p.status === 'scheduled' || p.status === 'makeup' || p.status === 'attended').length}/6
+                        {event.participants.filter(p => holdsSeat(p.status)).length}/6
                       </p>
                     </div>
                     <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[13px] font-medium ${eventTypeColors[event.event_type]}`}>
@@ -672,13 +689,13 @@ const Home = () => {
                                 </span>
 
                                 {/* WhatsApp butonu - sadece scheduled durumdaki öğrenciler için gösterilsin */}
-                                {participant.status === 'scheduled' && (
+                                {participant.status === 'scheduled' && whatsAppLink(participant.registrations.parent_phone) && (
                                   <a
-                                    href={`https://wa.me/90${participant.registrations.parent_phone.replace(/\D/g, '').replace(/^0+/, '')}?text=${encodeURIComponent(`Merhaba ${participant.registrations.parent_name} Hanım
+                                    href={whatsAppLink(participant.registrations.parent_phone, `Merhaba ${participant.registrations.parent_name} Hanım
 Çocuğunuzun etkinliğimizde bize katılacak olmasından büyük mutluluk duyuyoruz! İşte rezervasyonunuzla ilgili detaylar:
-* Etkinlik Tarihi: ${format(new Date(event.event_date), 'd MMMM yyyy', { locale: tr })} (Yarın)
+* Etkinlik Tarihi: ${format(new Date(event.event_date), 'd MMMM yyyy', { locale: tr })}${reminderDayLabel(event.event_date)}
 * Saat: ${format(new Date(event.event_date), 'HH:mm', { locale: tr })} 
-* Etkinlik: ${eventTypeLabels[event.event_type]} 
+* Etkinlik: ${eventTypeLabelsTr[event.event_type]} 
 * Yer: Ritim İstanbul B blok Kat:1 Ofis 237
 * Adres: https://maps.app.goo.gl/rb2m4migY24gA8GMA
 * Süre: 75-90 dk
@@ -687,8 +704,8 @@ Rezervasyonunuzun iptali için lütfen bir gün önceden bizi bilgilendiriniz. R
 Eğer herhangi bir sorunuz varsa, lütfen bize ulaşmaktan çekinmeyin.
 Sizleri ve çocuğunuzu atölyemizde görmek için sabırsızlanıyoruz!
 Sevgilerle,
-HelloKido Oyun Atölyesi`)}`}
-                                    onClick={(e) => toggleMessageSent(participant.id, e)}
+HelloKido Oyun Atölyesi`)}
+                                    onClick={() => markReminderSent(participant.id, event.event_date)}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="w-8 h-8 rounded-full bg-[#f5f5f7] dark:bg-[#2a3241] hover:bg-[#e5e5e5] dark:hover:bg-[#3a4251] flex items-center justify-center text-[#34c759] border border-[#d2d2d7] dark:border-[#2a3241] transition-colors relative"
@@ -782,6 +799,8 @@ HelloKido Oyun Atölyesi`)}`}
               </div>
             ))}
           </Masonry>
+        ) : loadFailed.today ? (
+          <LoadFailed language={language} onRetry={fetchTodayEvents} />
         ) : todayEvents.length === 0 ? (
           // Boş State
           <div className="text-center py-12 bg-white dark:bg-[#121621] rounded-xl border border-[#d2d2d7] dark:border-[#2a3241]">
@@ -818,7 +837,7 @@ HelloKido Oyun Atölyesi`)}`}
                       </h3>
                       <p className="text-[13px] text-[#6e6e73] dark:text-[#86868b] mt-0.5">
                         {language === 'en' ? 'Capacity: ' : 'Kapasite: '}
-                        {event.participants.filter(p => p.status === 'scheduled' || p.status === 'makeup' || p.status === 'attended').length}/6
+                        {event.participants.filter(p => holdsSeat(p.status)).length}/6
                       </p>
                     </div>
                     <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[13px] font-medium ${eventTypeColors[event.event_type]}`}>
@@ -887,8 +906,8 @@ HelloKido Oyun Atölyesi`)}`}
                               <div className="grid grid-cols-2 sm:flex sm:flex-row items-center justify-center gap-2 mt-1 w-full">
                                 <button
                                   onClick={() => updateLessonStatus(participant, 'attended')}
-                                  disabled={updatingLessonId === participant.id}
-                                  className={`flex-1 px-3 py-1 text-[11px] font-medium rounded-full border transition ${participant.status === 'attended'
+                                  disabled={updatingLessonIds.has(participant.id)}
+                                  className={`flex-1 px-3 py-1 text-[11px] font-medium rounded-full border transition disabled:opacity-50 disabled:cursor-wait ${participant.status === 'attended'
                                       ? 'bg-green-100 text-green-800 border-green-300 dark:bg-green-900/30 dark:text-green-300 dark:border-green-800/50'
                                       : 'bg-white text-gray-700 border-gray-300 hover:bg-green-50 hover:text-green-700 hover:border-green-300 dark:bg-[#1c1c1e]/40 dark:text-gray-300 dark:border-gray-700'
                                     }`}
@@ -897,8 +916,8 @@ HelloKido Oyun Atölyesi`)}`}
                                 </button>
                                 <button
                                   onClick={() => updateLessonStatus(participant, 'no_show')}
-                                  disabled={updatingLessonId === participant.id}
-                                  className={`flex-1 px-3 py-1 text-[11px] font-medium rounded-full border transition ${participant.status === 'no_show'
+                                  disabled={updatingLessonIds.has(participant.id)}
+                                  className={`flex-1 px-3 py-1 text-[11px] font-medium rounded-full border transition disabled:opacity-50 disabled:cursor-wait ${participant.status === 'no_show'
                                       ? 'bg-red-100 text-red-800 border-red-300 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800/50'
                                       : 'bg-white text-gray-700 border-gray-300 hover:bg-red-50 hover:text-red-700 hover:border-red-300 dark:bg-[#1c1c1e]/40 dark:text-gray-300 dark:border-gray-700'
                                     }`}
@@ -907,8 +926,8 @@ HelloKido Oyun Atölyesi`)}`}
                                 </button>
                                 <button
                                   onClick={() => updateLessonStatus(participant, 'postponed')}
-                                  disabled={updatingLessonId === participant.id}
-                                  className={`flex-1 px-3 py-1 text-[11px] font-medium rounded-full border transition ${participant.status === 'postponed'
+                                  disabled={updatingLessonIds.has(participant.id)}
+                                  className={`flex-1 px-3 py-1 text-[11px] font-medium rounded-full border transition disabled:opacity-50 disabled:cursor-wait ${participant.status === 'postponed'
                                       ? 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800/50'
                                       : 'bg-white text-gray-700 border-gray-300 hover:bg-amber-50 hover:text-amber-700 hover:border-amber-300 dark:bg-[#1c1c1e]/40 dark:text-gray-300 dark:border-gray-700'
                                     }`}
@@ -917,8 +936,8 @@ HelloKido Oyun Atölyesi`)}`}
                                 </button>
                                 <button
                                   onClick={() => updateLessonStatus(participant, 'makeup')}
-                                  disabled={updatingLessonId === participant.id}
-                                  className={`flex-1 px-3 py-1 text-[11px] font-medium rounded-full border transition ${participant.status === 'makeup'
+                                  disabled={updatingLessonIds.has(participant.id)}
+                                  className={`flex-1 px-3 py-1 text-[11px] font-medium rounded-full border transition disabled:opacity-50 disabled:cursor-wait ${participant.status === 'makeup'
                                       ? 'bg-purple-100 text-purple-800 border-purple-300 dark:bg-purple-900/30 dark:text-purple-300 dark:border-purple-800/50'
                                       : 'bg-white text-gray-700 border-gray-300 hover:bg-purple-50 hover:text-purple-700 hover:border-purple-300 dark:bg-[#1c1c1e]/40 dark:text-gray-300 dark:border-gray-700'
                                     }`}
@@ -937,6 +956,14 @@ HelloKido Oyun Atölyesi`)}`}
             ))}
           </Masonry>
         )}
+
+        {/* Yoklaması işaretlenmemiş geçmiş dersler (yalnızca varsa görünür) */}
+        <UnmarkedLessons
+          language={language}
+          refreshKey={unmarkedRefreshKey}
+          onMarked={refreshUsageOf}
+          onError={showToast}
+        />
 
         {/* Dashboard Kartları */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-10">
@@ -992,6 +1019,8 @@ HelloKido Oyun Atölyesi`)}`}
                   </div>
                 ))}
               </div>
+            ) : loadFailed.payments ? (
+              <LoadFailed language={language} onRetry={fetchPendingPayments} />
             ) : pendingPayments.length === 0 ? (
               // Boş State
               <div className="text-center py-12 bg-white dark:bg-[#121621] rounded-xl border border-[#d2d2d7] dark:border-[#2a3241]">
@@ -1008,7 +1037,7 @@ HelloKido Oyun Atölyesi`)}`}
               <div className="bg-white dark:bg-[#121621] rounded-xl border border-[#d2d2d7] dark:border-[#2a3241] overflow-hidden">
                 <div className="p-4 sm:px-6 border-b border-[#d2d2d7] dark:border-[#2a3241] bg-[#f5f5f7] dark:bg-[#1c1c1e]/40">
                   <h3 className="text-sm font-medium text-[#1d1d1f] dark:text-white">
-                    {language === 'en' ? `Total ${pendingPayments.length} pending payments` : `Toplam ${pendingPayments.length} bekleyen ödeme`}
+                    {language === 'en' ? `Total ${pendingPayments.length} pending payment${pendingPayments.length !== 1 ? 's' : ''}` : `Toplam ${pendingPayments.length} bekleyen ödeme`}
                   </h3>
                 </div>
 
@@ -1035,15 +1064,17 @@ HelloKido Oyun Atölyesi`)}`}
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <a
-                          href={`https://wa.me/90${registration.parent_phone.replace(/\D/g, '').replace(/^0+/, '')}?text=${encodeURIComponent(`Merhabalar ${registration.parent_name}. ${registration.student_name} için ödeme beklemekteyiz. Bilginize sunarız.`)}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="w-8 h-8 rounded-full bg-[#f5f5f7] dark:bg-[#2a3241] hover:bg-[#e5e5e5] dark:hover:bg-[#3a4251] flex items-center justify-center text-[#34c759] border border-[#d2d2d7] dark:border-[#2a3241] transition-colors"
-                          title={language === 'en' ? 'Send Payment Reminder via WhatsApp' : 'WhatsApp\'tan Ödeme Hatırlatma Mesajı Gönder'}
-                        >
-                          <FaWhatsapp className="w-4 h-4" />
-                        </a>
+                        {whatsAppLink(registration.parent_phone) && (
+                          <a
+                            href={whatsAppLink(registration.parent_phone, `Merhabalar ${registration.parent_name}. ${registration.student_name} için ödeme beklemekteyiz. Bilginize sunarız.`)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="w-8 h-8 rounded-full bg-[#f5f5f7] dark:bg-[#2a3241] hover:bg-[#e5e5e5] dark:hover:bg-[#3a4251] flex items-center justify-center text-[#34c759] border border-[#d2d2d7] dark:border-[#2a3241] transition-colors"
+                            title={language === 'en' ? 'Send Payment Reminder via WhatsApp' : 'WhatsApp\'tan Ödeme Hatırlatma Mesajı Gönder'}
+                          >
+                            <FaWhatsapp className="w-4 h-4" />
+                          </a>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -1060,7 +1091,7 @@ HelloKido Oyun Atölyesi`)}`}
                   <FiPackage className="h-4 w-4 text-[#ac39ff]" />
                 </div>
                 <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-white">
-                  {language === 'en' ? 'Packages Expiring Soon' : 'Paket Süresi Bitmeye Yaklaşanlar'}
+                  {language === 'en' ? 'Packages Ended or Ending Soon' : 'Paket Süresi Biten / Bitmek Üzere'}
                 </h2>
               </div>
               <button
@@ -1104,15 +1135,19 @@ HelloKido Oyun Atölyesi`)}`}
                   </div>
                 ))}
               </div>
+            ) : loadFailed.packages ? (
+              <LoadFailed language={language} onRetry={fetchExpiringSoonPackages} />
             ) : expiringSoonPackages.length === 0 ? (
               // Boş State
               <div className="text-center py-12 bg-white dark:bg-[#121621] rounded-xl border border-[#d2d2d7] dark:border-[#2a3241]">
                 <FiPackage className="w-12 h-12 mx-auto text-[#86868b] mb-4" />
                 <h3 className="text-lg font-medium text-[#1d1d1f] dark:text-white mb-1">
-                  {language === 'en' ? 'No packages expiring in the next 7 days' : 'Önümüzdeki 7 gün içinde bitecek paket bulunmuyor'}
+                  {language === 'en' ? 'No packages ended or ending soon' : 'Süresi biten ya da bitmek üzere olan paket yok'}
                 </h3>
                 <p className="text-sm text-[#6e6e73] dark:text-[#86868b] max-w-md mx-auto">
-                  {language === 'en' ? 'There are no packages expiring in the next 7 days.' : 'Önümüzdeki 7 gün içinde bitecek paket bulunmuyor.'}
+                  {language === 'en'
+                    ? 'Packages that have ended or will end within 7 days are listed here.'
+                    : 'Süresi biten ya da 7 gün içinde bitecek paketler burada listelenir.'}
                 </p>
               </div>
             ) : (
@@ -1121,18 +1156,20 @@ HelloKido Oyun Atölyesi`)}`}
                 <div className="p-4 sm:px-6 border-b border-[#d2d2d7] dark:border-[#2a3241] bg-[#f5f5f7] dark:bg-[#1c1c1e]/40">
                   <h3 className="text-sm font-medium text-[#1d1d1f] dark:text-white">
                     {language === 'en'
-                      ? `Total ${expiringSoonPackages.length} upcoming package expiration${expiringSoonPackages.length !== 1 ? 's' : ''}`
-                      : `Toplam ${expiringSoonPackages.length} yaklaşan paket bitişi`}
+                      ? `Total ${expiringSoonPackages.length} package${expiringSoonPackages.length !== 1 ? 's' : ''}`
+                      : `Toplam ${expiringSoonPackages.length} paket`}
                   </h3>
                 </div>
 
                 <div className="max-h-[350px] overflow-y-auto">
                   {expiringSoonPackages.map((registration) => {
-                    // Kalan gün sayısını hesapla
+                    // Kalan gün sayısını hesapla (takvim günü; eksi değer = paket bitmiş)
                     const endDate = new Date(registration.package_end_date);
-                    const today = new Date();
-                    const diffTime = Math.abs(endDate - today);
-                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                    const diffDays = differenceInCalendarDays(endDate, new Date());
+                    const expiryLink = whatsAppLink(
+                      registration.parent_phone,
+                      `Merhabalar ${registration.parent_name}. ${registration.student_name} adlı öğrencinizin paket süresi ${format(endDate, 'd MMMM yyyy', { locale: tr })} tarihinde ${diffDays < 0 ? 'sona ermiştir' : 'sona erecektir'}. Bilginize sunarız.`
+                    );
 
                     // Aciliyet seviyesine göre renk belirle
                     let urgencyColor = "text-[#34c759]"; // Yeşil (daha çok zaman var)
@@ -1160,7 +1197,11 @@ HelloKido Oyun Atölyesi`)}`}
                             </p>
                             <div className="flex items-center gap-2">
                               <p className={`text-[13px] ${urgencyColor} font-medium`}>
-                                {language === 'en' ? `${diffDays} day${diffDays !== 1 ? 's' : ''} left` : `${diffDays} gün kaldı`}
+                                {diffDays < 0
+                                  ? (language === 'en' ? `Ended ${-diffDays} day${diffDays !== -1 ? 's' : ''} ago` : `${-diffDays} gün önce bitti`)
+                                  : diffDays === 0
+                                    ? (language === 'en' ? 'Ends today' : 'Bugün bitiyor')
+                                    : (language === 'en' ? `${diffDays} day${diffDays !== 1 ? 's' : ''} left` : `${diffDays} gün kaldı`)}
                               </p>
                               <span className="text-[11px] text-[#6e6e73] dark:text-[#86868b]">
                                 ({formatDate(endDate, 'd MMMM yyyy')})
@@ -1169,15 +1210,17 @@ HelloKido Oyun Atölyesi`)}`}
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
-                          <a
-                            href={`https://wa.me/90${registration.parent_phone.replace(/\D/g, '').replace(/^0+/, '')}?text=${encodeURIComponent(`Merhabalar ${registration.parent_name}. ${registration.student_name} adlı öğrencinizin paket süresi ${format(endDate, 'd MMMM yyyy', { locale: tr })} tarihinde sona erecektir. Bilginize sunarız.`)}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="w-8 h-8 rounded-full bg-[#f5f5f7] dark:bg-[#2a3241] hover:bg-[#e5e5e5] dark:hover:bg-[#3a4251] flex items-center justify-center text-[#34c759] border border-[#d2d2d7] dark:border-[#2a3241] transition-colors"
-                            title={language === 'en' ? 'Send Package Expiration Info via WhatsApp' : 'WhatsApp\'tan Paket Bitiş Bilgisi Gönder'}
-                          >
-                            <FaWhatsapp className="w-4 h-4" />
-                          </a>
+                          {expiryLink && (
+                            <a
+                              href={expiryLink}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="w-8 h-8 rounded-full bg-[#f5f5f7] dark:bg-[#2a3241] hover:bg-[#e5e5e5] dark:hover:bg-[#3a4251] flex items-center justify-center text-[#34c759] border border-[#d2d2d7] dark:border-[#2a3241] transition-colors"
+                              title={language === 'en' ? 'Send Package Expiration Info via WhatsApp' : 'WhatsApp\'tan Paket Bitiş Bilgisi Gönder'}
+                            >
+                              <FaWhatsapp className="w-4 h-4" />
+                            </a>
+                          )}
                         </div>
                       </div>
                     );
