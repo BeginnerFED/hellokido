@@ -2,8 +2,8 @@ import { useState } from 'react'
 import { supabase, setRememberSession } from '../lib/supabase'
 import { useNavigate, useLocation, Navigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { FaChild } from 'react-icons/fa'
 import { EnvelopeIcon, LockClosedIcon } from '@heroicons/react/24/outline'
+import BrandLogo from '../components/ui/BrandLogo'
 
 // Hata mesajlarını Türkçe'ye çeviren fonksiyon
 const translateError = (error) => {
@@ -78,14 +78,10 @@ export default function Login() {
     <div className="w-full min-h-screen flex flex-col items-center justify-center bg-[#fafafa] dark:bg-[#1a1a1a] transition-colors duration-300">
       <div className="w-full max-w-[400px] mx-auto px-4">
         {/* Logo ve Başlık */}
-        <div className="text-center mb-12">
-          <div className="flex justify-center mb-6">
-            <div className="p-4 rounded-[28px] bg-white dark:bg-[#2a2a2a] shadow-lg transition-all duration-300 transform hover:scale-105">
-              <FaChild className="w-14 h-14 text-[#007AFF] dark:text-[#0A84FF]" />
-            </div>
-          </div>
-          <h1 className="text-[32px] font-semibold text-[#1d1d1f] dark:text-white mb-3 tracking-tight">
-            Hello Kido
+        <div className="text-center mb-10">
+          {/* Sayfa başlığı logonun kendisidir (adı alt metninden okunur) */}
+          <h1 className="flex justify-center mb-5">
+            <BrandLogo className="h-28 w-auto" />
           </h1>
           <p className="text-[17px] text-[#6e6e73] dark:text-[#86868b]">
             Yönetim Paneline Hoş Geldiniz

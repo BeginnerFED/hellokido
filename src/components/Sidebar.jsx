@@ -12,11 +12,11 @@ import {
   ArrowRightOnRectangleIcon,
   XMarkIcon
 } from '@heroicons/react/24/outline';
-import { FaChild } from 'react-icons/fa';
 import { useLanguage } from '../context/LanguageContext';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import Toast from './ui/Toast';
+import BrandLogo from './ui/BrandLogo';
 
 const Sidebar = ({ onClose }) => {
   const { t, language } = useLanguage();
@@ -72,16 +72,8 @@ const Sidebar = ({ onClose }) => {
 
       <div className="p-4 flex flex-col h-full">
         {/* Logo */}
-        <div className="mb-8 min-h-[48px] flex-shrink-0">
-          <div className="flex items-center space-x-2">
-            <div className={`p-2 rounded-xl bg-indigo-100 dark:bg-indigo-600/20 transition-colors duration-300`}>
-              <FaChild className={`w-6 h-6 text-indigo-600 dark:text-indigo-400 transition-colors duration-300`} />
-            </div>
-            <div className="flex flex-col min-w-0">
-              <span className={`text-xl font-bold text-indigo-600 dark:text-indigo-400 transition-colors duration-300 truncate`}>Hello Kido</span>
-              <span className="text-xs text-gray-500 dark:text-gray-400 transition-colors duration-300 truncate">{t('managementPanel')}</span>
-            </div>
-          </div>
+        <div className="mb-4 pb-4 flex justify-center border-b border-[#d2d2d7]/60 dark:border-[#424245] flex-shrink-0">
+          <BrandLogo className="h-[72px] w-auto" />
         </div>
 
         {/* Main Menu */}
