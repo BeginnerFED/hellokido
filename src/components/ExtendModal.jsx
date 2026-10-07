@@ -5,9 +5,10 @@ import 'react-date-range/dist/styles.css'
 import 'react-date-range/dist/theme/default.css'
 import Toast from './ui/Toast'
 import AmountPreview from './ui/AmountPreview'
+import ExtraLessonsField from './ui/ExtraLessonsField'
 import { useLanguage } from '../context/LanguageContext'
 import { supabase } from '../lib/supabase'
-import { fetchCarryOverSource, computeCarryOverPreview, startsNewPeriod } from '../lib/lessonUsage'
+import { fetchCarryOverSource, computeExtensionPreview, startsNewPeriod } from '../lib/lessonUsage'
 import { parseAmount, isPositiveAmount, formatAmountForInput, sanitizeAmountInput } from '../lib/money'
 import { isMissingPeriodEnd, getPeriodTypeHint, SINGLE_LESSON_PACKAGE } from '../lib/packagePeriod'
 import { upperFirst } from '../lib/text'
@@ -44,7 +45,8 @@ export default function ExtendModal({ isOpen, onClose, onSuccess, registration, 
     paymentMethod: '',
     amount: '',
     note: '',
-    paymentDate: null // Varsayılan olarak null
+    paymentDate: null, // Varsayılan olarak null
+    extraLessons: 0 // Bu ödemeyle verilen ekstra dersler (yalnızca yeni uzatmada)
   })
 
   // Tarih aralığı için state tanımla
@@ -72,7 +74,8 @@ export default function ExtendModal({ isOpen, onClose, onSuccess, registration, 
           paymentMethod: existingExtension.payment_status === 'beklemede' ? '' : (existingExtension.payment_method || ''),
           amount: existingExtension.payment_status === 'beklemede' ? '' : formatAmountForInput(existingExtension.payment_amount),
           note: existingExtension.notes || '',
-          paymentDate: existingExtension.payment_date ? new Date(existingExtension.payment_date) : null
+          paymentDate: existingExtension.payment_date ? new Date(existingExtension.payment_date) : null,
+          extraLessons: 0
         })
       } else {
         // Create modu: son paket bitişini başlangıç olarak öner
@@ -91,7 +94,8 @@ export default function ExtendModal({ isOpen, onClose, onSuccess, registration, 
           paymentMethod: '',
           amount: '',
           note: '',
-          paymentDate: null
+          paymentDate: null,
+          extraLessons: 0
         })
       }
     }
@@ -124,8 +128,18 @@ export default function ExtendModal({ isOpen, onClose, onSuccess, registration, 
   // ileri bir güne taşınmıyorsa ders sayımı sıfırlanmaz ve devir yapılmaz.
   const movesPeriod = startsNewPeriod(currentPeriod?.package_start_date, dateRange[0].startDate)
 
-  // Seçilen başlangıç tarihine göre yeni pakete devredecek ders sayısı
-  const carryOverPreview = computeCarryOverPreview(carryOverSource, dateRange[0].startDate)
+  // Seçilen tür ve başlangıç tarihiyle kaydedilirse ders hakkı nasıl görünecek?
+  // (yeni pakete devredecek dersler, aynı paketin önceki ödemesi ve ekstra dersler dahil)
+  const extensionPreview = computeExtensionPreview(
+    carryOverSource, formData.packageType, dateRange[0].startDate, formData.extraLessons
+  )
+
+  // Önizleme cümlesinde toplamın yanına yazılır: " (3 ekstra ders dahil)"
+  const extraNote = extensionPreview?.extra > 0
+    ? (language === 'tr'
+        ? ` (${extensionPreview.extra} ekstra ders dahil)`
+        : ` (including ${extensionPreview.extra} extra)`)
+    : ''
 
   // Düzenleme modunda paket (tür ya da tarihler) bu formda değiştirildi mi?
   const isPeriodEdited = isEditMode && !!existingExtension && (
@@ -175,7 +189,8 @@ export default function ExtendModal({ isOpen, onClose, onSuccess, registration, 
         paymentMethod: '',
         amount: '',
         note: '',
-        paymentDate: null // Varsayılan olarak null
+        paymentDate: null, // Varsayılan olarak null
+        extraLessons: 0
       })
       setDateRange([{
         startDate: new Date(),
@@ -336,7 +351,8 @@ export default function ExtendModal({ isOpen, onClose, onSuccess, registration, 
           p_payment_amount: finalPaymentAmount,
           p_payment_date: finalPaymentDate,
           p_notes: finalNotes,
-          p_previous_carried_lessons: carrySource.carried
+          p_previous_carried_lessons: carrySource.carried,
+          p_extra_lessons: formData.extraLessons
         })
         if (extendError) throw extendError
 
@@ -399,7 +415,7 @@ export default function ExtendModal({ isOpen, onClose, onSuccess, registration, 
         {/* Modal */}
         <div className="flex min-h-screen items-center justify-center p-4">
           <div 
-            className="relative w-full max-w-xl rounded-2xl bg-white dark:bg-[#121621] p-6 shadow-xl transition-all"
+            className="relative w-full max-w-2xl rounded-2xl bg-white dark:bg-[#121621] p-6 shadow-xl transition-all"
           >
             {/* Close Button */}
             <button
@@ -634,6 +650,12 @@ export default function ExtendModal({ isOpen, onClose, onSuccess, registration, 
                       <option value="3ay-hafta-2" className="text-[#1d1d1f] dark:text-white bg-white dark:bg-[#1d1d1f]">
                         {language === 'tr' ? "3 Aylık - 24 Atölye" : "3 Months - 24 Workshops"}
                       </option>
+                      <option value="3ay-yarim-hafta-1" className="text-[#1d1d1f] dark:text-white bg-white dark:bg-[#1d1d1f]">
+                        {language === 'tr' ? "3 Aylık Yarım - 6 Atölye" : "3 Months Half - 6 Workshops"}
+                      </option>
+                      <option value="3ay-yarim-hafta-2" className="text-[#1d1d1f] dark:text-white bg-white dark:bg-[#1d1d1f]">
+                        {language === 'tr' ? "3 Aylık Yarım - 12 Atölye" : "3 Months Half - 12 Workshops"}
+                      </option>
                     </select>
                   </div>
 
@@ -852,22 +874,48 @@ export default function ExtendModal({ isOpen, onClose, onSuccess, registration, 
                       ? 'Yeni dersin tarihini seçin. Tarih aynı kalırsa yeni ders hakkı eklenmez, yalnızca ödeme kaydedilir.'
                       : 'Pick the date of the new lesson. If the date stays the same, no new lesson is added; only the payment is recorded.'}
                   </p>
-                ) : !isEditMode && carryOverSource && !movesPeriod ? (
+                ) : extensionPreview?.samePackage ? (
+                  // Aynı paketin ödemesi (ya da deneme dersinin pakete çevrilmesi): yeni paket başlamaz.
+                  // Dönem ilerlediği halde aynı paket sayılıyorsa mevcut dönem bir günlük ödeme kaydıdır.
                   <p className="md:col-span-2 px-1 text-xs leading-relaxed text-[#6e6e73] dark:text-[#86868b]">
-                    {language === 'tr'
-                      ? 'Başlangıç tarihi aynı kalıyor: ders sayımı sıfırlanmaz, bu dönemde yapılan dersler pakete sayılmaya devam eder.'
-                      : 'The start date stays the same: the lesson count is not reset, and lessons already taken in this period keep counting against the package.'}
+                    {movesPeriod
+                      ? (language === 'tr'
+                          ? `Mevcut dönem yalnızca bir gün sürüyor; bu kayıt aynı paketin ödemesi sayılır. Paketin ders hakkı ${extensionPreview.total}${extraNote}, kalan ${extensionPreview.remaining}.`
+                          : `The current period lasts a single day, so this entry counts as a payment for the same package. The package holds ${extensionPreview.total} lessons${extraNote}, ${extensionPreview.remaining} left.`)
+                      : (language === 'tr'
+                          ? `Yeni bir paket dönemi başlamıyor: ders sayımı sıfırlanmaz, bu dönemde yapılan dersler pakete sayılır. Paketin ders hakkı ${extensionPreview.total}${extraNote}, kalan ${extensionPreview.remaining}.`
+                          : `No new package period starts: the lesson count is not reset, and lessons already taken in this period count against the package. The package holds ${extensionPreview.total} lessons${extraNote}, ${extensionPreview.remaining} left.`)}
                   </p>
-                ) : !isEditMode && carryOverPreview > 0 ? (
+                ) : extensionPreview?.carried > 0 ? (
                   <p className="md:col-span-2 px-1 text-xs leading-relaxed text-[#248a3d] dark:text-[#30d158]">
                     {language === 'tr'
-                      ? `Mevcut pakette ${carryOverPreview} ders kaldı. Kullanılmayanlar yeni paketin hakkına eklenecek.`
-                      : `${carryOverPreview} lesson(s) left in the current package. Unused ones will be added to the new package.`}
+                      ? `Mevcut pakette ${extensionPreview.carried} ders kaldı; yeni paketin hakkına eklenir. Yeni paketin ders hakkı ${extensionPreview.total} olur${extraNote}.`
+                      : `${extensionPreview.carried} lesson(s) left in the current package; they are added to the new one, which will hold ${extensionPreview.total} lessons${extraNote}.`}
+                  </p>
+                ) : !isEditMode && extensionPreview?.extra > 0 ? (
+                  // Devir yok ama ekstra ders var: yeni paketin toplamını göster
+                  <p className="md:col-span-2 px-1 text-xs leading-relaxed text-[#6e6e73] dark:text-[#86868b]">
+                    {language === 'tr'
+                      ? `Yeni paketin ders hakkı ${extensionPreview.total} olur${extraNote}.`
+                      : `The new package will hold ${extensionPreview.total} lessons${extraNote}.`}
                   </p>
                 ) : null}
 
-                {/* Notlar - Full genişlikte */}
-                <div className="md:col-span-2 relative">
+                {/* Ekstra ders (yalnızca yeni uzatmada; kayıtlı ekstralar "Güncelle"den düzeltilir) */}
+                {!isEditMode && (
+                  <div>
+                    <ExtraLessonsField
+                      value={formData.extraLessons}
+                      onChange={(extraLessons) => setFormData(prev => ({ ...prev, extraLessons }))}
+                      label={language === 'tr' ? 'Ekstra ders ekle' : 'Add extra lessons'}
+                      language={language}
+                      tabIndex={7}
+                    />
+                  </div>
+                )}
+
+                {/* Notlar: yeni uzatmada ekstra dersin yanında, düzenlemede full genişlikte */}
+                <div className={`relative ${isEditMode ? 'md:col-span-2' : ''}`}>
                   <div className={iconWrapperClasses}>
                     <PencilSquareIcon className={iconClasses} />
                   </div>
@@ -878,7 +926,7 @@ export default function ExtendModal({ isOpen, onClose, onSuccess, registration, 
                     onChange={handleTextChange('note', upperFirst)}
                     className={inputClasses}
                     placeholder={language === 'tr' ? "Not ekle..." : "Add note..."}
-                    tabIndex={7}
+                    tabIndex={8}
                     autoComplete="off"
                   />
                 </div>
@@ -890,7 +938,7 @@ export default function ExtendModal({ isOpen, onClose, onSuccess, registration, 
                   type="button"
                   onClick={onClose}
                   className="w-full h-11 bg-gray-100 dark:bg-[#1d1d1f] text-[#1d1d1f] dark:text-white font-medium rounded-xl hover:bg-gray-200 dark:hover:bg-[#161616] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-200 dark:focus:ring-[#2a2a2a] transition-all transform hover:scale-[1.01] active:scale-[0.98] disabled:opacity-50"
-                  tabIndex={8}
+                  tabIndex={9}
                   disabled={isLoading}
                 >
                   {language === 'tr' ? 'İptal' : 'Cancel'}
@@ -898,7 +946,7 @@ export default function ExtendModal({ isOpen, onClose, onSuccess, registration, 
                 <button
                   type="submit"
                   className="w-full h-11 bg-[#1d1d1f] dark:bg-[#0071e3] text-white font-medium rounded-xl hover:bg-black dark:hover:bg-[#0077ed] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#0071e3] transition-all transform hover:scale-[1.01] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                  tabIndex={9}
+                  tabIndex={10}
                   disabled={!isFormValid() || isLoading}
                 >
                   {isLoading ? (

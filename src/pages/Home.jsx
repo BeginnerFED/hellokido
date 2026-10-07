@@ -76,7 +76,7 @@ const fetchEventsOfDay = async (dayStart) => {
   if (registrationIds.length > 0) {
     const { data, error: registrationsError } = await withTimeout(signal => supabase
       .from('registrations')
-      .select('id, student_name, student_age, parent_name, parent_phone, package_type, package_start_date')
+      .select('id, student_name, student_age, parent_name, parent_phone, package_type, package_start_date, extra_lessons')
       .in('id', registrationIds)
       .abortSignal(signal));
 

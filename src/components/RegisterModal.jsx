@@ -5,6 +5,7 @@ import 'react-date-range/dist/styles.css'
 import 'react-date-range/dist/theme/default.css'
 import Toast from './ui/Toast'
 import AmountPreview from './ui/AmountPreview'
+import ExtraLessonsField from './ui/ExtraLessonsField'
 import { useLanguage } from '../context/LanguageContext'
 import { supabase } from '../lib/supabase'
 import { parseAmount, isPositiveAmount, sanitizeAmountInput } from '../lib/money'
@@ -38,7 +39,8 @@ const initialFormData = {
   paymentMethod: '',
   amount: '',
   note: '',
-  paymentDate: null // Varsayılan olarak null (tarih seçilmemiş)
+  paymentDate: null, // Varsayılan olarak null (tarih seçilmemiş)
+  extraLessons: 0 // Pakete ek olarak verilen dersler
 }
 
 // Takvimin açılış aralığı: bugün. Her açılışta yeniden üretilir; sabit bir değer olsaydı
@@ -275,7 +277,8 @@ export default function RegisterModal({ isOpen, onClose, onSuccess }) {
           payment_method: paymentMethod,
           payment_amount: paymentAmount,
           payment_date: noPaymentDetails ? null : formData.paymentDate.toISOString(),
-          notes: formData.note.trim() || null
+          notes: formData.note.trim() || null,
+          extra_lessons: isFree ? 0 : formData.extraLessons
         }
       })
       if (error) throw error
@@ -519,6 +522,12 @@ export default function RegisterModal({ isOpen, onClose, onSuccess }) {
                     </option>
                     <option value="3ay-hafta-2" className="text-[#1d1d1f] dark:text-white bg-white dark:bg-[#1d1d1f]">
                       {language === 'tr' ? "3 Aylık - 24 Atölye" : "3 Months - 24 Workshops"}
+                    </option>
+                    <option value="3ay-yarim-hafta-1" className="text-[#1d1d1f] dark:text-white bg-white dark:bg-[#1d1d1f]">
+                      {language === 'tr' ? "3 Aylık Yarım - 6 Atölye" : "3 Months Half - 6 Workshops"}
+                    </option>
+                    <option value="3ay-yarim-hafta-2" className="text-[#1d1d1f] dark:text-white bg-white dark:bg-[#1d1d1f]">
+                      {language === 'tr' ? "3 Aylık Yarım - 12 Atölye" : "3 Months Half - 12 Workshops"}
                     </option>
                     <option value="ucretsiz" className="text-[#1d1d1f] dark:text-white bg-white dark:bg-[#1d1d1f]">
                       {language === 'tr' ? "Ücretsiz Katılım" : "Free Participation"}
@@ -864,8 +873,20 @@ export default function RegisterModal({ isOpen, onClose, onSuccess }) {
                 </p>
               ) : null}
 
-              {/* Notlar - Şimdi full genişlikte */}
-              <div className="md:col-span-2 relative">
+              {/* Ekstra ders (solda) ve notlar (sağda) aynı satırda */}
+              <div>
+                <ExtraLessonsField
+                  value={isFree ? 0 : formData.extraLessons}
+                  onChange={(extraLessons) => setFormData(prev => ({ ...prev, extraLessons }))}
+                  label={language === 'tr' ? 'Ekstra ders' : 'Extra lessons'}
+                  language={language}
+                  disabled={isFree}
+                  tabIndex={11}
+                />
+              </div>
+
+              {/* Notlar */}
+              <div className="relative">
                 <div className={iconWrapperClasses}>
                   <PencilSquareIcon className={iconClasses} />
                 </div>
@@ -876,7 +897,7 @@ export default function RegisterModal({ isOpen, onClose, onSuccess }) {
                   onChange={handleTextChange('note', upperFirst)}
                   className={inputClasses}
                   placeholder={language === 'tr' ? "Not ekle..." : "Add note..."}
-                  tabIndex={11}
+                  tabIndex={12}
                   autoComplete="off"
                 />
               </div>
@@ -887,7 +908,7 @@ export default function RegisterModal({ isOpen, onClose, onSuccess }) {
                   type="button"
                   onClick={onClose}
                   className="w-full h-11 bg-gray-100 dark:bg-[#1d1d1f] text-[#1d1d1f] dark:text-white font-medium rounded-xl hover:bg-gray-200 dark:hover:bg-[#161616] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-200 dark:focus:ring-[#2a2a2a] transition-all transform hover:scale-[1.01] active:scale-[0.98] disabled:opacity-50"
-                  tabIndex={12}
+                  tabIndex={13}
                   disabled={isLoading}
                 >
                   {language === 'tr' ? 'İptal' : 'Cancel'}
@@ -895,7 +916,7 @@ export default function RegisterModal({ isOpen, onClose, onSuccess }) {
                 <button
                   type="submit"
                   className="w-full h-11 bg-[#1d1d1f] dark:bg-[#0071e3] text-white font-medium rounded-xl hover:bg-black dark:hover:bg-[#0077ed] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#0071e3] transition-all transform hover:scale-[1.01] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                  tabIndex={13}
+                  tabIndex={14}
                   disabled={!isFormValid() || isLoading}
                 >
                   {isLoading ? (

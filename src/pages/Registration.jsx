@@ -118,6 +118,8 @@ export default function Registration() {
       'hafta-4': language === 'tr' ? 'Haftada 4 Gün' : '4 Days Per Week',
       '3ay-hafta-1': language === 'tr' ? '3 Aylık - 12 Atölye' : '3 Months - 12 Workshops',
       '3ay-hafta-2': language === 'tr' ? '3 Aylık - 24 Atölye' : '3 Months - 24 Workshops',
+      '3ay-yarim-hafta-1': language === 'tr' ? '3 Aylık Yarım - 6 Atölye' : '3 Months Half - 6 Workshops',
+      '3ay-yarim-hafta-2': language === 'tr' ? '3 Aylık Yarım - 12 Atölye' : '3 Months Half - 12 Workshops',
       'ucretsiz': language === 'tr' ? 'Ücretsiz Katılım' : 'Free Participation'
     }
     return types[type] || type
@@ -447,6 +449,7 @@ export default function Registration() {
             {/* Filtre Butonu */}
             <button
               onClick={() => setIsFilterSheetOpen(true)}
+              aria-label={language === 'tr' ? 'Filtreler' : 'Filters'}
               className="h-10 sm:h-8 px-3 bg-white dark:bg-[#121621] text-[#424245] dark:text-[#86868b] text-sm font-medium rounded-lg border border-[#d2d2d7] dark:border-[#2a3241] hover:border-[#0071e3] dark:hover:border-[#0071e3] focus:outline-none transition-colors flex items-center justify-center gap-2 relative"
             >
               <AdjustmentsHorizontalIcon className="w-4 h-4" />
@@ -924,6 +927,30 @@ export default function Registration() {
                   `}
                 >
                   {language === 'tr' ? '3 Aylık - 24 Atölye' : '3 Months - 24 Workshops'}
+                </button>
+                <button
+                  onClick={() => setFilters(prev => ({ ...prev, packageType: prev.packageType === '3ay-yarim-hafta-1' ? '' : '3ay-yarim-hafta-1' }))}
+                  className={`
+                    h-9 px-4 rounded-lg text-sm font-medium transition-colors text-left
+                    ${filters.packageType === '3ay-yarim-hafta-1'
+                      ? 'bg-[#1d1d1f] dark:bg-[#0071e3] text-white'
+                      : 'bg-white dark:bg-[#1d1d1f] text-[#1d1d1f] dark:text-white border border-[#d2d2d7] dark:border-[#2a3241] hover:border-[#0071e3] dark:hover:border-[#0071e3]'
+                    }
+                  `}
+                >
+                  {language === 'tr' ? '3 Aylık Yarım - 6 Atölye' : '3 Months Half - 6 Workshops'}
+                </button>
+                <button
+                  onClick={() => setFilters(prev => ({ ...prev, packageType: prev.packageType === '3ay-yarim-hafta-2' ? '' : '3ay-yarim-hafta-2' }))}
+                  className={`
+                    h-9 px-4 rounded-lg text-sm font-medium transition-colors text-left
+                    ${filters.packageType === '3ay-yarim-hafta-2'
+                      ? 'bg-[#1d1d1f] dark:bg-[#0071e3] text-white'
+                      : 'bg-white dark:bg-[#1d1d1f] text-[#1d1d1f] dark:text-white border border-[#d2d2d7] dark:border-[#2a3241] hover:border-[#0071e3] dark:hover:border-[#0071e3]'
+                    }
+                  `}
+                >
+                  {language === 'tr' ? '3 Aylık Yarım - 12 Atölye' : '3 Months Half - 12 Workshops'}
                 </button>
                 <button
                   onClick={() => setFilters(prev => ({ ...prev, packageType: prev.packageType === 'ucretsiz' ? '' : 'ucretsiz' }))}

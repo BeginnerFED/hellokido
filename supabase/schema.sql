@@ -31,6 +31,7 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto" WITH SCHEMA extensions;
 
 -- Öğrenci kayıtları. Güncel paket durumu bu satırda tutulur; ilk kayıt bilgileri
 -- initial_* kolonlarına trigger ile yazılır. Kayıt silinmez, arşivlenir (is_active = false).
+-- extra_lessons: güncel pakete ek olarak verilen dersler (bkz. extension_history).
 CREATE TABLE public.registrations (
   id uuid DEFAULT extensions.uuid_generate_v4() NOT NULL,
   registration_code text DEFAULT ('REG-'::text || substr(md5((random())::text), 1, 8)),
@@ -61,11 +62,13 @@ CREATE TABLE public.registrations (
   initial_payment_method text,
   initial_payment_amount numeric,
   initial_notes text,
+  extra_lessons integer DEFAULT 0 NOT NULL,
   CONSTRAINT registrations_pkey PRIMARY KEY (id),
   CONSTRAINT registrations_registration_code_key UNIQUE (registration_code),
   CONSTRAINT unique_parent_phone UNIQUE (parent_phone),
+  CONSTRAINT registrations_extra_lessons_range CHECK (((extra_lessons >= 0) AND (extra_lessons <= 99))),
   CONSTRAINT registrations_period_order CHECK ((package_end_date >= package_start_date)),
-  CONSTRAINT valid_package_type CHECK ((package_type = ANY (ARRAY['tek-seferlik'::text, 'hafta-1'::text, 'hafta-2'::text, 'hafta-3'::text, 'hafta-4'::text, '3ay-hafta-1'::text, '3ay-hafta-2'::text, 'ucretsiz'::text]))),
+  CONSTRAINT valid_package_type CHECK ((package_type = ANY (ARRAY['tek-seferlik'::text, 'hafta-1'::text, 'hafta-2'::text, 'hafta-3'::text, 'hafta-4'::text, '3ay-hafta-1'::text, '3ay-hafta-2'::text, '3ay-yarim-hafta-1'::text, '3ay-yarim-hafta-2'::text, 'ucretsiz'::text]))),
   CONSTRAINT valid_payment_method CHECK ((payment_method = ANY (ARRAY['banka'::text, 'nakit'::text, 'kart'::text, 'belirlenmedi'::text]))),
   CONSTRAINT valid_payment_status CHECK ((payment_status = ANY (ARRAY['odendi'::text, 'beklemede'::text, 'ucretsiz'::text])))
 );
@@ -114,6 +117,10 @@ CREATE TABLE public.event_participants (
 
 -- Paket uzatma geçmişi. previous_* kolonları uzatmayla kapanan dönemi tarif eder
 -- (kullanılmayan derslerin yeni döneme devri bunlardan hesaplanır).
+-- Ekstra dersler: her ekstra ders tek bir yerde durur. registrations.extra_lessons güncel paketin
+-- ekstra dersleridir; previous_extra_lessons bu satırın kapattığı dönemde kalanlardır.
+-- added_extra_lessons yalnızca o ödemeyle kaç ekstra ders verildiğini hatırlar (uzatma geri
+-- alınırken düşülür); ders hesabına girmez.
 CREATE TABLE public.extension_history (
   id uuid DEFAULT extensions.uuid_generate_v4() NOT NULL,
   registration_id uuid NOT NULL,
@@ -131,9 +138,13 @@ CREATE TABLE public.extension_history (
   new_start_date timestamp with time zone,
   previous_start_date timestamp with time zone,
   previous_carried_lessons integer,
+  previous_extra_lessons integer DEFAULT 0 NOT NULL,
+  added_extra_lessons integer DEFAULT 0 NOT NULL,
   CONSTRAINT extension_history_pkey PRIMARY KEY (id),
+  CONSTRAINT extension_history_added_extra_lessons_range CHECK (((added_extra_lessons >= 0) AND (added_extra_lessons <= 99))),
   CONSTRAINT extension_history_period_order CHECK (((new_start_date IS NULL) OR (new_end_date >= new_start_date))),
-  CONSTRAINT valid_extension_package_type CHECK ((new_package_type = ANY (ARRAY['tek-seferlik'::text, 'hafta-1'::text, 'hafta-2'::text, 'hafta-3'::text, 'hafta-4'::text, '3ay-hafta-1'::text, '3ay-hafta-2'::text]))),
+  CONSTRAINT extension_history_previous_extra_lessons_range CHECK (((previous_extra_lessons >= 0) AND (previous_extra_lessons <= 99))),
+  CONSTRAINT valid_extension_package_type CHECK ((new_package_type = ANY (ARRAY['tek-seferlik'::text, 'hafta-1'::text, 'hafta-2'::text, 'hafta-3'::text, 'hafta-4'::text, '3ay-hafta-1'::text, '3ay-hafta-2'::text, '3ay-yarim-hafta-1'::text, '3ay-yarim-hafta-2'::text]))),
   CONSTRAINT valid_extension_payment_method CHECK ((payment_method = ANY (ARRAY['banka'::text, 'nakit'::text, 'kart'::text, 'belirlenmedi'::text]))),
   CONSTRAINT valid_extension_payment_status CHECK ((payment_status = ANY (ARRAY['odendi'::text, 'beklemede'::text])))
 );
@@ -451,12 +462,16 @@ declare
   v_amount numeric := (p_data ->> 'payment_amount')::numeric;
   v_payment_date timestamp with time zone := (p_data ->> 'payment_date')::timestamp with time zone;
   v_notes text := nullif(btrim(coalesce(p_data ->> 'notes', '')), '');
+  -- Pakete ek olarak verilen dersler; alan gönderilmezse 0
+  v_extra integer := coalesce((p_data ->> 'extra_lessons')::integer, 0);
 begin
   perform public.assert_admin();
 
   -- Ücretsiz katılım ve bekleyen ödemede ödeme ayrıntısı olmaz
   if v_type = 'ucretsiz' then
     v_status := 'ucretsiz'; v_method := 'belirlenmedi'; v_amount := 0; v_payment_date := null;
+    -- Ücretsiz katılımda ders hakkı izlenmez
+    v_extra := 0;
   elsif v_status = 'beklemede' then
     v_method := 'belirlenmedi'; v_amount := 0; v_payment_date := null;
   elsif v_status = 'odendi' then
@@ -467,17 +482,21 @@ begin
     raise exception 'invalid_payment_status' using errcode = '22023';
   end if;
 
+  if v_extra < 0 or v_extra > 99 then
+    raise exception 'invalid_extra_lessons' using errcode = '22023';
+  end if;
+
   insert into public.registrations (
     student_name, student_age, parent_name, parent_phone,
     package_type, package_start_date, package_end_date,
-    payment_status, payment_method, payment_amount, payment_date, notes, is_active
+    payment_status, payment_method, payment_amount, payment_date, notes, is_active, extra_lessons
   ) values (
     btrim(p_data ->> 'student_name'), btrim(p_data ->> 'student_age'),
     btrim(p_data ->> 'parent_name'), btrim(p_data ->> 'parent_phone'),
     v_type,
     (p_data ->> 'package_start_date')::timestamp with time zone,
     (p_data ->> 'package_end_date')::timestamp with time zone,
-    v_status, v_method, v_amount, v_payment_date, v_notes, true
+    v_status, v_method, v_amount, v_payment_date, v_notes, true, v_extra
   )
   returning * into v_reg;
 
@@ -511,6 +530,7 @@ declare
   v_keeps_start boolean;
   v_start timestamp with time zone;
   v_end timestamp with time zone;
+  v_restored_start timestamp with time zone;
 begin
   -- SECURITY DEFINER olduğu için RLS'i aşar; yetkiyi burada denetle
   perform public.assert_admin();
@@ -572,9 +592,19 @@ begin
     v_end := v_reg.package_end_date;
   end if;
 
+  -- Geri alınınca kaydın döneceği dönem başlangıcı
+  v_restored_start := case when v_same_period then v_reg.package_start_date else least(v_start, v_end) end;
+
   update registrations set
-    package_type        = case when v_same_period then package_type else v_ext.previous_package_type end,
-    package_start_date  = case when v_same_period then package_start_date else least(v_start, v_end) end,
+    -- Aynı dönem için ek ödeme silinirken dönem değişmez; paket türü ise uzatmadan önceki
+    -- türe döner (ikinci ödeme başka türle, ör. yarım paketle girilmiş olabilir). Kapattığı
+    -- dönemin başlangıcı kayıtlı olmayan eski satırlarda önceki tür güvenilir değildir.
+    package_type        = case
+                            when v_same_period and (v_ext.previous_start_date is null or v_ext.previous_package_type is null)
+                              then package_type
+                            else v_ext.previous_package_type
+                          end,
+    package_start_date  = v_restored_start,
     package_end_date    = case when v_same_period then package_end_date else v_end end,
     extension_count     = (select count(*) from extension_history where registration_id = v_reg.id),
     last_extension_date = v_prev.created_at,
@@ -582,14 +612,20 @@ begin
     payment_method      = coalesce(v_fin.payment_method, v_reg.initial_payment_method, 'belirlenmedi'),
     payment_amount      = coalesce(v_fin.amount, v_reg.initial_payment_amount, 0),
     payment_date        = v_fin.payment_date,
-    notes               = case when v_prev.id is not null then v_prev.notes else v_reg.initial_notes end
+    notes               = case when v_prev.id is not null then v_prev.notes else v_reg.initial_notes end,
+    -- Ekstra dersler (bkz. extend_registration): bu ödemeyle verilenler düşer, uzatmanın kapattığı
+    -- dönemde kalanlar kayda geri döner. Uzatma yeni dönem olarak da aynı paketin ödemesi olarak
+    -- da kaydedilmiş olsa, tarihleri sonradan düzeltilmiş olsa da sonuç uzatmadan önceki sayıdır;
+    -- arada "Güncelle" ile verilen ekstralar da korunur (verilen ders sessizce kaybolmaz).
+    extra_lessons       = least(greatest(v_reg.extra_lessons - v_ext.added_extra_lessons, 0)
+                                + v_ext.previous_extra_lessons, 99)
   where id = v_reg.id;
 end;
 $function$;
 REVOKE ALL ON FUNCTION public.delete_last_extension(p_extension_id uuid) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.delete_last_extension(p_extension_id uuid) TO authenticated, service_role;
 
-CREATE OR REPLACE FUNCTION public.extend_registration(p_registration_id uuid, p_expected_extension_count integer, p_new_package_type text, p_new_start_date timestamp with time zone, p_new_end_date timestamp with time zone, p_payment_status text, p_payment_method text, p_payment_amount numeric, p_payment_date timestamp with time zone, p_notes text, p_previous_carried_lessons integer)
+CREATE OR REPLACE FUNCTION public.extend_registration(p_registration_id uuid, p_expected_extension_count integer, p_new_package_type text, p_new_start_date timestamp with time zone, p_new_end_date timestamp with time zone, p_payment_status text, p_payment_method text, p_payment_amount numeric, p_payment_date timestamp with time zone, p_notes text, p_previous_carried_lessons integer, p_extra_lessons integer DEFAULT NULL::integer)
  RETURNS uuid
  LANGUAGE plpgsql
  SET search_path TO 'public'
@@ -601,6 +637,10 @@ declare
   v_amount numeric := p_payment_amount;
   v_payment_date timestamp with time zone := p_payment_date;
   v_notes text := nullif(btrim(coalesce(p_notes, '')), '');
+  -- Bu ödemeyle verilen ekstra dersler; gönderilmezse 0
+  v_added_extra integer := coalesce(p_extra_lessons, 0);
+  v_left_behind_extra integer;
+  v_new_extra integer;
 begin
   -- SECURITY INVOKER: yetki, çağıranın RLS politikalarıyla (yalnızca yöneticiler) denetlenir
   select * into v_reg from registrations where id = p_registration_id for update;
@@ -636,6 +676,28 @@ begin
     raise exception 'invalid_payment_status';
   end if;
 
+  if v_added_extra < 0 or v_added_extra > 99 then
+    raise exception 'invalid_extra_lessons';
+  end if;
+
+  -- Her ekstra ders tek bir yerde durur: kayıtta (güncel paket) ya da dönemini kapatan uzatma
+  -- satırında. Yeni dönem ileri bir günde başlıyorsa kayıttaki ekstralar kapanan dönemde kalır
+  -- ve yeni paket bu ödemeyle verilenlerle başlar; dönem ilerlemiyorsa (aynı paketin ödemesi)
+  -- kayıttakiler durur, bu ödemeyle verilenler eklenir. Ders hesabı buna göre yapılır
+  -- (src/lib/lessonUsage.js).
+  if (p_new_start_date at time zone 'Europe/Istanbul')::date
+     > (v_reg.package_start_date at time zone 'Europe/Istanbul')::date then
+    v_left_behind_extra := v_reg.extra_lessons;
+    v_new_extra := v_added_extra;
+  else
+    v_left_behind_extra := 0;
+    v_new_extra := v_reg.extra_lessons + v_added_extra;
+  end if;
+
+  if v_new_extra > 99 then
+    raise exception 'invalid_extra_lessons';
+  end if;
+
   update registrations set
     package_type        = p_new_package_type,
     package_start_date  = p_new_start_date,
@@ -646,18 +708,21 @@ begin
     payment_date        = v_payment_date,
     notes               = v_notes,
     extension_count     = coalesce(v_reg.extension_count, 0) + 1,
-    last_extension_date = now()
+    last_extension_date = now(),
+    extra_lessons       = v_new_extra
   where id = p_registration_id;
 
   insert into extension_history (
     registration_id,
     previous_end_date, previous_package_type, previous_start_date, previous_carried_lessons,
+    previous_extra_lessons, added_extra_lessons,
     new_start_date, new_end_date, new_package_type,
     payment_status, payment_method, payment_amount, payment_date, notes
   ) values (
     p_registration_id,
     v_reg.package_end_date, v_reg.package_type, v_reg.package_start_date,
     greatest(coalesce(p_previous_carried_lessons, 0), 0),
+    v_left_behind_extra, v_added_extra,
     p_new_start_date, p_new_end_date, p_new_package_type,
     p_payment_status, v_method, v_amount, v_payment_date, v_notes
   )
@@ -674,8 +739,8 @@ begin
   return v_extension_id;
 end;
 $function$;
-REVOKE ALL ON FUNCTION public.extend_registration(p_registration_id uuid, p_expected_extension_count integer, p_new_package_type text, p_new_start_date timestamp with time zone, p_new_end_date timestamp with time zone, p_payment_status text, p_payment_method text, p_payment_amount numeric, p_payment_date timestamp with time zone, p_notes text, p_previous_carried_lessons integer) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.extend_registration(p_registration_id uuid, p_expected_extension_count integer, p_new_package_type text, p_new_start_date timestamp with time zone, p_new_end_date timestamp with time zone, p_payment_status text, p_payment_method text, p_payment_amount numeric, p_payment_date timestamp with time zone, p_notes text, p_previous_carried_lessons integer) TO authenticated, service_role;
+REVOKE ALL ON FUNCTION public.extend_registration(p_registration_id uuid, p_expected_extension_count integer, p_new_package_type text, p_new_start_date timestamp with time zone, p_new_end_date timestamp with time zone, p_payment_status text, p_payment_method text, p_payment_amount numeric, p_payment_date timestamp with time zone, p_notes text, p_previous_carried_lessons integer, p_extra_lessons integer) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.extend_registration(p_registration_id uuid, p_expected_extension_count integer, p_new_package_type text, p_new_start_date timestamp with time zone, p_new_end_date timestamp with time zone, p_payment_status text, p_payment_method text, p_payment_amount numeric, p_payment_date timestamp with time zone, p_notes text, p_previous_carried_lessons integer, p_extra_lessons integer) TO authenticated, service_role;
 
 CREATE OR REPLACE FUNCTION public.grant_admin(p_email text)
  RETURNS uuid
@@ -963,7 +1028,7 @@ begin
   for v_key in select jsonb_object_keys(coalesce(p_changes, '{}'::jsonb)) loop
     if v_key not in ('student_name', 'student_age', 'parent_name', 'parent_phone', 'package_type',
                      'package_start_date', 'package_end_date', 'payment_status', 'payment_method',
-                     'payment_amount', 'payment_date', 'notes') then
+                     'payment_amount', 'payment_date', 'notes', 'extra_lessons') then
       raise exception 'unknown_field: %', v_key using errcode = '22023';
     end if;
   end loop;
@@ -981,11 +1046,14 @@ begin
   if p_changes ? 'payment_amount' then v_new.payment_amount := (p_changes ->> 'payment_amount')::numeric; end if;
   if p_changes ? 'payment_date' then v_new.payment_date := (p_changes ->> 'payment_date')::timestamp with time zone; end if;
   if p_changes ? 'notes' then v_new.notes := nullif(btrim(coalesce(p_changes ->> 'notes', '')), ''); end if;
+  if p_changes ? 'extra_lessons' then v_new.extra_lessons := coalesce((p_changes ->> 'extra_lessons')::integer, 0); end if;
 
   -- Ücretsiz katılım ve bekleyen ödemede ödeme ayrıntısı olmaz
   if v_new.package_type = 'ucretsiz' then
     v_new.payment_status := 'ucretsiz'; v_new.payment_method := 'belirlenmedi';
     v_new.payment_amount := 0; v_new.payment_date := null;
+    -- Ücretsiz katılımda ders hakkı izlenmez
+    v_new.extra_lessons := 0;
   elsif v_new.payment_status = 'beklemede' then
     v_new.payment_method := 'belirlenmedi'; v_new.payment_amount := 0; v_new.payment_date := null;
   elsif v_new.payment_status = 'odendi' then
@@ -998,6 +1066,10 @@ begin
 
   if v_new.package_end_date < v_new.package_start_date then
     raise exception 'invalid_period' using errcode = '22023';
+  end if;
+
+  if v_new.extra_lessons < 0 or v_new.extra_lessons > 99 then
+    raise exception 'invalid_extra_lessons' using errcode = '22023';
   end if;
 
   v_package_changed := (v_new.package_type, v_new.package_start_date, v_new.package_end_date)
@@ -1018,7 +1090,8 @@ begin
     payment_method = v_new.payment_method,
     payment_amount = v_new.payment_amount,
     payment_date = v_new.payment_date,
-    notes = v_new.notes
+    notes = v_new.notes,
+    extra_lessons = v_new.extra_lessons
   where id = p_registration_id;
 
   select e.id, e.created_at into v_ext_id, v_ext_created_at
@@ -1275,13 +1348,11 @@ REVOKE ALL ON public.registrations FROM PUBLIC, anon, authenticated;
 GRANT INSERT, SELECT, UPDATE ON public.registrations TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.registrations TO service_role;
 REVOKE ALL ON public.events FROM PUBLIC, anon, authenticated;
--- Herkese açık takvim yalnızca id, event_date, age_group, event_type kolonlarını okur.
--- Tüm kolonları okuyan eski sürüm yayından kalkınca bu yetki şu ikisiyle daraltılabilir:
---   REVOKE SELECT ON public.events FROM anon;
---   GRANT SELECT (id, event_date, age_group, event_type, is_active) ON public.events TO anon;
-GRANT SELECT ON public.events TO anon;
 GRANT DELETE, INSERT, SELECT, UPDATE ON public.events TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.events TO service_role;
+-- Ziyaretçi yalnızca herkese açık takvimin okuduğu kolonları görebilir (is_active süzgeç içindir);
+-- derslerin açıklaması, kodu ve kapasite sayıları dışarıdan okunamaz.
+GRANT SELECT (id, event_date, age_group, event_type, is_active) ON public.events TO anon;
 REVOKE ALL ON public.event_participants FROM PUBLIC, anon, authenticated;
 GRANT DELETE, INSERT, SELECT, UPDATE ON public.event_participants TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.event_participants TO service_role;

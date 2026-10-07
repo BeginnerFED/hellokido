@@ -54,6 +54,8 @@ const PACKAGE_SHORT_LABELS = {
   'hafta-4': ['Haftada 4', '4 Days/Week'],
   '3ay-hafta-1': ['3 Aylık - 12 Atölye', '3 Months - 12 Workshops'],
   '3ay-hafta-2': ['3 Aylık - 24 Atölye', '3 Months - 24 Workshops'],
+  '3ay-yarim-hafta-1': ['3 Aylık Yarım - 6 Atölye', '3 Months Half - 6 Workshops'],
+  '3ay-yarim-hafta-2': ['3 Aylık Yarım - 12 Atölye', '3 Months Half - 12 Workshops'],
   ucretsiz: ['Ücretsiz', 'Free']
 };
 

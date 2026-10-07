@@ -5,6 +5,7 @@ import 'react-date-range/dist/styles.css'
 import 'react-date-range/dist/theme/default.css'
 import Toast from './ui/Toast'
 import AmountPreview from './ui/AmountPreview'
+import ExtraLessonsField from './ui/ExtraLessonsField'
 import { useLanguage } from '../context/LanguageContext'
 import { supabase } from '../lib/supabase'
 import { parseAmount, isPositiveAmount, formatAmountForInput, sanitizeAmountInput, formatMoney } from '../lib/money'
@@ -57,7 +58,8 @@ export default function UpdateModal({ isOpen, onClose, onSuccess, registration }
     paymentMethod: '',
     amount: '',
     note: '',
-    paymentDate: null // Varsayılan olarak null
+    paymentDate: null, // Varsayılan olarak null
+    extraLessons: 0 // Güncel pakete ek olarak verilen dersler
   })
 
   // Tarih aralığını mevcut kayıt verileriyle başlat
@@ -81,7 +83,8 @@ export default function UpdateModal({ isOpen, onClose, onSuccess, registration }
         paymentMethod: isPaid ? (registration.payment_method || '') : '',
         amount: isPaid ? formatAmountForInput(registration.payment_amount) : '',
         note: registration.notes || '',
-        paymentDate: registration.payment_date ? new Date(registration.payment_date) : null
+        paymentDate: registration.payment_date ? new Date(registration.payment_date) : null,
+        extraLessons: registration.extra_lessons || 0
       })
 
       setDateRange([{
@@ -186,6 +189,11 @@ export default function UpdateModal({ isOpen, onClose, onSuccess, registration }
       if (formPayment.amount !== Number(registration.payment_amount)) changes.payment_amount = formPayment.amount
       if (!isSameInstant(formPayment.date, registration.payment_date)) {
         changes.payment_date = formPayment.date ? formPayment.date.toISOString() : null
+      }
+
+      // Ekstra dersler ücretsiz katılımda sorulmaz; sunucu sıfırlar
+      if (formData.extraLessons !== (registration.extra_lessons || 0)) {
+        changes.extra_lessons = formData.extraLessons
       }
     }
 
@@ -564,6 +572,12 @@ export default function UpdateModal({ isOpen, onClose, onSuccess, registration }
                     <option value="3ay-hafta-2" className="text-[#1d1d1f] dark:text-white bg-white dark:bg-[#1d1d1f]">
                       {language === 'tr' ? "3 Aylık - 24 Atölye" : "3 Months - 24 Workshops"}
                     </option>
+                    <option value="3ay-yarim-hafta-1" className="text-[#1d1d1f] dark:text-white bg-white dark:bg-[#1d1d1f]">
+                      {language === 'tr' ? "3 Aylık Yarım - 6 Atölye" : "3 Months Half - 6 Workshops"}
+                    </option>
+                    <option value="3ay-yarim-hafta-2" className="text-[#1d1d1f] dark:text-white bg-white dark:bg-[#1d1d1f]">
+                      {language === 'tr' ? "3 Aylık Yarım - 12 Atölye" : "3 Months Half - 12 Workshops"}
+                    </option>
                     <option value="ucretsiz" className="text-[#1d1d1f] dark:text-white bg-white dark:bg-[#1d1d1f]">
                       {language === 'tr' ? "Ücretsiz Katılım" : "Free Participation"}
                     </option>
@@ -905,8 +919,20 @@ export default function UpdateModal({ isOpen, onClose, onSuccess, registration }
                 </p>
               ) : null}
 
-              {/* Notlar - Şimdi full genişlikte */}
-              <div className="md:col-span-2 relative">
+              {/* Ekstra ders (solda) ve notlar (sağda) aynı satırda */}
+              <div>
+                <ExtraLessonsField
+                  value={isFree ? 0 : formData.extraLessons}
+                  onChange={(extraLessons) => setFormData(prev => ({ ...prev, extraLessons }))}
+                  label={language === 'tr' ? 'Ekstra ders' : 'Extra lessons'}
+                  language={language}
+                  disabled={isFree}
+                  tabIndex={11}
+                />
+              </div>
+
+              {/* Notlar */}
+              <div className="relative">
                 <div className={iconWrapperClasses}>
                   <PencilSquareIcon className={iconClasses} />
                 </div>
@@ -917,7 +943,7 @@ export default function UpdateModal({ isOpen, onClose, onSuccess, registration }
                   onChange={handleTextChange('note', upperFirst)}
                   className={inputClasses}
                   placeholder={language === 'tr' ? "Not ekle..." : "Add note..."}
-                  tabIndex={11}
+                  tabIndex={12}
                   autoComplete="off"
                 />
               </div>
@@ -947,7 +973,7 @@ export default function UpdateModal({ isOpen, onClose, onSuccess, registration }
                   type="button"
                   onClick={isConfirmingPaymentChange ? () => setIsConfirmingPaymentChange(false) : onClose}
                   className="w-full h-11 bg-gray-100 dark:bg-[#1d1d1f] text-[#1d1d1f] dark:text-white font-medium rounded-xl hover:bg-gray-200 dark:hover:bg-[#161616] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-200 dark:focus:ring-[#2a2a2a] transition-all transform hover:scale-[1.01] active:scale-[0.98] disabled:opacity-50"
-                  tabIndex={12}
+                  tabIndex={13}
                   disabled={isLoading}
                 >
                   {isConfirmingPaymentChange
@@ -957,7 +983,7 @@ export default function UpdateModal({ isOpen, onClose, onSuccess, registration }
                 <button
                   type="submit"
                   className="w-full h-11 bg-[#1d1d1f] dark:bg-[#0071e3] text-white font-medium rounded-xl hover:bg-black dark:hover:bg-[#0077ed] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#0071e3] transition-all transform hover:scale-[1.01] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                  tabIndex={13}
+                  tabIndex={14}
                   disabled={!isFormValid() || isLoading}
                 >
                   {isLoading ? (

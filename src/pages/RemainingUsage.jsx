@@ -17,6 +17,8 @@ const PACKAGE_FILTERS = [
   { value: 'hafta-4', tr: 'Haftada 4', en: '4 Days/Week' },
   { value: '3ay-hafta-1', tr: '3 Ay - 12 Atölye', en: '3 Mo - 12 Workshops' },
   { value: '3ay-hafta-2', tr: '3 Ay - 24 Atölye', en: '3 Mo - 24 Workshops' },
+  { value: '3ay-yarim-hafta-1', tr: 'Yarım - 6 Atölye', en: 'Half - 6 Workshops' },
+  { value: '3ay-yarim-hafta-2', tr: 'Yarım - 12 Atölye', en: 'Half - 12 Workshops' },
   { value: 'tek-seferlik', tr: 'Tek Seferlik', en: 'One Time' },
   { value: 'ucretsiz', tr: 'Ücretsiz', en: 'Free' }
 ];
@@ -67,6 +69,11 @@ const toStudentRow = (registration, usage) => ({
   is_free: usage.isFree,
   remaining_lessons: usage.remaining,
   carried_lessons: usage.carried,
+  // Yarım ödemede: aynı paketin önceki ödemesiyle birlikte paketin ders hakkı
+  package_total: usage.packageTotal,
+  earlier_payment_lessons: usage.earlierPaymentLessons,
+  // Pakete ek olarak verilen dersler (kayıt penceresindeki "Ekstra ders")
+  extra_lessons: usage.extra,
   attended_lessons: usage.attended,
   no_show_lessons: usage.noShow,
   makeup_completed: usage.makeup,
@@ -322,6 +329,8 @@ const RemainingUsage = () => {
       return type === 'ucretsiz' ? 'Ücretsiz Katılım'
         : type === '3ay-hafta-1' ? '3 Aylık - 12 Atölye'
         : type === '3ay-hafta-2' ? '3 Aylık - 24 Atölye'
+        : type === '3ay-yarim-hafta-1' ? '3 Aylık Yarım - 6 Atölye'
+        : type === '3ay-yarim-hafta-2' ? '3 Aylık Yarım - 12 Atölye'
         : type === 'hafta-1' ? 'Haftada 1'
         : type === 'hafta-2' ? 'Haftada 2'
         : type === 'hafta-3' ? 'Haftada 3'
@@ -331,6 +340,8 @@ const RemainingUsage = () => {
       return type === 'ucretsiz' ? 'Free Participation'
         : type === '3ay-hafta-1' ? '3 Months - 12 Workshops'
         : type === '3ay-hafta-2' ? '3 Months - 24 Workshops'
+        : type === '3ay-yarim-hafta-1' ? '3 Months Half - 6 Workshops'
+        : type === '3ay-yarim-hafta-2' ? '3 Months Half - 12 Workshops'
         : type === 'hafta-1' ? '1 Day/Week'
         : type === 'hafta-2' ? '2 Days/Week'
         : type === 'hafta-3' ? '3 Days/Week'
@@ -695,7 +706,7 @@ const RemainingUsage = () => {
                     // Seçili filtreye yeniden dokunmak filtreyi kaldırır
                     onClick={() => setPackageFilter(packageFilter === option.value ? 'all' : option.value)}
                     className={`
-                      h-9 px-4 rounded-lg text-sm font-medium
+                      h-9 px-2 rounded-lg text-sm font-medium
                       ${packageFilter === option.value
                         ? 'bg-[#1d1d1f] dark:bg-[#0071e3] text-white'
                         : 'bg-white dark:bg-[#1d1d1f] text-[#1d1d1f] dark:text-white border border-[#d2d2d7] dark:border-[#2a3241] hover:border-[#0071e3] dark:hover:border-[#0071e3]'
@@ -868,6 +879,20 @@ const RemainingUsage = () => {
                           {language === 'tr'
                             ? `${selectedStudent.carried_lessons} ders önceki paketten devretti`
                             : `${selectedStudent.carried_lessons} carried over from the previous package`}
+                        </p>
+                      )}
+                      {!selectedStudent.is_free && selectedStudent.earlier_payment_lessons > 0 && (
+                        <p className="mt-1 text-[11px] text-[#6e6e73] dark:text-[#86868b]">
+                          {language === 'tr'
+                            ? `Önceki ödemeyle birlikte paket ${selectedStudent.package_total} ders`
+                            : `${selectedStudent.package_total} lessons with the earlier payment`}
+                        </p>
+                      )}
+                      {!selectedStudent.is_free && selectedStudent.extra_lessons > 0 && (
+                        <p className="mt-1 text-[11px] text-[#6e6e73] dark:text-[#86868b]">
+                          {language === 'tr'
+                            ? `${selectedStudent.extra_lessons} ekstra ders verildi`
+                            : `${selectedStudent.extra_lessons} extra lesson${selectedStudent.extra_lessons === 1 ? '' : 's'} given`}
                         </p>
                       )}
                     </div>

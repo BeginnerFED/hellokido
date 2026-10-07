@@ -1,4 +1,5 @@
 import { differenceInCalendarDays, startOfDay } from 'date-fns';
+import { isHalfPackage } from './lessonUsage';
 
 // Paket dönemi (başlangıç - bitiş) ile ilgili form kuralları.
 //
@@ -39,7 +40,8 @@ export const getPeriodTypeHint = (packageType, startDate, endDate, language = 't
       ? `Seçilen dönem ${days} gün. 3 aylık paketse paket türünü de değiştirin.`
       : `The selected period is ${days} days. If this is a 3-month package, change the package type too.`;
   }
-  if (packageType.startsWith('3ay-') && days >= 1 && days < 46) {
+  // Yarım ödemede dönem uzunluğu serbesttir: paketin tamamı ya da yalnızca ödenen yarısı girilebilir
+  if (packageType.startsWith('3ay-') && !isHalfPackage(packageType) && days >= 1 && days < 46) {
     return tr
       ? `Seçilen dönem ${days} gün. Aylık paketse paket türünü de değiştirin.`
       : `The selected period is ${days} days. If this is a monthly package, change the package type too.`;
