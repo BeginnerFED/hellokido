@@ -34,7 +34,7 @@ export function ChildPicker({
   }, [registrations.data, pinned, query])
 
   return (
-    <div className="flex flex-col gap-3 rounded-panel border border-line bg-surface-2 p-3">
+    <div className="on-felt flex flex-col gap-3 rounded-[1.25rem] bg-felt p-3">
       <SearchField value={query} onChange={setQuery} placeholder={t.calendar.lesson.pickerSearch} label={t.calendar.lesson.chooseChildren} autoFocus />
       {registrations.isError ? (
         <LoadError message={t.calendar.lesson.pickerFailed} retryLabel={t.common.retry} onRetry={() => void registrations.refetch()} />
@@ -45,7 +45,7 @@ export function ChildPicker({
           ))}
         </div>
       ) : list.length === 0 ? (
-        <p className="py-4 text-center text-sm text-ink-2">{t.calendar.lesson.pickerEmpty}</p>
+        <p className="py-4 text-center text-sm text-ink-3">{t.calendar.lesson.pickerEmpty}</p>
       ) : (
         <ul aria-label={t.calendar.lesson.chooseChildren} className="-mx-1 max-h-72 overflow-y-auto overscroll-contain">
           {list.map((child) => (
@@ -53,7 +53,7 @@ export function ChildPicker({
               <Checkbox
                 isSelected={selected.has(child.id)}
                 onChange={(on) => onToggle(child, on)}
-                className="rounded-control px-1 py-2 data-hovered:bg-well"
+                className="rounded-[0.875rem] px-2 py-2 transition-colors duration-150 data-hovered:bg-hover"
               >
                 <span className="block text-[0.9375rem] font-medium text-ink">{child.student_name}</span>
                 <span className="block text-[0.8125rem] text-ink-3">
@@ -65,7 +65,7 @@ export function ChildPicker({
         </ul>
       )}
       <div className="flex items-center gap-3 border-t border-line pt-3">
-        <span className="min-w-0 flex-1 text-[0.8125rem] text-ink-2 tabular">{plural(t.calendar.lesson.selected, selected.size)}</span>
+        <span className="min-w-0 flex-1 text-[0.84375rem] text-ink-2">{plural(t.calendar.lesson.selected, selected.size)}</span>
         <Button size="sm" variant="secondary" onPress={onDone}>
           {t.calendar.lesson.pickerDone}
         </Button>

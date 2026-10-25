@@ -13,7 +13,7 @@ import { useColors } from '../../theme/colors'
 import { EmptyState, LoadError, Skeleton } from '../../ui/Bits'
 import { Button, IconButton } from '../../ui/Button'
 import { SearchField } from '../../ui/Fields'
-import { Screen, Section } from '../../ui/Screen'
+import { Card, Screen, Section } from '../../ui/Screen'
 import { Text } from '../../ui/Text'
 import { useToast } from '../../ui/Toast'
 import { useCopyNote } from './copy'
@@ -62,12 +62,13 @@ export function NotesScreen() {
     }
   }
 
+  // The notes of a group as the rows of one card, as the phone's Notes lists them
   const cards = (notes: Note[]) => (
-    <View style={styles.cards}>
+    <Card>
       {notes.map((note) => (
-        <NoteCard key={note.id} note={note} onCopy={() => void copy(note)} onFavorite={() => void toggleFavorite(note)} />
+        <NoteRow key={note.id} note={note} onCopy={() => void copy(note)} onFavorite={() => void toggleFavorite(note)} />
       ))}
-    </View>
+    </Card>
   )
 
   return (
@@ -77,22 +78,20 @@ export function NotesScreen() {
         {list.isError ? (
           <LoadError message={t.notes.loadFailed} retryLabel={t.common.retry} onRetry={() => void list.refetch()} />
         ) : !rows ? (
-          <View style={styles.cards}>
-            {[0, 1, 2].map((key) => (
-              <Skeleton key={key} height={150} radius={18} />
-            ))}
-          </View>
+          <Skeleton height={420} radius={26} />
         ) : rows.length === 0 ? (
-          <EmptyState
-            icon="note"
-            title={t.notes.empty}
-            body={t.notes.emptyBody}
-            action={
-              <Button variant="primary" icon="add" onPress={() => tasks.note()}>
-                {t.notes.add}
-              </Button>
-            }
-          />
+          <Card padded>
+            <EmptyState
+              icon="note"
+              title={t.notes.empty}
+              body={t.notes.emptyBody}
+              action={
+                <Button variant="primary" icon="add" onPress={() => tasks.note()}>
+                  {t.notes.add}
+                </Button>
+              }
+            />
+          </Card>
         ) : (
           <>
             <View style={styles.top}>
@@ -102,15 +101,17 @@ export function NotesScreen() {
               {search && <SearchField value={query} onChange={setQuery} placeholder={t.notes.search} label={t.notes.search} />}
             </View>
             {shown.length === 0 ? (
-              <EmptyState
-                icon="search"
-                title={t.notes.noMatch}
-                action={
-                  <Button size="sm" onPress={() => setQuery('')}>
-                    {t.mobile.clearSearch}
-                  </Button>
-                }
-              />
+              <Card padded>
+                <EmptyState
+                  icon="search"
+                  title={t.notes.noMatch}
+                  action={
+                    <Button size="sm" onPress={() => setQuery('')}>
+                      {t.mobile.clearSearch}
+                    </Button>
+                  }
+                />
+              </Card>
             ) : favorites.length > 0 ? (
               <>
                 <Section title={t.notes.favorites} aside={favorites.length}>
@@ -132,7 +133,7 @@ export function NotesScreen() {
   )
 }
 
-function NoteCard({ note, onCopy, onFavorite }: { note: Note; onCopy: () => void; onFavorite: () => void }) {
+function NoteRow({ note, onCopy, onFavorite }: { note: Note; onCopy: () => void; onFavorite: () => void }) {
   const c = useColors()
   const { t, fmt, date } = useI18n()
   const color = noteColor(note.color)
@@ -140,7 +141,7 @@ function NoteCard({ note, onCopy, onFavorite }: { note: Note; onCopy: () => void
   const content = note.content?.trim()
 
   return (
-    <View style={[styles.card, { backgroundColor: c.surface, borderColor: c.line }]}>
+    <View style={styles.note}>
       <View style={styles.cardTop}>
         {/* The words open the note; the star and the copy button stay buttons of their own */}
         <Pressable
@@ -152,12 +153,12 @@ function NoteCard({ note, onCopy, onFavorite }: { note: Note; onCopy: () => void
           <View style={styles.titleLine}>
             {/* The note's own colour stays on its dot: a tinted card in red would read as a warning */}
             {color && <View style={[styles.dot, { backgroundColor: color }]} />}
-            <Text variant="callout" weight="600" numberOfLines={2} style={styles.title}>
+            <Text variant="headline" numberOfLines={2} style={styles.title}>
               {note.title}
             </Text>
           </View>
           {content && (
-            <Text variant="sub" tone="ink2" numberOfLines={6}>
+            <Text variant="sub" tone="ink2" numberOfLines={4}>
               {content}
             </Text>
           )}
@@ -186,15 +187,14 @@ function NoteCard({ note, onCopy, onFavorite }: { note: Note; onCopy: () => void
 const styles = StyleSheet.create({
   top: { gap: 12 },
   summary: { paddingHorizontal: 4 },
-  cards: { gap: 10 },
-  // A phone card like every other: white with its hairline edge
-  card: { borderRadius: 18, borderWidth: 1, paddingLeft: 16, paddingRight: 8, paddingTop: 12, paddingBottom: 12, gap: 10 },
+  // A row of the card: no edge of its own, the hairline between notes is the card's
+  note: { paddingLeft: 16, paddingRight: 8, paddingTop: 12, paddingBottom: 12, gap: 10 },
   cardTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 4 },
   cardText: { flex: 1, minWidth: 0, gap: 6, paddingTop: 2 },
   pressed: { opacity: 0.6 },
   // The dot sits on the first line of a title that wraps
   titleLine: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
-  dot: { width: 10, height: 10, borderRadius: 5, marginTop: 5.5 },
+  dot: { width: 10, height: 10, borderRadius: 5, marginTop: 6 },
   title: { flex: 1, minWidth: 0 },
   cardFoot: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingRight: 8 }
 })

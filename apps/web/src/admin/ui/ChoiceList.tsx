@@ -26,23 +26,25 @@ export function ChoiceList<K extends string>({
   'aria-label'?: string
 }) {
   return (
-    <ul aria-label={aria['aria-label']} className={cx('-mx-2 flex flex-col gap-0.5', className)}>
+    <ul aria-label={aria['aria-label']} className={cx('flex flex-col gap-2', className)}>
       {items.map((item) => (
         <li key={item.id}>
+          {/* A felt row that lifts off the board under the pointer */}
           <AriaButton
             onPress={() => onChoose(item.id)}
             isDisabled={item.isDisabled}
             className={cx(
-              'group flex w-full items-start gap-3.5 rounded-control px-2 py-2.5 text-left outline-none transition-colors duration-150',
-              'data-hovered:bg-well data-pressed:bg-well data-focus-visible:ring-2 data-focus-visible:ring-focus data-disabled:opacity-50'
+              'on-felt group flex w-full items-start gap-3.5 rounded-tile bg-felt px-3.5 py-3 text-left outline-none',
+              'transition-[background-color,box-shadow,scale] duration-150 data-pressed:scale-[0.99]',
+              'data-hovered:bg-raised data-hovered:shadow-lift data-focus-visible:ring-2 data-focus-visible:ring-focus data-disabled:opacity-50'
             )}
           >
             {item.icon && (
               <span
                 aria-hidden
                 className={cx(
-                  'grid size-9 shrink-0 place-items-center rounded-tablet',
-                  item.tone === 'action' ? 'bg-action-wash text-action-ink' : 'bg-accent-wash text-accent-ink'
+                  'grid size-9 shrink-0 place-items-center rounded-full',
+                  item.tone === 'action' ? 'bg-action-wash text-amber-ink' : 'bg-piece text-accent-ink group-data-hovered:bg-felt'
                 )}
               >
                 {item.icon}

@@ -1,22 +1,31 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
-import { Alert, Keyboard, LayoutAnimation, Platform, ScrollView, StyleSheet, TextInput, View, type KeyboardEvent, type ScrollViewInstance, type ViewInstance } from 'react-native'
-import { router, usePreventRemove } from 'expo-router'
+import { Alert, BackHandler, Keyboard, LayoutAnimation, Platform, ScrollView, StyleSheet, TextInput, View, type KeyboardEvent, type ScrollViewInstance, type ViewInstance } from 'react-native'
+import { router, Stack, useNavigation, usePreventRemove, type NativeStackNavigationOptions } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useI18n } from '../providers/I18n'
 import type { Colors } from '../theme/colors'
 import { useColors } from '../theme/colors'
-import { IconButton } from './Button'
+import { fontOf } from '../theme/fonts'
+import { Button, IconButton } from './Button'
 import { OfflineNotice } from './OfflineNotice'
 import { Text } from './Text'
 
-/** Every task opens as the phone's own sheet over the page it was started from. */
-export function sheetOptions(c: Colors) {
+/**
+ * Every task opens as the phone's own modal with a real navigation bar: the iPhone's page sheet and
+ * a full page that slides up on Android. The bar is the same paper as the form, with no rule under it;
+ * the form's fields sit on felt cards.
+ */
+export function sheetOptions(c: Colors): NativeStackNavigationOptions {
   return {
-    presentation: 'formSheet' as const,
-    sheetAllowedDetents: [1],
-    sheetGrabberVisible: true,
-    sheetCornerRadius: 22,
-    contentStyle: { backgroundColor: c.ground }
+    presentation: 'modal',
+    headerShown: true,
+    headerShadowVisible: false,
+    headerStyle: { backgroundColor: c.sheet },
+    // The close and back items take the ink; only the main action is blue
+    headerTintColor: c.ink,
+    headerTitleStyle: { fontSize: 17, color: c.ink, ...fontOf('600') },
+    contentStyle: { backgroundColor: c.sheet },
+    ...(Platform.OS === 'android' ? { animation: 'slide_from_bottom' as const, headerTitleAlign: 'center' as const } : null)
   }
 }
 
@@ -68,8 +77,7 @@ function useKeyboardOverlap(ref: RefObject<ViewInstance | null>, enabled: boolea
       if (height === 0) return settle(event, 0)
       if (!view) return settle(event, height)
       const lifted = (y: number, viewHeight: number) => settle(event, viewHeight > 0 ? Math.max(0, Math.round(y + viewHeight - screenY)) : height)
-      // Android places the sheet natively, so only measure() sees where it really starts on screen;
-      // measureInWindow() reports it at the top and the lift fell short by the sheet's top offset
+      // Android places the screen natively, so only measure() sees where it really starts on screen
       if (ios) view.measureInWindow((_x, y, _width, viewHeight) => lifted(y, viewHeight))
       else view.measure((_x, _y, _width, viewHeight, _pageX, pageY) => lifted(pageY, viewHeight))
     }
@@ -82,24 +90,56 @@ function useKeyboardOverlap(ref: RefObject<ViewInstance | null>, enabled: boolea
   return enabled ? overlap : 0
 }
 
+/** The one main thing a form does ("Add", "Save"), at the right of the bar as in the phone's New Event. */
+export type SheetAction = { label: string; onPress: () => void; disabled?: boolean }
+
+/** What a form inside a sheet tells the sheet that draws its bar. */
+export type FormState = {
+  dirty: boolean
+  busy: boolean
+  /** Everything needed is filled in: the bar's main button can be pressed. */
+  ready?: boolean
+  /** Runs the form's save from the bar's main button (see useReportForm). */
+  submit?: () => void
+}
+
+/**
+ * Reports a form to the sheet that draws its bar: changed, saving, ready, and how to save it. The
+ * save is looked up when the bar's button is pressed, so it never runs with an earlier render's values.
+ */
+export function useReportForm(onStateChange: (state: FormState) => void, { dirty, busy, ready }: { dirty: boolean; busy: boolean; ready: boolean }, save: () => void) {
+  const latest = useRef(save)
+  useEffect(() => {
+    latest.current = save
+  })
+  const submit = useCallback(() => latest.current(), [])
+  useEffect(() => onStateChange({ dirty, busy, ready, submit }), [dirty, busy, ready, submit, onStateChange])
+}
+
+/** The bar's main button for a form that reports through useReportForm; none until the form is there. */
+export const formAction = (state: FormState, label: string): SheetAction | undefined =>
+  state.submit ? { label, disabled: !state.ready, onPress: state.submit } : undefined
+
 type Props = {
   title: string
-  /** Who or what the sheet is about, under the title. */
+  /** Who or what the sheet is about: the first line of the sheet, under the bar. */
   subtitle?: ReactNode
   children: ReactNode
   /** Something typed in and not saved: closing asks first. */
   dirty?: boolean
-  /** Saving: the sheet stays until the answer is back. */
+  /** Saving: the sheet stays until the answer is back, and its bar buttons wait. */
   busy?: boolean
-  /** A step back inside the sheet (the payment's child and choice). */
+  /** A step back inside the sheet (the payment's child and choice): the bar's left button goes back instead of closing. */
   onBack?: () => void
   backLabel?: string
+  /** The form's main button in the bar. Messages about it stay in the form (SheetActions error). */
+  action?: SheetAction
   /** The button of a long list to tick, kept under the list so it never scrolls away. */
   footer?: ReactNode
 }
 
-/** A task sheet: title, close, and the form, which scrolls above the keyboard. */
-export function SheetScreen({ title, subtitle, children, dirty, busy, onBack, backLabel, footer }: Props) {
+/** A task sheet: the title and close in the bar, and the form, which scrolls under the bar and above the keyboard. */
+export function SheetScreen({ title, subtitle, children, dirty, busy, onBack, backLabel, action, footer }: Props) {
   const c = useColors()
   const { t } = useI18n()
   const insets = useSafeAreaInsets()
@@ -107,7 +147,7 @@ export function SheetScreen({ title, subtitle, children, dirty, busy, onBack, ba
   // Set once the work is saved or thrown away: from then on the sheet closes without asking
   const [released, setReleased] = useState(false)
   // The iPhone keeps a scrolling form above the keyboard itself. A foot outside the scroll, and
-  // every sheet on Android (whose full-height sheet never moves), lift by hand instead.
+  // every sheet on Android (whose page never moves), lift by hand instead.
   const lift = Platform.OS === 'android' || footer !== undefined
   const keyboard = useKeyboardOverlap(root, lift)
   const scroller = useRef<ScrollViewInstance | null>(null)
@@ -149,6 +189,19 @@ export function SheetScreen({ title, subtitle, children, dirty, busy, onBack, ba
   })
 
   const close = useCallback(() => router.back(), [])
+
+  // Android's back key takes the same step back as the bar's back button (picker → form) instead of
+  // offering to close the whole sheet
+  const navigation = useNavigation()
+  useEffect(() => {
+    if (Platform.OS !== 'android' || !onBack) return
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (!navigation.isFocused()) return false
+      if (!busy) onBack()
+      return true
+    })
+    return () => subscription.remove()
+  }, [onBack, busy, navigation])
   const value = useMemo<SheetValue>(
     () => ({
       finish: () => {
@@ -172,35 +225,49 @@ export function SheetScreen({ title, subtitle, children, dirty, busy, onBack, ba
     }
   }, [])
 
+  const leave = onBack ?? close
+  const leaveLabel = onBack ? (backLabel ?? t.common.back) : t.common.close
+  // Every key is set each time, so a step of the sheet never keeps the buttons of the step before
+  const options = useMemo<NativeStackNavigationOptions>(
+    () =>
+      Platform.OS === 'ios'
+        ? {
+            title,
+            unstable_headerLeftItems: () => [
+              { type: 'button', label: leaveLabel, icon: { type: 'sfSymbol', name: onBack ? 'chevron.left' : 'xmark' }, onPress: leave, disabled: busy }
+            ],
+            // iOS 26 draws the prominent item as a capsule in the tint with white words, like the
+            // checkmark of New Event; the solid blue keeps those words readable in both themes
+            unstable_headerRightItems: action
+              ? () => [{ type: 'button', label: action.label, variant: 'prominent', tintColor: c.fill, onPress: action.onPress, disabled: Boolean(action.disabled || busy) }]
+              : undefined
+          }
+        : {
+            title,
+            headerLeft: () => <IconButton icon={onBack ? 'chevronLeft' : 'close'} label={leaveLabel} variant="felt" size={40} color={c.ink} onPress={leave} disabled={busy} />,
+            headerRight: action
+              ? () => (
+                  <Button variant="primary" size="sm" onPress={action.onPress} disabled={action.disabled} busy={busy}>
+                    {action.label}
+                  </Button>
+                )
+              : undefined
+          },
+    [title, leaveLabel, onBack, leave, busy, action, c]
+  )
+
   // While the keyboard is up it covers the home indicator, so that space is not added twice
   const bottom = keyboard > 0 ? 0 : insets.bottom
 
   return (
     <SheetContext.Provider value={value}>
-      <View ref={root} style={[styles.sheet, { backgroundColor: c.ground, paddingBottom: keyboard }]}>
-        <View style={[styles.header, Platform.OS === 'android' && { paddingTop: 12 }]}>
-          <View style={styles.side}>
-            {onBack && <IconButton icon="chevronLeft" label={backLabel ?? t.common.back} variant="well" size={32} onPress={onBack} disabled={busy} />}
-          </View>
-          <View style={styles.titleBlock}>
-            <Text variant="headline" align="center" numberOfLines={1} accessibilityRole="header">
-              {title}
-            </Text>
-            {subtitle !== undefined &&
-              (typeof subtitle === 'string' ? (
-                <Text variant="foot" tone="ink2" align="center" numberOfLines={1}>
-                  {subtitle}
-                </Text>
-              ) : (
-                subtitle
-              ))}
-          </View>
-          <View style={[styles.side, styles.end]}>
-            <IconButton icon="close" label={t.common.close} variant="well" size={32} onPress={close} disabled={busy} />
-          </View>
-        </View>
+      <Stack.Screen options={options} />
+      <View ref={root} style={[styles.sheet, { backgroundColor: c.sheet, paddingBottom: keyboard }]}>
         <ScrollView
           ref={scroller}
+          style={styles.scroll}
+          // The form starts under the bar and scrolls beneath it, where the system blurs its edge
+          contentInsetAdjustmentBehavior="automatic"
           onScroll={(event) => {
             scrolled.current = event.nativeEvent.contentOffset.y
           }}
@@ -211,6 +278,14 @@ export function SheetScreen({ title, subtitle, children, dirty, busy, onBack, ba
           contentContainerStyle={[styles.body, { paddingBottom: footer ? 24 : bottom + 24 }]}
         >
           <OfflineNotice />
+          {subtitle !== undefined &&
+            (typeof subtitle === 'string' ? (
+              <Text variant="sub" tone="ink2" align="center" numberOfLines={2} style={styles.subtitle}>
+                {subtitle}
+              </Text>
+            ) : (
+              subtitle
+            ))}
           {children}
         </ScrollView>
         {footer && (
@@ -218,7 +293,7 @@ export function SheetScreen({ title, subtitle, children, dirty, busy, onBack, ba
             onLayout={(event) => {
               footHeight.current = event.nativeEvent.layout.height
             }}
-            style={[styles.footer, { borderTopColor: c.line, backgroundColor: c.ground, paddingBottom: bottom + 12 }]}
+            style={[styles.footer, { borderTopColor: c.line, backgroundColor: c.sheet, paddingBottom: bottom + 12 }]}
           >
             {footer}
           </View>
@@ -228,14 +303,16 @@ export function SheetScreen({ title, subtitle, children, dirty, busy, onBack, ba
   )
 }
 
-/** The form's main button, last in the sheet: in reach of the thumb, above the keyboard when it is open. */
-export function SheetActions({ children, error }: { children: ReactNode; error?: string | null }) {
+/** The form's messages and, for forms whose action is not in the bar, its main button, last in the sheet. */
+export function SheetActions({ children, error }: { children?: ReactNode; error?: string | null }) {
   const c = useColors()
+  if (!children && !error) return null
   return (
     <View style={styles.actions}>
       {error ? (
-        <View accessibilityRole="alert" accessibilityLiveRegion="polite" style={[styles.error, { backgroundColor: c.negativeWash, borderColor: c.negativeLine }]}>
-          <Text variant="foot" style={{ color: c.negativeInk }}>
+        <View accessibilityRole="alert" accessibilityLiveRegion="polite" style={[styles.error, { backgroundColor: c.felt }]}>
+          <View style={[styles.errorDot, { backgroundColor: c.negative }]} />
+          <Text variant="sub" style={{ color: c.negativeInk, flex: 1 }}>
             {error}
           </Text>
         </View>
@@ -247,12 +324,11 @@ export function SheetActions({ children, error }: { children: ReactNode; error?:
 
 const styles = StyleSheet.create({
   sheet: { flex: 1 },
-  header: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingTop: 18, paddingBottom: 10 },
-  side: { width: 44, alignItems: 'flex-start' },
-  end: { alignItems: 'flex-end' },
-  titleBlock: { flex: 1, minWidth: 0, alignItems: 'center' },
-  body: { paddingHorizontal: 16, paddingTop: 6, gap: 20 },
+  scroll: { flex: 1 },
+  body: { paddingHorizontal: 16, paddingTop: 8, gap: 20 },
+  subtitle: { marginBottom: -8, paddingHorizontal: 16 },
   footer: { paddingHorizontal: 16, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth },
   actions: { gap: 12, marginTop: 4 },
-  error: { borderRadius: 14, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10 }
+  error: { borderRadius: 20, paddingHorizontal: 16, paddingVertical: 12, flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  errorDot: { width: 7, height: 7, borderRadius: 4, marginTop: 6 }
 })

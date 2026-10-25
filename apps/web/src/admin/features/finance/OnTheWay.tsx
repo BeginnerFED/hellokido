@@ -6,9 +6,8 @@ import { arrivalOf } from '@hellokido/core/view'
 import { keys, useCatalog, useLabels } from '../../data/queries'
 import { useI18n } from '../../providers/I18n'
 import { LoadError } from '../../ui/Bits'
-import { Button } from '../../ui/Button'
-import { Section } from '../../ui/Page'
-import { ListSkeleton, Rows } from './bits'
+import { Card, CardLink } from '../../ui/Page'
+import { DateTile, ListSkeleton, Rows, cardPad } from './bits'
 
 const FIRST = 5
 const NAMES = 2
@@ -63,53 +62,56 @@ export function OnTheWaySection({ today, id, className }: { today: Date; id?: st
 
   const who = (line: IncomeLine) => (line.source === 'other' ? line.description || labels.incomeCategory(line.category) : line.student)
 
+  const commission = groups && groups.length > 0 && rate > 0 ? fmt(t.finance.card.commission, { rate: ratePercent, amount: money(total * (1 - rate / 100)) }) : null
+  const more = groups && groups.length > FIRST + 1
+
   return (
-    <Section
-      boxed
+    <Card
       id={id}
       title={t.finance.card.title}
-      aside={total > 0 ? <span className="font-medium text-ink tabular">{money(total)}</span> : undefined}
+      aside={total > 0 ? <span className="font-semibold text-ink">{money(total)}</span> : undefined}
       className={className}
+      footer={
+        (commission || more) && (
+          <>
+            <span className="text-pretty">{commission}</span>
+            {more && <CardLink onPress={() => setUnfolded((on) => !on)}>{unfolded ? t.common.showLess : t.common.showAll}</CardLink>}
+          </>
+        )
+      }
     >
-      <p className="mb-2 text-[0.8125rem] text-ink-3 text-pretty">{plural(t.finance.card.note, days)}</p>
+      <p className={`${cardPad} -mt-1 text-[0.84375rem] text-ink-3 text-pretty`}>{plural(t.finance.card.note, days)}</p>
       {cards.isError ? (
-        <LoadError message={t.common.loadFailed} retryLabel={t.common.retry} onRetry={() => void cards.refetch()} />
+        <div className={cardPad}>
+          <LoadError message={t.common.loadFailed} retryLabel={t.common.retry} onRetry={() => void cards.refetch()} />
+        </div>
       ) : !groups ? (
         <ListSkeleton rows={2} />
       ) : groups.length === 0 ? (
-        <p className="text-sm text-ink-2">{t.finance.card.empty}</p>
+        <p className={`${cardPad} text-[0.9375rem] text-ink-2`}>{t.finance.card.empty}</p>
       ) : (
-        <>
-          <Rows>
-            {shown.map((group) => {
-              const names = group.lines.slice(0, NAMES).map(who).filter(Boolean)
-              const more = group.lines.length - NAMES
-              return (
-                <li key={group.day.toISOString()} className="flex items-center gap-3 py-2.5">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[0.9375rem] font-medium text-ink">
-                      {isSameDay(group.day, today) ? t.finance.card.arrivesToday : fmt(t.finance.card.arrives, { date: date(group.day, { day: 'numeric', month: 'long' }) })}
-                    </p>
-                    <p className="truncate text-[0.8125rem] text-ink-3">
-                      {plural(t.finance.card.payments, group.lines.length)} · {names.join(', ')}
-                      {more > 0 && ` +${more}`}
-                    </p>
-                  </div>
-                  <span className="shrink-0 text-sm font-semibold tabular">{money(group.amount)}</span>
-                </li>
-              )
-            })}
-          </Rows>
-          {groups.length > FIRST + 1 && (
-            <Button variant="ghost" size="sm" className="mt-1 -ml-3" onPress={() => setUnfolded((on) => !on)}>
-              {unfolded ? t.common.showLess : t.common.showAll}
-            </Button>
-          )}
-          {rate > 0 && (
-            <p className="mt-2 text-[0.8125rem] text-ink-2">{fmt(t.finance.card.commission, { rate: ratePercent, amount: money(total * (1 - rate / 100)) })}</p>
-          )}
-        </>
+        <Rows className="pb-1.5">
+          {shown.map((group) => {
+            const names = group.lines.slice(0, NAMES).map(who).filter(Boolean)
+            const others = group.lines.length - NAMES
+            return (
+              <li key={group.day.toISOString()} className="flex items-center gap-3 py-[0.6875rem]">
+                <DateTile day={group.day} />
+                <div className="min-w-0 flex-1">
+                  <p className="text-[0.96875rem] leading-[1.3125rem] font-medium text-ink">
+                    {isSameDay(group.day, today) ? t.finance.card.arrivesToday : fmt(t.finance.card.arrives, { date: date(group.day, { day: 'numeric', month: 'long' }) })}
+                  </p>
+                  <p className="truncate text-[0.84375rem] leading-[1.125rem] text-ink-3">
+                    {plural(t.finance.card.payments, group.lines.length)} · {names.join(', ')}
+                    {others > 0 && ` +${others}`}
+                  </p>
+                </div>
+                <span className="shrink-0 text-[0.96875rem] font-semibold whitespace-nowrap">{money(group.amount)}</span>
+              </li>
+            )
+          })}
+        </Rows>
       )}
-    </Section>
+    </Card>
   )
 }

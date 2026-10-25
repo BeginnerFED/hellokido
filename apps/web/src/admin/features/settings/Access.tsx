@@ -6,10 +6,10 @@ import { useI18n } from '../../providers/I18n'
 import { useToast } from '../../providers/Toasts'
 import { initialsOf, LoadError, Mark } from '../../ui/Bits'
 import { Button } from '../../ui/Button'
+import { cx } from '../../ui/cx'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { TextField } from '../../ui/Field'
-import { ListSkeleton } from '../finance/bits'
-import { SettingList } from './bits'
+import { PAD, SettingBody, SettingList, SettingSkeleton } from './bits'
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -75,27 +75,26 @@ export function Access() {
   return (
     <>
       {admins.isError ? (
-        <LoadError message={t.common.loadFailed} retryLabel={t.common.retry} onRetry={() => void admins.refetch()} />
+        <SettingBody>
+          <LoadError message={t.common.loadFailed} retryLabel={t.common.retry} onRetry={() => void admins.refetch()} />
+        </SettingBody>
       ) : !admins.data ? (
-        <ListSkeleton rows={2} />
+        <SettingSkeleton rows={2} />
       ) : (
         <SettingList>
           {admins.data.map((admin) => (
-            <li key={admin.user_id} className="flex min-h-14 items-center gap-3 py-2">
-              <span
-                aria-hidden
-                className="grid size-8 shrink-0 place-items-center rounded-full bg-accent-wash-2 text-[0.75rem] font-semibold text-accent-ink"
-              >
+            <li key={admin.user_id} className={cx('flex min-h-[3.5rem] items-center gap-3 border-t border-line py-2 first:border-t-0', PAD)}>
+              <span aria-hidden className="grid size-9 shrink-0 place-items-center rounded-full bg-piece text-[0.8125rem] font-semibold text-ink-2">
                 {initialsOfEmail(admin.email)}
               </span>
-              <span className="min-w-0 flex-1 truncate text-[0.9375rem] text-ink">{admin.email}</span>
+              <span className="min-w-0 flex-1 truncate text-[0.96875rem] font-medium text-ink">{admin.email}</span>
               {admin.is_self ? (
                 <Mark tone="neutral">{copy.you}</Mark>
               ) : (
                 <Button
-                  variant="ghost"
+                  variant="secondary"
                   size="sm"
-                  className="-mr-3 shrink-0 max-lg:h-10"
+                  className="shrink-0 max-lg:h-10"
                   aria-label={fmt(copy.removeLabel, { email: admin.email })}
                   onPress={() => setRemoving(admin)}
                 >
@@ -107,7 +106,7 @@ export function Access() {
         </SettingList>
       )}
 
-      <form onSubmit={(event) => void grant(event)} noValidate className="mt-5 flex max-w-[28rem] flex-col items-start gap-3">
+      <form onSubmit={(event) => void grant(event)} noValidate className={cx(PAD, 'flex flex-col items-start gap-3 border-t border-line pt-4 pb-5')}>
         <TextField
           type="email"
           label={copy.email}
@@ -121,7 +120,7 @@ export function Access() {
           autoComplete="off"
           validationBehavior="aria"
           errorMessage={error}
-          className="w-full"
+          className="w-full max-w-[28rem]"
         />
         <Button type="submit" variant="secondary" isDisabled={!email.trim()} isPending={granting}>
           {copy.grant}

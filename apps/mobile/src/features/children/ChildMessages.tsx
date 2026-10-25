@@ -5,11 +5,8 @@ import { whatsAppLink } from '@hellokido/core/rules/phone.js'
 import { useChildReminders, useReminderLog, useTemplates } from '../../data/messages'
 import { useCatalog, useChildLessons } from '../../data/queries'
 import { useI18n } from '../../providers/I18n'
-import { useColors } from '../../theme/colors'
 import type { MenuItem } from '../../ui/ActionMenu'
-import { Button } from '../../ui/Button'
-import { Icon } from '../../ui/Icon'
-import { Card, Section } from '../../ui/Screen'
+import { ActionRow, Card, IconTile, Section } from '../../ui/Screen'
 import { DOT, Text } from '../../ui/Text'
 
 const open = (url: string) => Linking.openURL(url).catch(() => undefined)
@@ -78,7 +75,6 @@ const FIRST = 4
 
 /** What was sent to this family from the panel or a phone, newest first; nothing until something was. */
 export function MessageHistory({ registration }: { registration: Registration }) {
-  const c = useColors()
   const { t, date } = useI18n()
   const history = useChildReminders(registration.id)
   const templates = useTemplates().data
@@ -89,29 +85,27 @@ export function MessageHistory({ registration }: { registration: Registration })
 
   return (
     <Section title={t.messages.send.history} aside={rows.length}>
-      <Card inset={44}>
+      <Card>
         {shown.map((entry) => {
           const title = templates?.find((template) => template.id === entry.template_id)?.title
           const kind = t.messages.kinds[entry.kind as MessageKind] ?? entry.kind
           return (
             <View key={entry.id} style={styles.row}>
-              <Icon name="chat" size={16} color={c.positiveInk} />
-              <Text variant="sub" numberOfLines={1} style={styles.flex}>
-                {title ?? kind}
-                {title && title !== kind ? <Text variant="sub" tone="ink3">{`${DOT}${kind}`}</Text> : null}
-              </Text>
-              <Text variant="foot" tone="ink3" tabular>
-                {date(entry.sent_at, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-              </Text>
+              <IconTile icon="chat" />
+              <View style={styles.flex}>
+                <Text weight="500" numberOfLines={1}>
+                  {title ?? kind}
+                </Text>
+                <Text variant="sub" tone="ink3" tabular numberOfLines={1}>
+                  {title && title !== kind ? `${kind}${DOT}` : ''}
+                  {date(entry.sent_at, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                </Text>
+              </View>
             </View>
           )
         })}
+        {!all && rows.length > FIRST && <ActionRow label={t.messages.send.showAll} onPress={() => setAll(true)} />}
       </Card>
-      {!all && rows.length > FIRST && (
-        <Button variant="plain" size="sm" onPress={() => setAll(true)} style={styles.more}>
-          {t.messages.send.showAll}
-        </Button>
-      )}
     </Section>
   )
 }
@@ -119,6 +113,5 @@ export function MessageHistory({ registration }: { registration: Registration })
 const styles = StyleSheet.create({
   flex: { flex: 1, minWidth: 0 },
   // The same row height as the payments and lessons above it on the page
-  row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12, minHeight: 56 },
-  more: { alignSelf: 'flex-start', marginTop: 6, marginLeft: 4 }
+  row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 11, minHeight: 62 }
 })

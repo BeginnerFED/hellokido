@@ -1,127 +1,34 @@
 @import "tailwindcss";
 
-/* Euclid Circular A, the type of the Vizion Menu panel, from the same font service as the public
-   calendar. The files stay out of the repository, which is public. */
-@font-face {
-  font-family: "Euclid Circular A";
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url("https://fonts.cdnfonts.com/s/60248/Euclid%20Circular%20A%20Regular.woff") format("woff");
-}
-@font-face {
-  font-family: "Euclid Circular A";
-  font-style: normal;
-  font-weight: 500;
-  font-display: swap;
-  src: url("https://fonts.cdnfonts.com/s/60248/Euclid%20Circular%20A%20Medium.woff") format("woff");
-}
-@font-face {
-  font-family: "Euclid Circular A";
-  font-style: normal;
-  font-weight: 600;
-  font-display: swap;
-  src: url("https://fonts.cdnfonts.com/s/60248/Euclid%20Circular%20A%20SemiBold.woff") format("woff");
-}
+/*
+ * Keçe pano (felt board): a plain page, matte felt cards without borders or shadows, and the
+ * lesson-type colour as the material of a lesson. Same tokens as the iPhone app.
+ * Geologica comes from Google Fonts (index.html); the public calendar keeps Euclid on its own.
+ */
 
 /* Theme switches with the .dark class on <html> (set before first paint in index.html). */
 @custom-variant dark (&:where(.dark, .dark *));
 
-/*
- * HelloKido ramps from the logo. Components use the semantic roles below, not these; the ramps
- * stay for the few places that need a step of a hue.
- */
 @theme {
-  --font-sans: "Euclid Circular A", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-sans: "Geologica", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 
-  --color-sky-50: oklch(0.975 0.012 224);
-  --color-sky-100: oklch(0.95 0.028 225);
-  --color-sky-200: oklch(0.9 0.058 226);
-  --color-sky-300: oklch(0.83 0.095 226);
-  --color-sky-400: oklch(0.758 0.122 226);
-  --color-sky-500: oklch(0.68 0.135 233);
-  --color-sky-600: oklch(0.59 0.136 240);
-  --color-sky-700: oklch(0.5 0.12 243);
-  --color-sky-800: oklch(0.41 0.095 245);
-  --color-sky-900: oklch(0.33 0.07 247);
-
-  --color-pink-50: oklch(0.977 0.011 355);
-  --color-pink-100: oklch(0.952 0.026 356);
-  --color-pink-200: oklch(0.9 0.058 357);
-  --color-pink-300: oklch(0.83 0.094 358);
-  --color-pink-400: oklch(0.766 0.122 359);
-  --color-pink-500: oklch(0.69 0.145 0);
-  --color-pink-600: oklch(0.6 0.155 2);
-  --color-pink-700: oklch(0.51 0.14 4);
-  --color-pink-800: oklch(0.42 0.11 5);
-  --color-pink-900: oklch(0.34 0.08 6);
-
-  --color-yellow-50: oklch(0.985 0.03 98);
-  --color-yellow-100: oklch(0.965 0.06 97);
-  --color-yellow-200: oklch(0.935 0.11 96);
-  --color-yellow-300: oklch(0.9 0.15 95);
-  --color-yellow-400: oklch(0.862 0.172 94);
-  --color-yellow-500: oklch(0.78 0.16 85);
-  --color-yellow-600: oklch(0.68 0.14 75);
-  --color-yellow-700: oklch(0.56 0.12 68);
-  --color-yellow-800: oklch(0.46 0.1 62);
-  --color-yellow-900: oklch(0.37 0.08 58);
-
-  --color-green-50: oklch(0.975 0.016 160);
-  --color-green-100: oklch(0.95 0.036 160);
-  --color-green-200: oklch(0.9 0.07 160);
-  --color-green-300: oklch(0.83 0.1 160);
-  --color-green-400: oklch(0.76 0.12 159);
-  --color-green-500: oklch(0.67 0.13 158);
-  --color-green-600: oklch(0.57 0.12 156);
-  --color-green-700: oklch(0.48 0.1 155);
-  --color-green-800: oklch(0.4 0.08 155);
-  --color-green-900: oklch(0.32 0.06 155);
-
-  --color-red-50: oklch(0.975 0.013 25);
-  --color-red-100: oklch(0.95 0.03 25);
-  --color-red-200: oklch(0.9 0.065 25);
-  --color-red-300: oklch(0.82 0.11 25);
-  --color-red-400: oklch(0.72 0.15 26);
-  --color-red-500: oklch(0.64 0.18 27);
-  --color-red-600: oklch(0.56 0.18 27);
-  --color-red-700: oklch(0.48 0.16 27);
-  --color-red-800: oklch(0.4 0.13 27);
-  --color-red-900: oklch(0.32 0.1 27);
-
-  --color-slate-25: oklch(0.985 0.004 240);
-  --color-slate-50: oklch(0.972 0.007 238);
-  --color-slate-100: oklch(0.95 0.01 238);
-  --color-slate-200: oklch(0.91 0.013 240);
-  --color-slate-300: oklch(0.85 0.016 242);
-  --color-slate-400: oklch(0.72 0.02 245);
-  --color-slate-500: oklch(0.58 0.024 247);
-  --color-slate-600: oklch(0.48 0.027 248);
-  --color-slate-700: oklch(0.39 0.03 249);
-  --color-slate-800: oklch(0.31 0.032 250);
-  --color-slate-900: oklch(0.25 0.033 251);
-  --color-slate-950: oklch(0.2 0.03 252);
-
-  --radius-tablet: 0.5rem;
-  --radius-control: 0.625rem;
-  --radius-tile: 0.625rem;
-  --radius-panel: 1rem;
-  --radius-sheet: 1.25rem;
-
-  /* The selected piece of a pill track */
-  --shadow-piece: 0 1px 2px rgb(0 0 0 / 0.08), 0 0 0 1px rgb(0 0 0 / 0.05);
-  /* Popovers, menus, sheets and toasts */
-  --shadow-lift: 0 1px 2px rgb(0 0 0 / 0.05), 0 12px 32px -8px rgb(0 0 0 / 0.16);
+  /* Calendar blocks · fields, list rows and pickers · tiles · cards · sheets */
+  --radius-tablet: 0.75rem;
+  --radius-control: 1rem;
+  --radius-tile: 1.375rem;
+  --radius-panel: 1.625rem;
+  --radius-sheet: 1.75rem;
 
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-sheet: cubic-bezier(0.2, 0.8, 0.2, 1);
 
   /* Sheets slide from the side on wide screens and rise from the bottom on phones */
-  --animate-sheet-in-right: sheet-in-right 280ms var(--ease-out-expo);
+  --animate-sheet-in-right: sheet-in-right 240ms var(--ease-sheet);
   --animate-sheet-out-right: sheet-out-right 180ms var(--ease-standard) forwards;
-  --animate-sheet-in-up: sheet-in-up 320ms var(--ease-out-expo);
+  --animate-sheet-in-up: sheet-in-up 280ms var(--ease-sheet);
   --animate-sheet-out-down: sheet-out-down 200ms var(--ease-standard) forwards;
-  --animate-fade-in: fade-in 200ms var(--ease-standard);
+  --animate-fade-in: fade-in 160ms var(--ease-standard);
   --animate-fade-out: fade-out 160ms var(--ease-standard) forwards;
   --animate-pop-in: pop-in 180ms var(--ease-out-expo);
   --animate-pop-out: pop-out 120ms var(--ease-standard) forwards;
@@ -131,12 +38,12 @@
 
   @keyframes sheet-in-right {
     from {
-      transform: translateX(100%);
+      transform: translateX(calc(100% + 1rem));
     }
   }
   @keyframes sheet-out-right {
     to {
-      transform: translateX(100%);
+      transform: translateX(calc(100% + 1rem));
     }
   }
   @keyframes sheet-in-up {
@@ -194,121 +101,233 @@
 }
 
 /*
- * Semantic roles, after the Vizion Menu panel: a white canvas, neutral greys, hairlines instead of
- * shadows, and HelloKido blue as the one voice. Each status has a dot colour, an ink for its text,
- * a line for its outlined chip and a wash for a notice.
+ * The board. Every ink pair is at least 4.5:1 on the surface it sits on; white on `fill` is 4.9:1.
+ * `mute` is never text. Amber only means "do something"; an absence is grey, never red.
  */
 :root {
   color-scheme: light;
-  --ground: #ffffff;
-  --rail: #ffffff;
-  --rail-line: #e5e5e5;
-  --surface: #ffffff;
-  /* Column heads, group bands and the search field */
-  --surface-2: #fafafa;
-  /* Pill tracks */
-  --well: #f5f5f5;
-  /* The active and hovered nav item */
-  --hover: #f4f4f5;
-  --line: #e5e5e5;
-  --line-strong: #d4d4d4;
-  --track: #f0f0f0;
-  --ink: #0a0a0a;
-  --ink-2: #525252;
-  /* 4.7:1 on white, 4.5:1 on the grey bands */
-  --ink-3: #737373;
-  /* Never text that has to be read: the empty part of a count, a resting dot */
-  --ink-4: #a3a3a3;
+  --page: #ffffff;
+  --felt: #f1f4f7;
+  --track: #e4e9ee;
+  --raised: #ffffff;
+  --line: #dfe5ea;
+  --line-strong: #c3cdd6;
+  --ink: #13202b;
+  --ink-2: #44525f;
+  --ink-3: #5d6a77;
+  --mute: #aeb8c1;
   --accent: #0086c6;
   --accent-ink: #00679b;
-  --accent-line: #b6d9ee;
-  --accent-wash: #f0f7fb;
-  --accent-wash-2: #e1eff8;
-  --on-accent: #ffffff;
-  /* Filled buttons: white on it is 4.9:1 */
-  --accent-solid: #0077b3;
-  --action: #f59e0b;
-  --on-action: #451a03;
-  --action-wash: #fffbeb;
-  --action-ink: #92400e;
-  --action-line: #f3d58a;
-  --positive: #22a55a;
-  --positive-ink: #15803d;
-  --positive-wash: #f0fdf4;
-  --positive-line: #bbe5c8;
-  --negative: #dc2626;
-  --negative-ink: #b91c1c;
-  --negative-wash: #fef2f2;
-  --negative-line: #f5c2c2;
+  --fill: #0077b3;
+  --on-fill: #ffffff;
+  --sky: #0086c6;
+  --sky-felt: #e0eff9;
+  --sky-ink: #08466a;
+  --sky-track: #c9e2f3;
+  --sun: #e9b200;
+  --sun-felt: #fbefc5;
+  --sun-ink: #634700;
+  --sun-track: #f2dd98;
+  --pink: #da5d87;
+  --pink-felt: #fae3eb;
+  --pink-ink: #872850;
+  --pink-track: #f1c9d7;
+  --green: #1e8a4c;
+  --green-ink: #17703d;
+  --amber: #e39a00;
+  --amber-ink: #8a4a00;
+  --out: #e0752d;
+  --cash: #e9b200;
+  --now-chip: #c2416f;
+  --on-now-chip: #ffffff;
+  --red: #d33a2c;
+  --red-ink: #b42318;
+  --lift: 0 1px 2px rgb(16 40 60 / 0.14), 0 3px 8px -3px rgb(16 40 60 / 0.16);
+  --float: 0 24px 48px -20px rgb(16 40 60 / 0.35), 0 2px 6px rgb(16 40 60 / 0.08);
+  --scrim: rgb(10 22 32 / 0.3);
+  --sheet: var(--page);
+
+  /*
+   * What a small piece and a field are made of depends on what they sit on: felt on the page,
+   * raised on a felt card (`.on-felt` switches them). Avatars, icon circles and people chips use
+   * --piece; fields use --field.
+   */
+  --piece: var(--felt);
+  --field: var(--felt);
+  --quiet: var(--felt);
+
+  /* ---- Older role names, kept so pages not yet on the board still read well ---- */
+  --ground: var(--page);
+  --rail: var(--felt);
+  --rail-line: var(--line);
+  --surface: var(--page);
+  --surface-2: var(--felt);
+  --well: var(--track);
+  --hover: rgb(19 32 43 / 0.06);
+  --ink-4: var(--mute);
+  --accent-line: var(--sky-track);
+  --accent-wash: var(--sky-felt);
+  --accent-wash-2: var(--sky-track);
+  --on-accent: var(--on-fill);
+  --accent-solid: var(--fill);
+  --action: var(--amber);
+  --on-action: #3b2300;
+  --action-wash: #fdf3dc;
+  --action-ink: var(--amber-ink);
+  --action-line: #f1d79c;
+  --positive: var(--green);
+  --positive-ink: var(--green-ink);
+  --positive-wash: #e3f3e9;
+  --positive-line: #b7dec7;
+  --negative: var(--red);
+  --negative-ink: var(--red-ink);
+  --negative-wash: #fdeeec;
+  --negative-line: #f3c4be;
   --on-negative: #ffffff;
-  --pink: #db5a8a;
-  --pink-ink: #a3305c;
-  --pink-wash: #fdf2f6;
-  --pink-line: #f2c4d5;
-  --whatsapp: #16a34a;
-  /* Lesson types as dots */
-  --type-duyusal: #e0a100;
-  --type-ingilizce: #0086c6;
-  --type-ozel: #db5a8a;
-  --focus: #0086c6;
-  --scrim: rgb(10 10 10 / 0.4);
-  /* Chart series: money in and money out. Checked together for colour blindness in both themes. */
-  --series-in: #0086c6;
-  --series-out: #e0752d;
+  --pink-wash: var(--pink-felt);
+  --pink-line: var(--pink-track);
+  --whatsapp: var(--green);
+  --type-duyusal: var(--sun);
+  --type-ingilizce: var(--sky);
+  --type-ozel: var(--pink);
+  --focus: var(--accent);
+  --series-in: var(--sky);
+  --series-out: var(--out);
 }
 
+/* Deep night blue, never black: felt one step lighter, lesson felts become deep tints */
 .dark {
   color-scheme: dark;
-  --ground: #0a0a0a;
-  --rail: #0a0a0a;
-  --rail-line: #262626;
-  --surface: #111111;
-  --surface-2: #161616;
-  --well: #1c1c1c;
-  --hover: #1f1f1f;
-  --line: #262626;
-  --line-strong: #3a3a3a;
-  --track: #262626;
-  --ink: #fafafa;
-  --ink-2: #d4d4d4;
-  --ink-3: #a3a3a3;
-  --ink-4: #737373;
-  --accent: #38a8e0;
-  --accent-ink: #7cc6ec;
-  --accent-line: #1f4e6b;
-  --accent-wash: #0b2231;
-  --accent-wash-2: #10304a;
-  --on-accent: #ffffff;
-  --accent-solid: #0077b3;
-  --action: #f5a623;
+  --page: #0e151b;
+  --felt: #18212a;
+  --track: #222d37;
+  --raised: #33414e;
+  --line: #283440;
+  --line-strong: #3b4855;
+  --ink: #edf2f6;
+  --ink-2: #b7c2cc;
+  --ink-3: #8f9ba7;
+  --mute: #4e5b67;
+  --accent: #3aa8e0;
+  --accent-ink: #8ccdf0;
+  --sky: #3aa8e0;
+  --sky-felt: #10304a;
+  --sky-ink: #a9d8f5;
+  --sky-track: #1a4565;
+  --sun-felt: #33290b;
+  --sun-ink: #f3d77e;
+  --sun-track: #4a3c12;
+  --pink: #e57fa3;
+  --pink-felt: #371726;
+  --pink-ink: #f2aecb;
+  --pink-track: #522238;
+  --green: #3dbb72;
+  --green-ink: #6fd39a;
+  --amber: #f0b429;
+  --amber-ink: #f6c760;
+  --out: #f08a45;
+  --now-chip: #e57fa3;
+  --on-now-chip: #2a0b17;
+  --red: #f0675a;
+  --red-ink: #f9a59c;
+  --lift: 0 1px 2px rgb(0 0 0 / 0.35), 0 3px 8px -3px rgb(0 0 0 / 0.4);
+  --float: 0 24px 48px -20px rgb(0 0 0 / 0.7), 0 2px 6px rgb(0 0 0 / 0.4);
+  --scrim: rgb(3 8 12 / 0.55);
+  --sheet: #141c23;
+
+  --hover: rgb(237 242 246 / 0.07);
   --on-action: #1c1003;
-  --action-wash: #2a1d05;
-  --action-ink: #fcd27a;
-  --action-line: #6b4a10;
-  --positive: #34c172;
-  --positive-ink: #7ddca4;
-  --positive-wash: #0c2416;
-  --positive-line: #1d5634;
-  --negative: #ef4444;
-  --negative-ink: #fca5a5;
-  --negative-wash: #2c1010;
-  --negative-line: #6b2222;
-  --on-negative: #ffffff;
-  --pink: #ec7fa6;
-  --pink-ink: #f6afc8;
-  --pink-wash: #2b1019;
-  --pink-line: #6b2a43;
-  --whatsapp: #34c172;
-  --type-duyusal: #f0b429;
-  --type-ingilizce: #38a8e0;
-  --type-ozel: #ec7fa6;
-  --focus: #38a8e0;
-  --scrim: rgb(0 0 0 / 0.6);
-  --series-in: #38a8e0;
-  --series-out: #e9864a;
+  --action-wash: #2e2410;
+  --action-line: #5c4512;
+  --positive-wash: #0f2a1c;
+  --positive-line: #1f5236;
+  --negative-wash: #33161a;
+  --negative-line: #6b2a2a;
+  --on-negative: #1b0706;
+}
+
+/* Pieces and fields on a felt card: raised in light, one step up from the felt in dark */
+.on-felt {
+  --piece: var(--raised);
+  --field: var(--raised);
+  --quiet: var(--track);
+}
+.dark .on-felt {
+  --piece: var(--track);
+}
+
+/*
+ * A lesson type's material. One class sets four variables, so any card, block or tile can take
+ * it: bg-(--t-felt) text-(--t-ink). İngilizce is sky, Duyusal sun, Özel pink.
+ */
+.type-sky {
+  --t-felt: var(--sky-felt);
+  --t-ink: var(--sky-ink);
+  --t-track: var(--sky-track);
+  --t-mid: var(--sky);
+}
+.type-sun {
+  --t-felt: var(--sun-felt);
+  --t-ink: var(--sun-ink);
+  --t-track: var(--sun-track);
+  --t-mid: var(--sun);
+}
+.type-pink {
+  --t-felt: var(--pink-felt);
+  --t-ink: var(--pink-ink);
+  --t-track: var(--pink-track);
+  --t-mid: var(--pink);
 }
 
 @theme inline {
+  /* A felt piece lifted off the board: segment thumbs, small buttons, the active nav pill */
+  --shadow-lift: var(--lift);
+  --shadow-piece: var(--lift);
+  /* Things that float over the page: sheets, menus, popovers, toasts */
+  --shadow-float: var(--float);
+
+  --color-page: var(--page);
+  --color-felt: var(--felt);
+  --color-track: var(--track);
+  --color-raised: var(--raised);
+  --color-piece: var(--piece);
+  --color-field: var(--field);
+  --color-quiet: var(--quiet);
+  --color-sheet: var(--sheet);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-mute: var(--mute);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-fill: var(--fill);
+  --color-on-fill: var(--on-fill);
+  --color-sky: var(--sky);
+  --color-sky-felt: var(--sky-felt);
+  --color-sky-ink: var(--sky-ink);
+  --color-sky-track: var(--sky-track);
+  --color-sun: var(--sun);
+  --color-sun-felt: var(--sun-felt);
+  --color-sun-ink: var(--sun-ink);
+  --color-sun-track: var(--sun-track);
+  --color-pink: var(--pink);
+  --color-pink-felt: var(--pink-felt);
+  --color-pink-ink: var(--pink-ink);
+  --color-pink-track: var(--pink-track);
+  --color-green: var(--green);
+  --color-green-ink: var(--green-ink);
+  --color-amber: var(--amber);
+  --color-amber-ink: var(--amber-ink);
+  --color-out: var(--out);
+  --color-cash: var(--cash);
+  --color-now-chip: var(--now-chip);
+  --color-on-now-chip: var(--on-now-chip);
+  --color-scrim: var(--scrim);
+  --color-focus: var(--focus);
+
+  /* Older role names */
   --color-ground: var(--ground);
   --color-rail: var(--rail);
   --color-rail-line: var(--rail-line);
@@ -316,44 +335,32 @@
   --color-surface-2: var(--surface-2);
   --color-well: var(--well);
   --color-hover: var(--hover);
-  --color-track: var(--track);
   --color-ink-4: var(--ink-4);
   --color-accent-line: var(--accent-line);
+  --color-accent-wash: var(--accent-wash);
+  --color-accent-wash-2: var(--accent-wash-2);
+  --color-on-accent: var(--on-accent);
+  --color-accent-solid: var(--accent-solid);
+  --color-action: var(--action);
+  --color-on-action: var(--on-action);
+  --color-action-wash: var(--action-wash);
+  --color-action-ink: var(--action-ink);
   --color-action-line: var(--action-line);
+  --color-positive: var(--positive);
+  --color-positive-ink: var(--positive-ink);
+  --color-positive-wash: var(--positive-wash);
   --color-positive-line: var(--positive-line);
+  --color-negative: var(--negative);
+  --color-negative-ink: var(--negative-ink);
+  --color-negative-wash: var(--negative-wash);
   --color-negative-line: var(--negative-line);
+  --color-on-negative: var(--on-negative);
+  --color-pink-wash: var(--pink-wash);
   --color-pink-line: var(--pink-line);
   --color-whatsapp: var(--whatsapp);
   --color-type-duyusal: var(--type-duyusal);
   --color-type-ingilizce: var(--type-ingilizce);
   --color-type-ozel: var(--type-ozel);
-  --color-line: var(--line);
-  --color-line-strong: var(--line-strong);
-  --color-ink: var(--ink);
-  --color-ink-2: var(--ink-2);
-  --color-ink-3: var(--ink-3);
-  --color-accent: var(--accent);
-  --color-accent-ink: var(--accent-ink);
-  --color-accent-wash: var(--accent-wash);
-  --color-accent-wash-2: var(--accent-wash-2);
-  --color-on-accent: var(--on-accent);
-  --color-accent-solid: var(--accent-solid);
-  --color-on-action: var(--on-action);
-  --color-action: var(--action);
-  --color-action-wash: var(--action-wash);
-  --color-action-ink: var(--action-ink);
-  --color-positive: var(--positive);
-  --color-positive-ink: var(--positive-ink);
-  --color-positive-wash: var(--positive-wash);
-  --color-negative: var(--negative);
-  --color-negative-ink: var(--negative-ink);
-  --color-negative-wash: var(--negative-wash);
-  --color-on-negative: var(--on-negative);
-  --color-pink: var(--pink);
-  --color-pink-ink: var(--pink-ink);
-  --color-pink-wash: var(--pink-wash);
-  --color-focus: var(--focus);
-  --color-scrim: var(--scrim);
   --color-series-in: var(--series-in);
   --color-series-out: var(--series-out);
 }
@@ -362,7 +369,7 @@
   html {
     font-family: var(--font-sans);
     font-size: 100%;
-    background: var(--ground);
+    background: var(--page);
     color: var(--ink);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -374,16 +381,22 @@
     min-height: 100dvh;
     font-size: 0.875rem;
     line-height: 1.45;
+    background: var(--page);
+  }
+
+  /* Times, counts and amounts line up: the admin panel sets every figure in tabular numbers */
+  :root:not(.hk-public-root) body {
+    font-variant-numeric: tabular-nums;
   }
 
   :root:not(.hk-public-root) ::selection {
-    background: #cfe7f5;
-    color: #0a0a0a;
+    background: #c9e2f3;
+    color: #08466a;
   }
 
   .dark ::selection {
-    background: #1f4e6b;
-    color: #fafafa;
+    background: #1a4565;
+    color: #edf2f6;
   }
 
   input,
@@ -434,6 +447,11 @@
 @utility tabular {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum";
+}
+
+/* Past time and closed days: a fine hatch in the ink, on whatever it covers */
+@utility hatch {
+  background-image: repeating-linear-gradient(135deg, transparent 0 6px, color-mix(in srgb, var(--ink) 6%, transparent) 6px 7px);
 }
 
 @media (prefers-reduced-motion: reduce) {

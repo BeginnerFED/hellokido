@@ -15,9 +15,9 @@ export function OfflineNotice() {
   const online = useSyncExternalStore(subscribe, () => onlineManager.isOnline())
   if (online) return null
   return (
-    <View accessibilityRole="alert" style={[styles.notice, { backgroundColor: c.surface, borderColor: c.line }]}>
+    <View accessibilityRole="alert" style={[styles.notice, { backgroundColor: c.felt }]}>
       <Icon name="offline" size={19} color={c.ink2} />
-      <Text variant="foot" tone="ink2" style={styles.text}>
+      <Text variant="sub" tone="ink2" style={styles.text}>
         {t.shell.offline}
       </Text>
     </View>
@@ -25,6 +25,6 @@ export function OfflineNotice() {
 }
 
 const styles = StyleSheet.create({
-  notice: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 14, paddingVertical: 11 },
+  notice: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, borderRadius: 20, paddingHorizontal: 16, paddingVertical: 12 },
   text: { flex: 1 }
 })

@@ -1,17 +1,35 @@
 import { useState } from 'react'
-import { Text as NativeText, type TextProps, type TextStyle } from 'react-native'
+import { Text as NativeText, StyleSheet, type TextProps, type TextStyle } from 'react-native'
+import { familyFor, fontsReady } from '../theme/fonts'
 import { useColors, type Colors } from '../theme/colors'
 
-// Close to the iPhone's own type sizes (system font); headings are set a little tighter
+// Geologica, set big and confident for times and money; letter spacing is in points (em × size)
 const VARIANTS = {
-  title: { fontSize: 25, lineHeight: 30, fontWeight: '600', letterSpacing: -0.5 },
-  section: { fontSize: 21, lineHeight: 25, fontWeight: '600', letterSpacing: -0.38 },
+  /** Today's hero time ("10:00–11:30"). */
+  hero: { fontSize: 36, lineHeight: 40, fontWeight: '600', letterSpacing: -1.1 },
+  /** The money to share on Finance. */
+  money: { fontSize: 46, lineHeight: 50, fontWeight: '600', letterSpacing: -1.6 },
+  /** A child's lessons left. */
+  bigCount: { fontSize: 48, lineHeight: 50, fontWeight: '600', letterSpacing: -1.7 },
+  /** The in-content title of a tab root. */
+  title: { fontSize: 30, lineHeight: 36, fontWeight: '600', letterSpacing: -0.75 },
+  /** A time, a count or an amount in a tile or a list's right column. */
+  figure: { fontSize: 22, lineHeight: 26, fontWeight: '600', letterSpacing: -0.45 },
+  /** A section head ("Seni bekleyenler"). */
+  section: { fontSize: 20, lineHeight: 26, fontWeight: '600', letterSpacing: -0.3 },
+  /** A lesson type line, a sheet title, a period name. */
   headline: { fontSize: 17, lineHeight: 22, fontWeight: '600' },
-  body: { fontSize: 17, lineHeight: 22, fontWeight: '400' },
+  body: { fontSize: 16, lineHeight: 21, fontWeight: '400' },
+  /** Kept for the screens that still ask for it: the body size. */
   callout: { fontSize: 16, lineHeight: 21, fontWeight: '400' },
-  sub: { fontSize: 15, lineHeight: 20, fontWeight: '400' },
-  foot: { fontSize: 13, lineHeight: 18, fontWeight: '400' },
-  caption: { fontSize: 12, lineHeight: 16, fontWeight: '400' }
+  /** Sub-lines under a row's title. */
+  sub: { fontSize: 13.5, lineHeight: 18, fontWeight: '400' },
+  /** Segments, chips, marks, small buttons. */
+  label: { fontSize: 13.5, lineHeight: 17, fontWeight: '500' },
+  /** Weekdays, legends, hour labels, notes under a group. */
+  foot: { fontSize: 12.5, lineHeight: 16, fontWeight: '400' },
+  /** Nothing is set under 11pt. */
+  caption: { fontSize: 11.5, lineHeight: 15, fontWeight: '400' }
 } satisfies Record<string, TextStyle>
 
 /**
@@ -21,7 +39,21 @@ const VARIANTS = {
 export const MAX_FONT_SCALE = 1.4
 
 export type TextVariant = keyof typeof VARIANTS
-export type TextTone = 'ink' | 'ink2' | 'ink3' | 'accentInk' | 'actionInk' | 'positiveInk' | 'negativeInk' | 'pinkInk' | 'onAccent'
+export type TextTone =
+  | 'ink'
+  | 'ink2'
+  | 'ink3'
+  | 'accentInk'
+  | 'actionInk'
+  | 'positiveInk'
+  | 'negativeInk'
+  | 'pinkInk'
+  | 'onAccent'
+  | 'onFill'
+  | 'greenInk'
+  | 'amberInk'
+  | 'skyInk'
+  | 'sunInk'
 
 type Props = TextProps & {
   variant?: TextVariant
@@ -32,34 +64,34 @@ type Props = TextProps & {
   align?: TextStyle['textAlign']
 }
 
+/**
+ * Text in Geologica: the weight asked for (by the variant, `weight` or a style) picks the face, as
+ * each weight is a family of its own. Until the font is there, or if it never loads, the system font.
+ */
 export function Text({ variant = 'body', tone = 'ink', weight, tabular, align, style, maxFontSizeMultiplier = MAX_FONT_SCALE, ...props }: Props) {
   const c = useColors()
-  return (
-    <NativeText
-      {...props}
-      maxFontSizeMultiplier={maxFontSizeMultiplier}
-      style={[
-        VARIANTS[variant],
-        { color: c[tone as keyof Colors] },
-        weight !== undefined && { fontWeight: weight },
-        tabular && { fontVariant: ['tabular-nums'] },
-        align !== undefined && { textAlign: align },
-        style
-      ]}
-    />
-  )
+  const flat = StyleSheet.flatten([
+    VARIANTS[variant],
+    { color: c[tone as keyof Colors] },
+    weight !== undefined && { fontWeight: weight },
+    tabular && { fontVariant: ['tabular-nums'] as TextStyle['fontVariant'] },
+    align !== undefined && { textAlign: align },
+    style
+  ]) as TextStyle
+  const face: TextStyle = fontsReady() && !flat.fontFamily ? { ...flat, fontFamily: familyFor(flat.fontWeight), fontWeight: undefined } : flat
+  return <NativeText {...props} maxFontSizeMultiplier={maxFontSizeMultiplier} style={face} />
 }
 
 /**
  * The dot between the parts of a line ("Twice a week · 24 Oct"). The space before it never breaks,
  * so a wrapped line never starts with the dot and the dot never stands on its own.
  */
-export const DOT = '\u00a0· '
+export const DOT = ' · '
 
 type Part = string | false | null | undefined
 
 /** Words that stay on one line ("Card 5.850 ₺", "14 Oct – 1 Jan"): a line may break between them, never inside. */
-export const together = (text: string) => text.replace(/ /g, '\u00a0')
+export const together = (text: string) => text.replace(/ /g, ' ')
 
 /** The parts of a line joined by the dot; empty parts are left out. */
 export const dots = (...parts: Part[]) => parts.filter(Boolean).join(DOT)

@@ -64,7 +64,7 @@ export function ToastProvider({
         aria-live="polite"
         data-react-aria-top-layer
         className={cx(
-          'pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+5.25rem)] z-[70] flex flex-col items-center gap-2 px-4 lg:inset-x-auto lg:right-6 lg:bottom-6 lg:items-end',
+          'pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+5.75rem)] z-[70] flex flex-col items-center gap-2 px-4 lg:inset-x-auto lg:right-6 lg:bottom-6 lg:items-end',
           '[[data-sheet]_&]:max-lg:top-[max(0.75rem,env(safe-area-inset-top))] [[data-sheet]_&]:max-lg:bottom-auto',
           '[[data-sheet]_&]:lg:right-auto [[data-sheet]_&]:lg:left-6 [[data-sheet]_&]:lg:items-start'
         )}
@@ -90,7 +90,7 @@ function ToastCard({ item, onClose, closeLabel }: { item: ToastItem; onClose: ()
   return (
     <div
       role={item.tone === 'error' ? 'alert' : 'status'}
-      className="pointer-events-auto flex w-full max-w-sm animate-toast-in items-start gap-3 rounded-panel border border-line bg-surface px-4 py-3 text-ink shadow-lift"
+      className="pointer-events-auto flex w-full max-w-sm animate-toast-in items-start gap-3 rounded-[1.125rem] bg-raised px-4 py-3 text-ink shadow-float"
     >
       <span className="mt-px">{ICONS[item.tone ?? 'success']}</span>
       <div className="min-w-0 flex-1">

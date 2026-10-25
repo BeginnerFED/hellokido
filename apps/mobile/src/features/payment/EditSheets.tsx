@@ -6,8 +6,7 @@ import { isFree } from '@hellokido/core/view'
 import { keys, useRegistrations } from '../../data/queries'
 import { useI18n } from '../../providers/I18n'
 import { EmptyState, LoadError, Skeleton } from '../../ui/Bits'
-import { SheetScreen } from '../../ui/Sheet'
-import type { FormState } from './fields'
+import { formAction, SheetScreen, type FormState } from '../../ui/Sheet'
 import { ExtendForm, IncomeForm } from './forms'
 
 const IDLE: FormState = { dirty: false, busy: false }
@@ -15,10 +14,10 @@ const IDLE: FormState = { dirty: false, busy: false }
 function Waiting() {
   return (
     <View style={styles.stack}>
-      {/* The form's own shapes: a field, the period card, a field */}
-      <Skeleton height={50} radius={14} />
-      <Skeleton height={104} radius={18} />
-      <Skeleton height={50} radius={14} />
+      {/* The form's own shapes: the package card, the period card, the payment card */}
+      <Skeleton height={88} radius={26} />
+      <Skeleton height={88} radius={26} />
+      <Skeleton height={176} radius={26} />
     </View>
   )
 }
@@ -38,7 +37,7 @@ export function ExtensionEditSheet({ registrationId }: { registrationId: string 
   const extension = fresh && last && last.registration_id === fresh.id && !isFree(fresh) ? last : null
 
   return (
-    <SheetScreen title={t.children.extend.editTitle} subtitle={fresh?.student_name} dirty={state.dirty} busy={state.busy}>
+    <SheetScreen title={t.children.extend.editTitle} subtitle={fresh?.student_name} dirty={state.dirty} busy={state.busy} action={formAction(state, t.common.save)}>
       {history.isPending ? (
         <Waiting />
       ) : history.isError ? (
@@ -69,7 +68,7 @@ export function IncomeSheet({ id, collect }: { id?: string; collect?: boolean })
   const subtitle = child?.student_name ?? (collecting ? (row?.description ?? undefined) : undefined)
 
   return (
-    <SheetScreen title={title} subtitle={subtitle} dirty={state.dirty} busy={state.busy}>
+    <SheetScreen title={title} subtitle={subtitle} dirty={state.dirty} busy={state.busy} action={formAction(state, t.common.save)}>
       {id && entry.isPending ? (
         <Waiting />
       ) : id && entry.isError ? (
@@ -84,5 +83,5 @@ export function IncomeSheet({ id, collect }: { id?: string; collect?: boolean })
 }
 
 const styles = StyleSheet.create({
-  stack: { gap: 14 }
+  stack: { gap: 24 }
 })

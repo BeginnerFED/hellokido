@@ -2,13 +2,13 @@
 <html lang="tr">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" media="(prefers-color-scheme: light)" />
-    <link rel="icon" type="image/svg+xml" href="/favicon-dark.svg" media="(prefers-color-scheme: dark)" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#0e151b" media="(prefers-color-scheme: dark)" />
     <title>Hello Kido</title>
-    <link rel="preconnect" href="https://fonts.cdnfonts.com" crossorigin />
     <script>
       (function () {
         var loc = window.location;
@@ -30,6 +30,17 @@
           document.head.appendChild(font);
           return;
         }
+        // The admin's font (Geologica), left out of the public calendar so parents never wait on it
+        var preconnect = document.createElement('link');
+        preconnect.rel = 'preconnect';
+        preconnect.href = 'https://fonts.gstatic.com';
+        preconnect.crossOrigin = '';
+        document.head.appendChild(preconnect);
+        var admin = document.createElement('link');
+        admin.rel = 'stylesheet';
+        admin.href = 'https://fonts.googleapis.com/css2?family=Geologica:wght@400;500;600;700&display=swap';
+        admin.setAttribute('blocking', 'render');
+        document.head.appendChild(admin);
         // Apply the admin theme before the first paint so a dark choice never flashes white.
         try {
           var choice = localStorage.getItem('hk-theme');

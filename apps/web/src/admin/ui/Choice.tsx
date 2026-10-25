@@ -17,10 +17,14 @@ import {
   type CheckboxProps,
   type SwitchProps
 } from 'react-aria-components'
-import { CaretDownIcon, CheckIcon } from '@phosphor-icons/react'
+import { CaretDownIcon, CaretUpDownIcon, CheckIcon } from '@phosphor-icons/react'
 import { fieldLabelClass, inputClass } from './Field'
 import { popoverClass } from './Menu'
 import { cx } from './cx'
+
+/** A row of a select's list: 40 tall, the nav's pill hover. */
+const listItemClass =
+  'group flex min-h-10 cursor-default items-center gap-2.5 rounded-full px-3 py-2 text-[0.9375rem] outline-none select-none data-focused:bg-hover'
 
 export type Option<K extends string = string> = {
   id: K
@@ -73,18 +77,18 @@ export function Select<K extends string>({
       className={cx('flex flex-col gap-1.5', className)}
     >
       {label && <Label className={fieldLabelClass}>{label}</Label>}
-      <AriaButton className={cx(inputClass, 'flex h-10 items-center gap-2 text-left max-lg:h-11 data-pressed:border-accent data-focus-visible:border-accent')}>
+      <AriaButton className={cx(inputClass, 'flex h-[2.875rem] items-center gap-2 text-left data-pressed:border-accent data-focus-visible:border-accent')}>
         <SelectValue className="min-w-0 flex-1 truncate data-placeholder:text-ink-3">{selectedOnly}</SelectValue>
-        <CaretDownIcon aria-hidden className="size-4 shrink-0 text-ink-3" />
+        <CaretUpDownIcon aria-hidden className="size-4 shrink-0 text-ink-3" />
       </AriaButton>
-      <FieldError className="text-[0.8125rem] text-negative-ink">{errorMessage}</FieldError>
+      <FieldError className="text-[0.84375rem] text-negative-ink">{errorMessage}</FieldError>
       <Popover offset={6} className={cx(popoverClass, 'w-(--trigger-width) max-h-80')}>
         <ListBox items={options} className="outline-none">
           {(item) => (
             <ListBoxItem
               id={item.id}
               textValue={item.label}
-              className="group flex cursor-default items-center gap-2.5 rounded-[0.5rem] px-2.5 py-2 text-sm outline-none select-none data-focused:bg-well"
+              className={listItemClass}
             >
               {item.icon && <span className="grid size-5 place-items-center text-ink-2">{item.icon}</span>}
               <span className="min-w-0 flex-1">
@@ -126,7 +130,7 @@ export function Segmented<K extends string>({ label, options, value, onChange, c
         const next = [...keys][0]
         if (next != null) onChange(String(next) as K)
       }}
-      className={cx('flex gap-0.5 rounded-full bg-well p-1', fit ? 'w-fit' : label ? 'w-full' : (className ?? 'w-full'))}
+      className={cx('flex gap-0.5 rounded-full bg-track p-[3px]', fit ? 'w-fit' : label ? 'w-full' : (className ?? 'w-full'))}
     >
       {options.map((option) => (
         <ToggleButton
@@ -134,14 +138,14 @@ export function Segmented<K extends string>({ label, options, value, onChange, c
           id={option.id}
           isDisabled={option.isDisabled}
           className={cx(
-            'relative flex items-center justify-center gap-1.5 rounded-full font-medium text-ink-3 outline-none',
+            'relative flex items-center justify-center gap-1.5 rounded-full font-medium whitespace-nowrap text-ink-2 outline-none',
             // Taller to a fingertip than it looks, over the group's own padding
             'pointer-coarse:after:absolute pointer-coarse:after:inset-x-0 pointer-coarse:after:-inset-y-1',
-            fit ? 'shrink-0 px-3' : 'min-w-0 flex-1 px-2',
-            'transition-[background-color,color,box-shadow] duration-150 data-hovered:text-ink',
-            'data-selected:bg-surface data-selected:text-ink data-selected:shadow-piece',
+            fit ? 'shrink-0 px-[0.8125rem]' : 'min-w-0 flex-1 px-2',
+            'transition-[background-color,color,box-shadow] duration-180 ease-out data-hovered:text-ink',
+            'data-selected:bg-raised data-selected:text-ink data-selected:shadow-lift',
             'data-focus-visible:ring-2 data-focus-visible:ring-focus data-disabled:opacity-45',
-            size === 'sm' ? 'h-7 text-[0.8125rem]' : 'h-[1.875rem] text-[0.84375rem] max-lg:h-9'
+            size === 'sm' ? 'h-7 text-[0.8125rem]' : 'h-8 text-sm max-lg:h-9'
           )}
         >
           {option.icon}
@@ -178,20 +182,20 @@ export function RadioList<K extends string>({ label, options, value, onChange, i
       className={cx('flex flex-col gap-1.5', className)}
     >
       <Label className={fieldLabelClass}>{label}</Label>
-      <div className="flex flex-col divide-y divide-line overflow-hidden rounded-control border border-line">
+      <div className="flex flex-col divide-y divide-line overflow-hidden rounded-control bg-field">
         {options.map((option) => (
           <Radio
             key={option.id}
             value={option.id}
             isDisabled={option.isDisabled}
             className={cx(
-              'group flex cursor-default items-center gap-3 px-3 py-2.5 outline-none first:rounded-t-control last:rounded-b-control',
-              'transition-colors duration-150 data-hovered:bg-well data-disabled:opacity-45 data-focus-visible:ring-2 data-focus-visible:ring-focus data-focus-visible:ring-inset'
+              'group flex cursor-default items-center gap-3 px-3.5 py-3 outline-none first:rounded-t-control last:rounded-b-control',
+              'transition-colors duration-150 data-hovered:bg-hover data-disabled:opacity-45 data-focus-visible:ring-2 data-focus-visible:ring-focus data-focus-visible:ring-inset'
             )}
           >
             <span
               aria-hidden
-              className="grid size-[1.125rem] shrink-0 place-items-center rounded-full border-[1.5px] border-line-strong bg-surface transition-colors duration-150 group-data-selected:border-accent-solid group-data-selected:bg-accent-solid"
+              className="grid size-[1.125rem] shrink-0 place-items-center rounded-full border-[1.5px] border-mute bg-raised transition-colors duration-150 group-data-selected:border-fill group-data-selected:bg-fill"
             >
               <span className="size-1.5 rounded-full bg-on-accent opacity-0 group-data-selected:opacity-100" />
             </span>
@@ -231,17 +235,19 @@ export function Chips<K extends string>({ options, selected, onChange, multiple,
           id={option.id}
           isDisabled={option.isDisabled}
           className={cx(
-            'group relative inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-line bg-surface px-3 text-[0.8125rem] font-medium whitespace-nowrap text-ink-2 outline-none',
+            // Filter chips are outlined pills; a chosen one turns sky felt
+            'group relative inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-[0.84375rem] font-medium whitespace-nowrap text-ink outline-none',
+            'shadow-[inset_0_0_0_1.5px_var(--line)]',
             'pointer-coarse:after:absolute pointer-coarse:after:inset-x-0 pointer-coarse:after:-inset-y-1.5',
-            'transition-[background-color,color,border-color] duration-150 data-hovered:border-line-strong data-hovered:text-ink data-disabled:opacity-45',
-            'data-selected:border-accent-line data-selected:bg-accent-wash data-selected:text-accent-ink',
+            'transition-[background-color,color,box-shadow] duration-150 data-hovered:shadow-[inset_0_0_0_1.5px_var(--line-strong)] data-disabled:opacity-45',
+            'data-selected:bg-sky-felt data-selected:text-sky-ink data-selected:shadow-none',
             'data-focus-visible:ring-2 data-focus-visible:ring-focus'
           )}
         >
           {option.icon}
           {option.label}
           {option.badge !== undefined && (
-            <span className="tabular text-ink-3 group-data-selected:text-accent-ink/75">{option.badge}</span>
+            <span className="font-semibold text-ink-3 tabular group-data-selected:text-sky-ink">{option.badge}</span>
           )}
         </ToggleButton>
       ))}
@@ -271,10 +277,12 @@ export function ChipSelect<K extends string>({ options, value, onChange, neutral
     >
       <AriaButton
         className={cx(
-          'relative inline-flex h-8 max-w-[16rem] items-center gap-1 rounded-full border pr-2.5 pl-3 text-[0.8125rem] font-medium whitespace-nowrap outline-none',
+          'relative inline-flex h-8 max-w-[16rem] items-center gap-1 rounded-full pr-2.5 pl-3 text-[0.84375rem] font-medium whitespace-nowrap outline-none',
           'pointer-coarse:after:absolute pointer-coarse:after:inset-x-0 pointer-coarse:after:-inset-y-1.5',
-          'transition-[background-color,color,border-color] duration-150 data-focus-visible:ring-2 data-focus-visible:ring-focus',
-          on ? 'border-accent-line bg-accent-wash text-accent-ink' : 'border-line bg-surface text-ink-2 data-hovered:border-line-strong data-hovered:text-ink'
+          'transition-[background-color,color,box-shadow] duration-150 data-focus-visible:ring-2 data-focus-visible:ring-focus',
+          on
+            ? 'bg-sky-felt text-sky-ink'
+            : 'text-ink shadow-[inset_0_0_0_1.5px_var(--line)] data-hovered:shadow-[inset_0_0_0_1.5px_var(--line-strong)]'
         )}
       >
         <SelectValue className="min-w-0 truncate">{selectedOnly}</SelectValue>
@@ -283,11 +291,7 @@ export function ChipSelect<K extends string>({ options, value, onChange, neutral
       <Popover offset={6} placement="bottom start" className={cx(popoverClass, 'max-h-80')}>
         <ListBox items={options} className="outline-none">
           {(item) => (
-            <ListBoxItem
-              id={item.id}
-              textValue={item.label}
-              className="group flex cursor-default items-center gap-2.5 rounded-[0.5rem] px-2.5 py-2 text-sm outline-none select-none data-focused:bg-well"
-            >
+            <ListBoxItem id={item.id} textValue={item.label} className={listItemClass}>
               <span className="min-w-0 flex-1 truncate">{item.label}</span>
               {item.badge !== undefined && <span className="text-[0.8125rem] text-ink-3 tabular">{item.badge}</span>}
               <CheckIcon aria-hidden weight="bold" className="size-4 text-accent opacity-0 group-data-selected:opacity-100" />
@@ -305,8 +309,8 @@ export function Checkbox({ children, className, ...props }: Omit<CheckboxProps, 
       <span
         aria-hidden
         className={cx(
-          'mt-px grid size-[1.125rem] shrink-0 place-items-center rounded-[0.3125rem] border border-line-strong bg-surface transition-colors duration-150',
-          'group-data-selected:border-accent-solid group-data-selected:bg-accent-solid group-data-focus-visible:ring-2 group-data-focus-visible:ring-focus'
+          'mt-px grid size-[1.125rem] shrink-0 place-items-center rounded-[0.3125rem] border-[1.5px] border-mute bg-raised transition-colors duration-150',
+          'group-data-selected:border-fill group-data-selected:bg-fill group-data-focus-visible:ring-2 group-data-focus-visible:ring-focus'
         )}
       >
         <CheckIcon weight="bold" className="size-3 text-on-accent opacity-0 group-data-selected:opacity-100" />
@@ -322,9 +326,9 @@ export function Switch({ children, className, ...props }: Omit<SwitchProps, 'chi
       <span className="min-w-0 flex-1">{children}</span>
       <span
         aria-hidden
-        className="flex h-6 w-10 shrink-0 items-center rounded-full bg-line-strong p-0.5 transition-colors duration-150 group-data-selected:bg-accent-solid group-data-focus-visible:ring-2 group-data-focus-visible:ring-focus"
+        className="flex h-6 w-10 shrink-0 items-center rounded-full bg-mute p-0.5 transition-colors duration-150 group-data-selected:bg-fill group-data-focus-visible:ring-2 group-data-focus-visible:ring-focus"
       >
-        <span className="size-5 rounded-full bg-surface shadow-piece transition-transform duration-200 ease-out-expo group-data-selected:translate-x-4" />
+        <span className="size-5 rounded-full bg-white shadow-lift transition-transform duration-200 ease-out-expo group-data-selected:translate-x-4" />
       </span>
     </AriaSwitch>
   )

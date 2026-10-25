@@ -28,6 +28,7 @@ import { Sheet, SheetActions, SheetFooter } from '../../ui/Sheet'
 import { keepCaret } from '../../ui/caret'
 import { amountError, METHODS } from '../money/PaymentFields'
 import { onDay } from './bits'
+import { usePeriodRule } from './rule'
 import type { VisibleRange } from './Moves'
 import { periodParams } from './period'
 import { visibleRange } from './visible'
@@ -66,7 +67,7 @@ function ExpenseForm({ params, onDone, onStateChange }: { params: ExpenseParams;
   const { t, fmt, money, date } = useI18n()
   const labels = useLabels()
   const catalog = useCatalog().data
-  const startDay = catalog?.settings.moneyPeriodStartDay
+  const { rule } = usePeriodRule(useMemo(() => startOfDay(new Date()), []))
   const toast = useToast()
   const refresh = useRefresh()
   const navigate = useNavigate()
@@ -120,7 +121,7 @@ function ExpenseForm({ params, onDone, onStateChange }: { params: ExpenseParams;
   const tellSaved = (when: Date, value: number, edited: boolean) => {
     const visible = params.visible ?? visibleRange()
     const outside = visible ? when < new Date(visible.from) || when > new Date(visible.to) : false
-    const range = periodParams(cycleOf(when, startDay ?? 1))
+    const range = periodParams(cycleOf(when, rule ?? 1))
     toast({
       tone: 'success',
       title: edited ? t.finance.expense.updated : t.finance.expense.saved,
@@ -132,7 +133,7 @@ function ExpenseForm({ params, onDone, onStateChange }: { params: ExpenseParams;
   }
 
   const save = async () => {
-    if (!valid || busy || !category || !method || !day) return
+    if (!valid || busy || !category || !method || !day || (expense && !dirty)) return
     const value = parseAmount(amount) ?? 0
     const when = onDay(day, initial.base)
     const fields = {
@@ -260,7 +261,8 @@ function ExpenseForm({ params, onDone, onStateChange }: { params: ExpenseParams;
             )
           }
         >
-          <Button variant="primary" isDisabled={!valid} isPending={busy} onPress={() => void save()} className="max-md:flex-1">
+          {/* An edit has nothing to save until something changed */}
+          <Button variant="primary" isDisabled={!valid || (Boolean(expense) && !dirty)} isPending={busy} onPress={() => void save()} className="max-md:flex-1">
             {t.finance.expense.save}
           </Button>
         </SheetActions>

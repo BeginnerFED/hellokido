@@ -11,9 +11,8 @@ import { AmountField } from '../../ui/Field'
 import { FormRule } from '../../ui/Notice'
 import { Sheet, SheetActions, SheetFooter } from '../../ui/Sheet'
 import { useSheet } from '../../ui/useSheet'
-import { ListSkeleton } from '../finance/bits'
 import { amountError } from '../money/PaymentFields'
-import { NameFields, SettingList, SettingRow } from './bits'
+import { NameFields, SettingList, SettingBody, SettingRow, SettingSkeleton } from './bits'
 import { filledNames, namesOf, type Names } from './rules'
 
 const isFree = (row: PackageType) => row.family === 'free'
@@ -25,8 +24,13 @@ export function PackageList() {
   const catalog = useCatalog()
   const sheet = useSheet<PackageType>()
 
-  if (catalog.isError) return <LoadError message={t.common.loadFailed} retryLabel={t.common.retry} onRetry={() => void catalog.refetch()} />
-  if (!catalog.data) return <ListSkeleton rows={4} />
+  if (catalog.isError)
+    return (
+      <SettingBody>
+        <LoadError message={t.common.loadFailed} retryLabel={t.common.retry} onRetry={() => void catalog.refetch()} />
+      </SettingBody>
+    )
+  if (!catalog.data) return <SettingSkeleton rows={4} />
 
   const lessonsOf = (row: PackageType, name: string) => {
     if (isFree(row)) return t.children.form.noQuota
@@ -47,7 +51,7 @@ export function PackageList() {
             meta={lessonsOf(row, labels.packageName(row.code))}
             trail={
               isFree(row) ? undefined : row.default_price != null ? (
-                <span className="font-medium text-ink">{money(row.default_price)}</span>
+                <span className="font-semibold text-ink">{money(row.default_price)}</span>
               ) : (
                 <span className="text-ink-3">{t.settings.packages.noPrice}</span>
               )
@@ -161,7 +165,7 @@ function PackageForm({ pkg, onDone, onStateChange }: { pkg: PackageType; onDone:
       </div>
       <SheetFooter>
         <SheetActions>
-          <Button variant="primary" isDisabled={!valid} isPending={busy} onPress={() => void save()} className="max-md:flex-1">
+          <Button variant="primary" isDisabled={!valid || !dirty} isPending={busy} onPress={() => void save()} className="max-md:flex-1">
             {t.common.save}
           </Button>
         </SheetActions>

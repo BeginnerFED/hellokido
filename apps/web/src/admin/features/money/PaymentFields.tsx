@@ -52,7 +52,7 @@ export function PaymentFields({ method, onMethod, amount, onAmount, date, onDate
           {showSuggestion && (
             <AriaButton
               onPress={() => onAmount(formatAmountForInput(suggestion))}
-              className="self-start rounded-full bg-well px-2.5 py-1 text-[0.8125rem] font-medium text-ink-2 outline-none transition-colors duration-150 data-hovered:bg-accent-wash data-hovered:text-accent-ink data-focus-visible:ring-2 data-focus-visible:ring-focus"
+              className="self-start rounded-full bg-felt px-3 py-1 text-[0.8125rem] font-medium text-ink-2 outline-none transition-colors duration-150 data-hovered:bg-sky-felt data-hovered:text-sky-ink data-focus-visible:ring-2 data-focus-visible:ring-focus"
             >
               {fmt(t.children.form.suggestedPrice, { amount: money(suggestion) })}
             </AriaButton>

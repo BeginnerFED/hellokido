@@ -29,9 +29,9 @@ export default function NoAccess() {
   }
 
   return (
-    <View style={[styles.page, { backgroundColor: c.ground }]}>
+    <View style={[styles.page, { backgroundColor: c.page }]}>
       <View style={styles.body}>
-        <View style={[styles.tile, { backgroundColor: c.surface2, borderColor: c.line }]}>
+        <View style={[styles.tile, { backgroundColor: c.felt }]}>
           <Icon name="lock" size={26} color={c.ink2} />
         </View>
         <Text variant="title" align="center" accessibilityRole="header">
@@ -45,7 +45,7 @@ export default function NoAccess() {
             {t.shell.signOutFailed}
           </Notice>
         )}
-        <Button variant="tinted" size="lg" busy={busy} onPress={() => void leave()} style={[styles.stretch, styles.button]}>
+        <Button variant="secondary" size="lg" busy={busy} onPress={() => void leave()} style={[styles.stretch, styles.button]}>
           {t.shell.noAccess.signOut}
         </Button>
       </View>
@@ -56,7 +56,7 @@ export default function NoAccess() {
 const styles = StyleSheet.create({
   page: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28 },
   body: { width: '100%', maxWidth: 420, alignItems: 'center', gap: 14 },
-  tile: { width: 56, height: 56, borderRadius: 16, borderWidth: 1, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
+  tile: { width: 60, height: 60, borderRadius: 30, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
   stretch: { alignSelf: 'stretch' },
   button: { marginTop: 10 }
 })

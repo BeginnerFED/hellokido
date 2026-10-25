@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
-import { StyleSheet, View } from 'react-native'
+import { Pressable, StyleSheet, View } from 'react-native'
 import { useQuery } from '@tanstack/react-query'
 import * as Haptics from 'expo-haptics'
 import { set, startOfDay } from 'date-fns'
@@ -20,14 +20,14 @@ import { upperFirst } from '@hellokido/core/rules/text.js'
 import { LESSON_HOURS, LESSON_MINUTE_STEPS, nextCopyDate } from '@hellokido/core/view'
 import { keys, useLabels, useRefresh } from '../../data/queries'
 import { useI18n } from '../../providers/I18n'
-import { useColors } from '../../theme/colors'
-import { EmptyState, LoadError, Notice, Skeleton } from '../../ui/Bits'
-import { Button, IconButton } from '../../ui/Button'
-import { Chip, DateField, FieldLabel, Segmented, TextField } from '../../ui/Fields'
+import { typeTone, useColors } from '../../theme/colors'
+import { EmptyState, firstNameOf, initialsOf, LoadError, Skeleton } from '../../ui/Bits'
+import { Button } from '../../ui/Button'
+import { DateField, SelectField, TextField, TimeField } from '../../ui/Fields'
 import { Icon } from '../../ui/Icon'
-import { Card, Row } from '../../ui/Screen'
-import { SheetActions, SheetScreen, WithSheet } from '../../ui/Sheet'
-import { LessonShape, Peg } from '../../ui/signature'
+import { Card, FormGroup, GroupTitle, Row } from '../../ui/Screen'
+import { SheetActions, SheetScreen, useSheet } from '../../ui/Sheet'
+import { SeatDots, TypeTile } from '../../ui/signature'
 import { DOT, Text } from '../../ui/Text'
 import { useToast } from '../../ui/Toast'
 import { useLessonTitle } from '../../ui/UsageLine'
@@ -46,7 +46,6 @@ type Mode = 'new' | 'edit' | 'copy'
 type ChildRow = { id: string; name: string; detail: string }
 
 const TYPES: LessonType[] = ['ingilizce', 'duyusal', 'ozel']
-const two = (value: number) => String(value).padStart(2, '0')
 const sameMinute = (a: Date, b: Date) => Math.floor(a.getTime() / 60_000) === Math.floor(b.getTime() / 60_000)
 
 /**
@@ -77,10 +76,9 @@ export function LessonFormSheet({ params }: { params: LessonFormParams }) {
           )
         ) : (
           <View style={styles.waiting}>
-            <Skeleton height={50} radius={13} />
-            <Skeleton height={86} radius={13} />
-            <Skeleton height={40} radius={11} />
-            <Skeleton height={86} radius={13} />
+            <Skeleton height={120} radius={26} />
+            <Skeleton height={62} radius={26} />
+            <Skeleton height={82} radius={20} />
           </View>
         )}
       </SheetScreen>
@@ -96,6 +94,8 @@ function LessonForm({ mode, title, detail, day: dayParam }: { mode: Mode; title:
   const lessonTitle = useLessonTitle()
   const toast = useToast()
   const refresh = useRefresh()
+  // This form draws its own SheetScreen, so the bar's action closes the sheet it is in through this
+  const sheet = useSheet()
   const lesson = detail?.lesson
 
   // Everything the form compares against is taken once, when the sheet opened
@@ -150,9 +150,13 @@ function LessonForm({ mode, title, detail, day: dayParam }: { mode: Mode; title:
   // The sheet's subtitle is one narrow line between two buttons: short names keep the time in view
   const whenShort = (at: Date) => `${date(at, { weekday: 'short', day: 'numeric', month: 'short' })}${DOT}${date(at, { hour: '2-digit', minute: '2-digit' })}`
 
-  // A stored time outside the usual steps stays choosable, so it is never changed unseen
-  const hours = [...new Set([...LESSON_HOURS, ...(opened.hour !== null ? [opened.hour] : [])])].sort((a, b) => a - b)
-  const minutes = [...new Set([...LESSON_MINUTE_STEPS, ...(opened.minute !== null ? [opened.minute] : [])])].sort((a, b) => a - b)
+  // A stored time off the quarter hours keeps every minute choosable, so it is never changed unseen
+  const quarters = opened.minute === null || LESSON_MINUTE_STEPS.includes(opened.minute)
+  // An empty time starts at the next full hour, kept within the hours lessons are held
+  const [firstTime] = useState(() => {
+    const next = Math.min(Math.max(new Date().getHours() + 1, LESSON_HOURS[0]), LESSON_HOURS[LESSON_HOURS.length - 1])
+    return set(startOfDay(new Date()), { hours: next })
+  })
 
   const changeTime = <T,>(apply: (value: T) => void) => (value: T) => {
     apply(value)
@@ -237,159 +241,170 @@ function LessonForm({ mode, title, detail, day: dayParam }: { mode: Mode; title:
     )
   }
 
+  // What the children still ask for or warn about, under their card; the seat strip says how full it is
+  const childrenNotes = [
+    mode === 'copy' && { tone: 'ink3' as const, text: `${t.calendar.lesson.copyNote}${opened.archived > 0 ? ` ${t.calendar.lesson.copyArchived}` : ''}` },
+    overLimit
+      ? { tone: 'negativeInk' as const, text: fmt(t.calendar.lesson.tooMany, { limit: maxCapacity, count: rows.length }) }
+      : // Says why "Add" in the bar waits, instead of a button that is simply grey
+        mode === 'new' && rows.length === 0 && { tone: 'amberInk' as const, text: t.calendar.lesson.childrenRequired }
+  ].filter((note) => note !== false)
+  const free = SEATS_SHOWN - rows.length
+  const seatLine = rows.length > SEATS_SHOWN ? fmt(t.calendar.lesson.seats, { count: rows.length }) : free > 0 ? plural(t.calendar.lesson.seatsLeft, free) : t.calendar.lesson.seatsFull
+  const chipTone = type ? typeTone(c, type) : null
+  const dark = typeTone(c, 'ingilizce').dark
+
   return (
-    <SheetScreen key="form" title={title} subtitle={lesson ? `${lessonTitle(lesson)}${DOT}${whenShort(new Date(lesson.event_date))}` : undefined} dirty={dirty} busy={busy}>
-      <DateField
-        label={mode === 'copy' ? t.calendar.lesson.copyTo : t.calendar.lesson.date}
-        value={day}
-        onChange={changeTime(setDay)}
-        minimumDate={mode === 'copy' ? startOfDay(new Date()) : undefined}
-      />
+    <SheetScreen
+      key="form"
+      title={title}
+      subtitle={lesson ? `${lessonTitle(lesson)}${DOT}${whenShort(new Date(lesson.event_date))}` : undefined}
+      dirty={dirty}
+      busy={busy}
+      action={{
+        label: mode === 'copy' ? t.calendar.lesson.copyAction : mode === 'edit' ? t.calendar.lesson.save : t.common.add,
+        // A lesson opened to change waits for a change; a new lesson or a copy only for what it needs
+        disabled: !valid || (mode === 'edit' && !dirty),
+        onPress: () => void save(sheet.finish)
+      }}
+    >
+      <FormGroup>
+        <DateField
+          label={mode === 'copy' ? t.calendar.lesson.copyTo : t.calendar.lesson.date}
+          value={day}
+          onChange={changeTime(setDay)}
+          minimumDate={mode === 'copy' ? startOfDay(new Date()) : undefined}
+        />
+        <TimeField
+          label={t.common.time}
+          value={hour !== null && minute !== null ? set(startOfDay(new Date()), { hours: hour, minutes: minute }) : null}
+          onChange={(at) => {
+            setHour(at.getHours())
+            setMinute(at.getMinutes())
+            setError(null)
+          }}
+          minuteInterval={quarters ? 15 : 1}
+          start={firstTime}
+        />
+      </FormGroup>
+
+      <FormGroup>
+        <SelectField
+          label={t.calendar.lesson.ageGroup}
+          placeholder={t.common.choose}
+          options={(AGE_GROUPS as string[]).map((group) => ({ id: group, label: labels.ageGroup(group) }))}
+          value={ageGroup}
+          onChange={setAgeGroup}
+        />
+      </FormGroup>
+
+      {/* The three kinds as felt tiles: the chosen one takes its type's felt, ring and tick */}
       <View>
-        <FieldLabel hint={startAt ? date(startAt, { hour: '2-digit', minute: '2-digit' }) : undefined}>{t.calendar.lesson.hour}</FieldLabel>
-        <View accessibilityRole="radiogroup" accessibilityLabel={t.calendar.lesson.hour} style={styles.chips}>
-          {hours.map((value) => (
-            <Chip
-              key={value}
-              label={two(value)}
-              selected={hour === value}
-              accessibilityLabel={`${t.calendar.lesson.hour} ${two(value)}`}
+        <GroupTitle>{t.calendar.lesson.type}</GroupTitle>
+        <View accessibilityRole="radiogroup" accessibilityLabel={t.calendar.lesson.type} style={styles.types}>
+          {TYPES.map((id) => (
+            <TypeTile
+              key={id}
+              type={id}
+              label={labels.lessonType(id)}
+              selected={type === id}
               onPress={() => {
+                if (type === id) return
                 void Haptics.selectionAsync()
-                changeTime(setHour)(value)
+                setType(id)
               }}
             />
           ))}
         </View>
-      </View>
-      <Segmented<string>
-        label={t.calendar.lesson.minute}
-        options={minutes.map((value) => ({ id: String(value), label: two(value) }))}
-        value={minute === null ? null : String(minute)}
-        onChange={(value) => changeTime(setMinute)(Number(value))}
-      />
-      <View>
-        <FieldLabel>{t.calendar.lesson.ageGroup}</FieldLabel>
-        <View accessibilityRole="radiogroup" accessibilityLabel={t.calendar.lesson.ageGroup} style={styles.chips}>
-          {(AGE_GROUPS as string[]).map((group) => (
-            <Chip
-              key={group}
-              label={labels.ageGroup(group)}
-              selected={ageGroup === group}
-              onPress={() => {
-                void Haptics.selectionAsync()
-                setAgeGroup(group)
-              }}
+        {type === 'ozel' && (
+          <FormGroup footer={descriptionMissing ? <Text variant="sub" tone="amberInk">{t.calendar.lesson.descriptionRequired}</Text> : undefined} style={styles.under}>
+            <TextField
+              label={t.calendar.lesson.description}
+              placeholder={t.calendar.lesson.descriptionPlaceholder}
+              value={description}
+              onChangeText={(text) => setDescription(upperFirst(text) ?? '')}
+              maxLength={120}
+              autoComplete="off"
+              returnKeyType="done"
             />
-          ))}
-        </View>
+          </FormGroup>
+        )}
       </View>
-      <Segmented<LessonType>
-        label={t.calendar.lesson.type}
-        options={TYPES.map((id) => ({ id, label: labels.lessonType(id), leading: <LessonShape type={id} size={11} /> }))}
-        value={type}
-        onChange={setType}
-      />
-      {type === 'ozel' && (
-        <View>
-          <TextField
-            label={t.calendar.lesson.description}
-            placeholder={t.calendar.lesson.descriptionPlaceholder}
-            value={description}
-            onChangeText={(text) => setDescription(upperFirst(text) ?? '')}
-            maxLength={120}
-            autoComplete="off"
-            // "Done" puts the keyboard away, so the buttons under the form come back into view
-            returnKeyType="done"
-          />
-          {descriptionMissing && (
-            <Text variant="foot" tone="ink3" style={styles.after}>
-              {t.calendar.lesson.descriptionRequired}
-            </Text>
-          )}
-        </View>
-      )}
 
       {mode !== 'edit' && (
         <View>
-          <FieldLabel hint={rows.length > 0 ? `${rows.length}/${SEATS_SHOWN}` : undefined}>{t.calendar.lesson.children}</FieldLabel>
-          {mode === 'copy' && (
-            <Notice style={styles.before}>
-              {t.calendar.lesson.copyNote}
-              {opened.archived > 0 ? ` ${t.calendar.lesson.copyArchived}` : ''}
-            </Notice>
-          )}
-          <Card inset={60}>
-            {shown.map((row) => (
+          <GroupTitle>{t.calendar.lesson.children}</GroupTitle>
+          <Card>
+            {/* One block, so the card draws no line between the count and its chips */}
+            <View>
               <Row
-                key={row.id}
-                leading={<Peg seat={{ id: row.id, name: row.name, status: 'scheduled' }} />}
-                title={row.name}
-                subtitle={row.detail || undefined}
-                trailing={
-                  <IconButton
-                    icon="close"
-                    label={fmt(t.calendar.lesson.remove, { name: row.name })}
-                    variant="plain"
-                    size={32}
-                    color={c.ink3}
-                    onPress={() => drop(row.id)}
-                  />
-                }
-                style={styles.childRow}
+                title={rows.length > 0 ? plural(t.calendar.lesson.selected, rows.length) : t.calendar.lesson.chooseChildren}
+                chevron
+                accessibilityLabel={rows.length > 0 ? `${t.calendar.lesson.children}, ${plural(t.calendar.lesson.selected, rows.length)}` : t.calendar.lesson.chooseChildren}
+                onPress={() => setPicking(true)}
               />
-            ))}
-            <Row
-              leading={
-                <View style={[styles.addMark, { backgroundColor: c.accentWash2 }]}>
-                  <Icon name="personAdd" size={16} color={c.accentInk} weight="semibold" />
-                </View>
-              }
-              title={
-                <Text variant="body" weight="600" tone="accentInk">
-                  {rows.length > 0 ? t.calendar.lesson.addChildren : t.calendar.lesson.chooseChildren}
-                </Text>
-              }
-              chevron
-              onPress={() => setPicking(true)}
-            />
+              {/* The chosen children as small raised chips; the last chip adds more */}
+              <View style={styles.chips}>
+                {shown.map((row) => (
+                  // In the dark a lifted chip would glow; it sits on the track instead
+                  <View key={row.id} style={[styles.chip, dark ? { backgroundColor: c.track } : { backgroundColor: c.raised, boxShadow: c.liftShadow }]}>
+                    <View style={[styles.monogram, { backgroundColor: chipTone ? chipTone.felt : c.felt }]}>
+                      <Text weight="600" maxFontSizeMultiplier={1} style={[styles.monogramText, { color: chipTone ? chipTone.ink : c.ink2 }]}>
+                        {initialsOf(row.name)}
+                      </Text>
+                    </View>
+                    <Text weight="500" numberOfLines={1} maxFontSizeMultiplier={1.2} style={styles.chipText}>
+                      {firstNameOf(row.name)}
+                    </Text>
+                  </View>
+                ))}
+                <Pressable
+                  onPress={() => setPicking(true)}
+                  accessibilityRole="button"
+                  accessibilityLabel={t.calendar.lesson.chooseChildren}
+                  hitSlop={{ top: 5, bottom: 5 }}
+                  style={({ pressed }) => [styles.chip, styles.addChip, { borderColor: c.line }, pressed && { backgroundColor: c.pressed }]}
+                >
+                  <Icon name="add" size={15} color={c.accentInk} />
+                  <Text weight="500" maxFontSizeMultiplier={1.2} style={[styles.chipText, { color: c.accentInk }]}>
+                    {t.common.add}
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
           </Card>
-          {overLimit ? (
-            <Notice tone="negative" style={styles.after}>
-              {fmt(t.calendar.lesson.tooMany, { limit: maxCapacity, count: rows.length })}
-            </Notice>
-          ) : rows.length > SEATS_SHOWN ? (
-            <Notice tone="action" style={styles.after}>
-              {fmt(t.calendar.lesson.seats, { count: rows.length })}
-            </Notice>
-          ) : mode === 'new' && rows.length === 0 ? (
-            // Says why "Add the lesson" waits, instead of a button that is simply grey
-            <Text variant="foot" tone="ink3" style={styles.after}>
-              {t.calendar.lesson.childrenRequired}
-            </Text>
-          ) : null}
+          {rows.length > 0 && (
+            <View style={styles.seatStrip}>
+              <SeatDots taken={rows.length} capacity={SEATS_SHOWN} type={type ?? 'ingilizce'} label={seatLine} />
+            </View>
+          )}
+          {childrenNotes.length > 0 && (
+            <View style={styles.notes}>
+              {childrenNotes.map((note) => (
+                <Text key={note.text} variant="sub" weight={note.tone === 'ink3' ? '400' : '500'} tone={note.tone}>
+                  {note.text}
+                </Text>
+              ))}
+            </View>
+          )}
         </View>
       )}
 
-      <SheetActions error={error}>
-        <WithSheet>
-          {(sheet) => (
-            <Button variant="primary" size="lg" disabled={!valid} busy={busy} onPress={() => void save(sheet.finish)}>
-              {mode === 'copy' ? t.calendar.lesson.copyAction : mode === 'edit' ? t.calendar.lesson.save : t.calendar.lesson.create}
-            </Button>
-          )}
-        </WithSheet>
-      </SheetActions>
+      <SheetActions error={error} />
     </SheetScreen>
   )
 }
 
 const styles = StyleSheet.create({
-  waiting: { gap: 14 },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  before: { marginBottom: 10 },
-  after: { marginTop: 8, paddingHorizontal: 2 },
-  childRow: { paddingRight: 8 },
-  // As wide as a child's tile, so "Add children" starts where the names do
-  addMark: { width: 32, height: 32, borderRadius: 16, marginHorizontal: 3, alignItems: 'center', justifyContent: 'center' }
+  waiting: { gap: 20 },
+  types: { flexDirection: 'row', gap: 8 },
+  under: { marginTop: 12 },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 16, paddingTop: 2, paddingBottom: 14 },
+  chip: { height: 34, borderRadius: 17, flexDirection: 'row', alignItems: 'center', gap: 7, paddingLeft: 4, paddingRight: 13, maxWidth: '100%' },
+  addChip: { borderWidth: 1.5, paddingLeft: 10, backgroundColor: 'transparent' },
+  monogram: { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  monogramText: { fontSize: 10.5, lineHeight: 13 },
+  chipText: { fontSize: 14, lineHeight: 19, flexShrink: 1 },
+  seatStrip: { paddingHorizontal: 4, marginTop: 12 },
+  notes: { gap: 4, paddingHorizontal: 4, marginTop: 10 }
 })

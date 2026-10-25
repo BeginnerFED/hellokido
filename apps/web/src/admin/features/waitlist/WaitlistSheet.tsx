@@ -236,7 +236,7 @@ function WaitlistForm({ entry, onDone, onStateChange }: { entry?: WaitlistEntry;
             )
           }
         >
-          <Button variant="primary" isDisabled={!valid} isPending={busy} onPress={() => void save()} className="max-md:flex-1">
+          <Button variant="primary" isDisabled={!valid || (Boolean(entry) && !dirty)} isPending={busy} onPress={() => void save()} className="max-md:flex-1">
             {t.waitlist.form.save}
           </Button>
         </SheetActions>

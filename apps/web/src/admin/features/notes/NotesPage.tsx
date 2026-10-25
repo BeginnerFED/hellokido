@@ -1,14 +1,14 @@
 import { useMemo, useState } from 'react'
 import { Button as AriaButton } from 'react-aria-components'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { CopyIcon, PlusIcon, StarIcon } from '@phosphor-icons/react'
+import { CopyIcon, NotePencilIcon, PlusIcon, StarIcon } from '@phosphor-icons/react'
 import { listNotes, updateNote, type Note } from '@hellokido/core/api'
 import { matchesSearch } from '@hellokido/core/rules/text.js'
 import { keys, useRefresh } from '../../data/queries'
 import { useI18n } from '../../providers/I18n'
 import { useToast } from '../../providers/Toasts'
 import { useActions } from '../../shell/Actions'
-import { EmptyState, LoadError, Skeleton } from '../../ui/Bits'
+import { EmptyState, IconDisc, LoadError, Skeleton } from '../../ui/Bits'
 import { Button, IconButton } from '../../ui/Button'
 import { SearchField } from '../../ui/Field'
 import { Page, Section } from '../../ui/Page'
@@ -57,7 +57,7 @@ export default function NotesPage() {
   const add = () => startTask('note')
   // Under "Favourites" and "The rest" a card title is a level below them; on its own it is the next level after the page
   const cards = (notes: Note[], level: 2 | 3) => (
-    <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+    <ul className="grid gap-3.5 sm:grid-cols-2 xl:grid-cols-3">
       {notes.map((note) => (
         <NoteCard
           key={note.id}
@@ -76,7 +76,8 @@ export default function NotesPage() {
       title={t.notes.title}
       summary={rows && rows.length > 0 ? plural(t.notes.count, rows.length) : undefined}
       toolbar={
-        <Button variant="primary" icon={<PlusIcon aria-hidden weight="bold" className="size-4" />} onPress={add} className="lg:hidden">
+        // Phones: the header's + stays the one filled button
+        <Button variant="quiet" icon={<PlusIcon aria-hidden weight="bold" className="size-4" />} onPress={add} className="lg:hidden">
           {t.notes.add}
         </Button>
       }
@@ -85,14 +86,19 @@ export default function NotesPage() {
       {list.isError ? (
         <LoadError message={t.notes.loadFailed} retryLabel={t.common.retry} onRetry={() => void list.refetch()} />
       ) : !rows ? (
-        <div aria-busy className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <div aria-busy className="grid gap-3.5 sm:grid-cols-2 xl:grid-cols-3">
           {Array.from({ length: 6 }, (_, index) => (
-            <Skeleton key={index} className="h-52 rounded-panel" />
+            <Skeleton key={index} className="h-52 rounded-panel!" />
           ))}
         </div>
       ) : rows.length === 0 ? (
         <EmptyState
-          className="py-16"
+          className="rounded-panel bg-felt py-14"
+          icon={
+            <IconDisc className="size-11 bg-raised dark:bg-track">
+              <NotePencilIcon className="size-5" />
+            </IconDisc>
+          }
           title={t.notes.empty}
           body={t.notes.emptyBody}
           action={
@@ -102,7 +108,7 @@ export default function NotesPage() {
           }
         />
       ) : (
-        <div className="flex flex-col gap-6">
+        <div className="flex flex-col gap-7">
           {search && <SearchField value={query} onChange={setQuery} placeholder={t.notes.search} label={t.notes.search} className="lg:max-w-[28rem]" />}
           {shown.length === 0 ? (
             <EmptyState title={t.notes.noMatch} />
@@ -143,13 +149,13 @@ function NoteCard({
     // The note's own colour stays on its dot: a tinted card in red read as a warning
     <li
       className={cx(
-        'relative flex min-w-0 flex-col rounded-panel border border-line bg-surface p-4 transition-[border-color,box-shadow] duration-150',
-        '[&:has(.note-open[data-hovered])]:shadow-piece'
+        'on-felt relative flex min-w-0 flex-col rounded-panel bg-felt px-[1.125rem] pt-4 pb-[1.125rem] transition-[background-color,scale] duration-150 ease-standard sm:px-5',
+        '[&:has(.note-open[data-hovered])]:bg-[color-mix(in_oklab,var(--felt)_95%,var(--ink))] [&:has(.note-open[data-pressed])]:scale-[0.99]'
       )}
     >
       <div className="flex items-start gap-2.5">
         {color && <span aria-hidden className="mt-[0.4375rem] size-2.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />}
-        <Heading className="min-w-0 flex-1 text-[0.9375rem] leading-snug font-semibold text-ink">
+        <Heading className="min-w-0 flex-1 text-[1.0625rem] leading-[1.4375rem] font-semibold tracking-[-0.01em] text-ink">
           {/* The title opens the note; its hit area covers the whole card */}
           <AriaButton
             onPress={onOpen}
@@ -167,9 +173,9 @@ function NoteCard({
           <StarIcon aria-hidden weight={favorite ? 'fill' : 'regular'} className={cx('size-[1.125rem]', favorite && 'text-accent')} />
         </IconButton>
       </div>
-      {content && <p className="mt-2 line-clamp-6 text-sm whitespace-pre-line text-ink-2">{content}</p>}
-      <div className="mt-auto flex items-center gap-2 pt-3">
-        <span className="min-w-0 flex-1 truncate text-[0.8125rem] text-ink-3">
+      {content && <p className="mt-2 line-clamp-6 text-[0.90625rem] leading-[1.375rem] whitespace-pre-line text-ink-2">{content}</p>}
+      <div className="mt-auto flex items-center gap-2 pt-4">
+        <span className="min-w-0 flex-1 truncate text-[0.84375rem] text-ink-3">
           {note.created_at && date(note.created_at, { day: 'numeric', month: 'short', year: 'numeric' })}
         </span>
         <Button

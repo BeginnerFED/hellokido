@@ -9,10 +9,9 @@ import { keys, useChildLessons, useLabels } from '../../data/queries'
 import { useI18n, type I18n } from '../../providers/I18n'
 import { useColors, type Colors } from '../../theme/colors'
 import { useActionMenu } from '../../ui/ActionMenu'
-import { LoadError, Skeleton } from '../../ui/Bits'
-import { Button } from '../../ui/Button'
+import { DateTile, LoadError, Skeleton } from '../../ui/Bits'
 import { Icon } from '../../ui/Icon'
-import { Card, Section } from '../../ui/Screen'
+import { ActionRow, Card, GroupTitle, QuietCard, Section } from '../../ui/Screen'
 import { LessonShape } from '../../ui/signature'
 import { DOT, Text } from '../../ui/Text'
 import { useToast } from '../../ui/Toast'
@@ -29,23 +28,24 @@ function lessonWhen(i18n: Pick<I18n, 'date'>, value: string) {
   return `${date}, ${i18n.date(day, { hour: '2-digit', minute: '2-digit' })}`
 }
 
-// Each status wears its peg's colour; an absence is grey, never red; forgotten attendance asks for action
-function statusLook(c: Colors, status: string, overdue: boolean) {
-  if (overdue) return { background: c.actionWash, ink: c.actionInk, ring: c.actionLine }
-  if (status === 'attended') return { background: c.positiveWash, ink: c.positiveInk, ring: c.positiveLine }
-  if (status === 'no_show') return { background: c.well, ink: c.ink2, ring: c.line }
-  if (status === 'makeup') return { background: c.pinkWash, ink: c.pinkInk, ring: c.pinkLine }
-  return { background: c.surface, ink: c.ink2, ring: c.lineStrong }
+// A status is a dot and words in its ink on the pill; an absence is grey, never red; forgotten attendance asks for action
+function statusLook(c: Colors, status: string, overdue: boolean): { dot: string | null; ink: string } {
+  if (overdue) return { dot: c.amber, ink: c.amberInk }
+  if (status === 'attended') return { dot: c.green, ink: c.greenInk }
+  if (status === 'makeup') return { dot: c.pink, ink: c.pinkInk }
+  if (status === 'no_show') return { dot: c.mute, ink: c.ink2 }
+  return { dot: null, ink: c.ink2 }
 }
 
 /**
- * Every lesson of the child across all periods: what comes next first, then the past, newest
- * first, with a heading where the lessons of earlier packages begin. Attendance can be corrected on any of them.
+ * The child's lessons across all periods, in two parts of the page: what comes next ("Sıradaki
+ * dersler"), and the past, newest first, with a heading where the lessons of earlier packages
+ * begin. Attendance can be corrected on any of them.
  */
-export function ChildLessons({ registration }: { registration: Registration }) {
+export function ChildLessons({ registration, part }: { registration: Registration; part: 'upcoming' | 'past' }) {
   const c = useColors()
   const i18n = useI18n()
-  const { t, fmt, plural } = i18n
+  const { t, fmt, plural, date } = i18n
   const labels = useLabels()
   const toast = useToast()
   const client = useQueryClient()
@@ -109,9 +109,13 @@ export function ChildLessons({ registration }: { registration: Registration }) {
 
   const row = (lesson: ChildLesson) => {
     const event = lesson.events!
+    const day = new Date(event.event_date)
     const overdue = isAttendanceOverdue(lesson.status, event.event_date)
     const title = event.event_type === 'ozel' && event.custom_description ? event.custom_description : labels.lessonType(event.event_type)
     const when = lessonWhen(i18n, event.event_date)
+    const thisYear = day.getFullYear() === new Date().getFullYear()
+    // The tile carries the day and month; the line the weekday (or the year) and the hour
+    const time = `${date(day, thisYear ? { weekday: 'short' } : { year: 'numeric' })} ${date(day, { hour: '2-digit', minute: '2-digit' })}`
     const notes = [
       lesson.cancellation_reason && fmt(t.children.detail.cancelReason, { text: lesson.cancellation_reason }),
       lesson.makeup_notes && fmt(t.children.detail.makeupNote, { text: lesson.makeup_notes }),
@@ -122,28 +126,25 @@ export function ChildLessons({ registration }: { registration: Registration }) {
     const busy = saving.has(lesson.id)
     return (
       <View key={lesson.id} style={styles.lesson}>
-        <View style={styles.shape}>
-          <LessonShape type={event.event_type} size={12} />
-        </View>
+        <DateTile day={day.getDate()} under={date(day, { month: 'short' })} late={overdue} />
         <View style={styles.flex}>
-          <Text variant="sub" weight="500" numberOfLines={1}>
-            {title}
-            <Text variant="sub" tone="ink3">
-              {DOT}
-              {labels.ageGroup(event.age_group)}
+          <View style={styles.titleLine}>
+            <LessonShape type={event.event_type} />
+            <Text weight="500" numberOfLines={1} style={styles.shrink}>
+              {title}
             </Text>
-          </Text>
-          <Text variant="foot" tone="ink2" tabular>
-            {when}
+          </View>
+          <Text variant="sub" tone="ink3" tabular numberOfLines={2}>
+            {time}, {labels.ageGroup(event.age_group)}
             {lesson.is_makeup && (
-              <Text variant="foot" tone="pinkInk">
+              <Text variant="sub" tone="pinkInk">
                 {DOT}
                 {t.children.detail.makeup}
               </Text>
             )}
           </Text>
           {notes.map((note) => (
-            <Text key={note} variant="foot" tone="ink3">
+            <Text key={note} variant="sub" tone="ink3">
               {note}
             </Text>
           ))}
@@ -156,79 +157,73 @@ export function ChildLessons({ registration }: { registration: Registration }) {
           accessibilityHint={t.mobile.lessonStatus}
           accessibilityState={{ disabled: busy, busy }}
           hitSlop={8}
-          style={({ pressed }) => [
-            styles.status,
-            { backgroundColor: look.background, borderColor: look.ring ?? look.background, opacity: busy ? 0.55 : pressed ? 0.7 : 1 }
-          ]}
+          // The phone's pop-up button: a dot, the choice and its up-and-down arrows on the track
+          style={({ pressed }) => [styles.status, { backgroundColor: c.track, opacity: busy ? 0.55 : pressed ? 0.7 : 1 }]}
         >
-          <Text variant="foot" weight="600" numberOfLines={1} style={{ color: look.ink, flexShrink: 1 }}>
+          {look.dot && <View style={[styles.statusDot, { backgroundColor: look.dot }]} />}
+          <Text variant="label" numberOfLines={1} style={{ color: look.ink, flexShrink: 1 }}>
             {statusName}
           </Text>
-          <Icon name="chevronDown" size={10} color={look.ink} weight="bold" />
+          <Icon name="chevronUpDown" size={10} color={look.ink} weight="bold" />
         </Pressable>
       </View>
     )
   }
 
-  const more = (rest: number, onPress: () => void) =>
-    rest > 0 && (
-      <Button variant="plain" size="sm" onPress={onPress} style={styles.more}>
-        {plural(t.children.detail.showMore, Math.min(STEP, rest))}
-      </Button>
-    )
+  // The last row of the card it continues
+  const more = (rest: number, onPress: () => void) => rest > 0 && <ActionRow label={plural(t.children.detail.showMore, Math.min(STEP, rest))} onPress={onPress} />
 
-  const subheading = (text: string, after = false) => (
-    <Text variant="foot" weight="600" tone="ink3" accessibilityRole="header" style={[styles.subheading, after && styles.after]}>
-      {text}
-    </Text>
-  )
-
-  return (
-    <Section title={t.children.detail.lessonsTitle} aside={total > 0 ? plural(t.children.form.lessons, total) : undefined}>
-      {menu.element}
-      {lessons.isPending ? (
-        // Shaped like the rows that follow: the type dot, two lines and the status pill
-        <View style={[styles.waiting, { backgroundColor: c.surface, borderColor: c.line }]}>
-          {[0, 1, 2].map((item) => (
-            <View key={item} style={styles.waitingRow}>
-              <Skeleton height={12} width={12} radius={6} />
-              <View style={styles.flex}>
-                <Skeleton height={14} width="55%" />
-                <Skeleton height={11} width="40%" style={styles.waitingLine} />
+  if (part === 'upcoming') {
+    // This part also stands for the whole list while it loads, fails or is empty
+    if (lessons.data && total > 0 && upcoming.length === 0) return null
+    return (
+      <Section title={t.children.phone.upcomingTitle} aside={upcoming.length > 0 ? plural(t.children.form.lessons, upcoming.length) : undefined}>
+        {menu.element}
+        {lessons.isPending ? (
+          // Shaped like the rows that follow: the date tile, two lines and the status pill
+          <View style={[styles.waiting, { backgroundColor: c.felt }]}>
+            {[0, 1].map((item) => (
+              <View key={item} style={styles.waitingRow}>
+                <Skeleton height={44} width={44} radius={14} />
+                <View style={styles.flex}>
+                  <Skeleton height={14} width="45%" />
+                  <Skeleton height={11} width="60%" style={styles.waitingLine} />
+                </View>
+                <Skeleton height={30} width={88} radius={15} />
               </View>
-              <Skeleton height={30} width={88} radius={15} />
-            </View>
-          ))}
-        </View>
-      ) : lessons.isError ? (
-        <LoadError message={t.children.detail.lessonsFailed} retryLabel={t.common.retry} onRetry={() => void lessons.refetch()} />
-      ) : total === 0 ? (
-        <Text variant="sub" tone="ink2" style={styles.quiet}>
-          {t.children.detail.lessonsEmpty}
-        </Text>
-      ) : (
-        <View style={styles.groups}>
-          {upcoming.length > 0 && (
-            <View>
-              {subheading(t.children.detail.upcoming)}
-              <Card inset={42}>{upcoming.slice(0, shownUpcoming).map(row)}</Card>
-              {more(upcoming.length - shownUpcoming, () => setShownUpcoming((count) => count + STEP))}
-            </View>
-          )}
-          {past.length > 0 && (
-            <View>
-              {upcoming.length > 0 && subheading(t.children.detail.past)}
-              {currentRows.length > 0 && <Card inset={42}>{currentRows.map(row)}</Card>}
-              {earlierRows.length > 0 && (
-                <>
-                  {/* Headed like the other groups, so the three read as one set */}
-                  {subheading(t.children.detail.earlierPackages, currentRows.length > 0)}
-                  <Card inset={42}>{earlierRows.map(row)}</Card>
-                </>
-              )}
-              {more(past.length - shownPast, () => setShownPast((count) => count + STEP))}
-            </View>
-          )}
+            ))}
+          </View>
+        ) : lessons.isError ? (
+          <LoadError message={t.children.detail.lessonsFailed} retryLabel={t.common.retry} onRetry={() => void lessons.refetch()} />
+        ) : total === 0 ? (
+          <QuietCard>{t.children.detail.lessonsEmpty}</QuietCard>
+        ) : (
+          <Card>
+            {upcoming.slice(0, shownUpcoming).map(row)}
+            {more(upcoming.length - shownUpcoming, () => setShownUpcoming((count) => count + STEP))}
+          </Card>
+        )}
+      </Section>
+    )
+  }
+
+  if (!lessons.data || past.length === 0) return null
+  return (
+    <Section title={t.children.phone.pastTitle} aside={plural(t.children.form.lessons, past.length)}>
+      {menu.element}
+      {currentRows.length > 0 && (
+        <Card>
+          {currentRows.map(row)}
+          {earlierRows.length === 0 && more(past.length - shownPast, () => setShownPast((count) => count + STEP))}
+        </Card>
+      )}
+      {earlierRows.length > 0 && (
+        <View style={currentRows.length > 0 ? styles.after : undefined}>
+          <GroupTitle>{t.children.detail.earlierPackages}</GroupTitle>
+          <Card>
+            {earlierRows.map(row)}
+            {more(past.length - shownPast, () => setShownPast((count) => count + STEP))}
+          </Card>
         </View>
       )}
     </Section>
@@ -237,17 +232,15 @@ export function ChildLessons({ registration }: { registration: Registration }) {
 
 const styles = StyleSheet.create({
   flex: { flex: 1, minWidth: 0, gap: 1 },
-  waiting: { borderRadius: 18, borderWidth: 1, paddingVertical: 2 },
-  waitingRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingLeft: 16, paddingRight: 12, minHeight: 60 },
+  waiting: { borderRadius: 26, paddingVertical: 4 },
+  waitingRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingLeft: 16, paddingRight: 14, minHeight: 68 },
   waitingLine: { marginTop: 7 },
-  quiet: { paddingHorizontal: 4 },
-  groups: { gap: 18 },
-  subheading: { paddingHorizontal: 4, marginBottom: 8 },
-  lesson: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingLeft: 16, paddingRight: 12, paddingVertical: 11, minHeight: 56 },
-  shape: { width: 14, alignItems: 'center', alignSelf: 'flex-start', paddingTop: 4 },
+  lesson: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingLeft: 16, paddingRight: 14, paddingVertical: 12, minHeight: 68 },
+  titleLine: { flexDirection: 'row', alignItems: 'center', gap: 7, minWidth: 0 },
+  shrink: { flexShrink: 1 },
   // A share of the row, not a fixed width: "Yoklama girilmedi" or "Відпрацювання" at a larger text size still fits
-  status: { flexDirection: 'row', alignItems: 'center', gap: 4, height: 30, maxWidth: '48%', borderRadius: 15, borderWidth: 1, paddingLeft: 11, paddingRight: 9, flexShrink: 0 },
+  status: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 30, maxWidth: '44%', borderRadius: 15, paddingLeft: 11, paddingRight: 10, flexShrink: 0 },
+  statusDot: { width: 7, height: 7, borderRadius: 4 },
   // A group under another one in the same list keeps the gap between groups
-  after: { marginTop: 18 },
-  more: { alignSelf: 'flex-start', marginTop: 6, marginLeft: 4 }
+  after: { marginTop: 20 }
 })

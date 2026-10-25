@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { Button as AriaButton, ToggleButton, ToggleButtonGroup } from 'react-aria-components'
 import { useQuery } from '@tanstack/react-query'
 import { set, startOfDay } from 'date-fns'
-import { PlusIcon, TrashIcon, XIcon } from '@phosphor-icons/react'
+import { CheckIcon, PlusIcon, TrashIcon, XIcon } from '@phosphor-icons/react'
 import {
   copyLesson,
   createLesson,
@@ -21,15 +22,16 @@ import { holdsSeat, isRecordedAttendance } from '@hellokido/core/rules/attendanc
 import { useLabels, useRefresh } from '../../data/queries'
 import { useI18n } from '../../providers/I18n'
 import { useToast } from '../../providers/Toasts'
-import { LoadError, Mark, Skeleton } from '../../ui/Bits'
+import { Avatar, LoadError, Mark, Skeleton } from '../../ui/Bits'
 import { Button, IconButton } from '../../ui/Button'
-import { Chips, Segmented, Select, Switch, type Option } from '../../ui/Choice'
+import { Select, Switch, type Option } from '../../ui/Choice'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { DateField } from '../../ui/DateField'
 import { TextField, fieldLabelClass } from '../../ui/Field'
 import { FormRule, Notice } from '../../ui/Notice'
-import { Sheet, SheetActions, SheetFooter } from '../../ui/Sheet'
-import { AgeTablet, LessonShape, Peg } from '../../ui/signature'
+import { Sheet, SheetActions, SheetFooter, useCloseSheet } from '../../ui/Sheet'
+import { LessonShape, SeatDots, typeClass } from '../../ui/signature'
+import { cx } from '../../ui/cx'
 import type { FormState } from '../children/ExtendForm'
 import { StatusMenu } from '../lessons/StatusMenu'
 import { ChildPicker } from './ChildPicker'
@@ -43,7 +45,7 @@ const STATUSES: AttendanceStatus[] = ['scheduled', 'attended', 'no_show', 'postp
 const TYPES: LessonType[] = ['ingilizce', 'duyusal', 'ozel']
 
 export function LessonSheet({ isOpen, onOpenChange, params }: { isOpen: boolean; onOpenChange: (open: boolean) => void; params: LessonParams }) {
-  const { t, date } = useI18n()
+  const { t, fmt, date } = useI18n()
   const [state, setState] = useState(IDLE)
   const [copying, setCopying] = useState(false)
   const lessonId = params.lessonId
@@ -59,9 +61,17 @@ export function LessonSheet({ isOpen, onOpenChange, params }: { isOpen: boolean;
   })
   const lesson = detail.data?.lesson
   const title = !lessonId ? t.calendar.lesson.createTitle : copying ? t.calendar.lesson.copyTitle : t.calendar.lesson.editTitle
+  // A new lesson says where on the calendar it was opened from
   const description = lesson
     ? `${date(lesson.event_date, { weekday: 'long', day: 'numeric', month: 'long' })} · ${date(lesson.event_date, { hour: '2-digit', minute: '2-digit' })}`
-    : undefined
+    : !lessonId && params.start
+      ? params.withTime
+        ? fmt(t.calendar.lesson.fromSlot, {
+            date: date(params.start, { weekday: 'long', day: 'numeric', month: 'long' }),
+            time: date(params.start, { hour: '2-digit', minute: '2-digit' })
+          })
+        : fmt(t.calendar.lesson.fromDay, { date: date(params.start, { weekday: 'long', day: 'numeric', month: 'long' }) })
+      : undefined
 
   return (
     <Sheet isOpen={isOpen} onOpenChange={onOpenChange} title={title} description={description} isDirty={state.dirty} isBusy={state.busy}>
@@ -119,6 +129,7 @@ function LessonForm({
   const labels = useLabels()
   const toast = useToast()
   const refresh = useRefresh()
+  const closeSheet = useCloseSheet()
   const lesson = detail?.lesson
   const editing = Boolean(lesson)
 
@@ -278,86 +289,117 @@ function LessonForm({
     }
   }
 
+
   // ---- options (a stored time outside the usual steps stays choosable, so it is never changed unseen)
-  const hourOptions: Option[] = [...new Set([...LESSON_HOURS, ...(opened.hour !== null ? [opened.hour] : [])])]
-    .sort((a, b) => a - b)
-    .map((value) => ({ id: String(value), label: String(value).padStart(2, '0') }))
-  const minuteOptions: Option[] = [...new Set([...LESSON_MINUTE_STEPS, ...(opened.minute !== null ? [opened.minute] : [])])]
-    .sort((a, b) => a - b)
-    .map((value) => ({ id: String(value), label: String(value).padStart(2, '0') }))
-  const ageOptions: Option[] = (AGE_GROUPS as string[]).map((group) => ({
-    id: group,
-    label: labels.ageGroup(group),
-    icon: <AgeTablet group={group} />
-  }))
-  const typeOptions: Option<LessonType>[] = TYPES.map((value) => ({ id: value, label: labels.lessonType(value), icon: <LessonShape type={value} /> }))
+  const timeKey = (h: number, m: number) => `${h}:${m}`
+  const timeOptions: Option[] = LESSON_HOURS.flatMap((h) => LESSON_MINUTE_STEPS.map((m) => [h, m] as const))
+    .concat(opened.hour !== null && opened.minute !== null ? [[opened.hour, opened.minute] as const] : [])
+    .filter(([h, m], index, all) => all.findIndex(([h2, m2]) => h2 === h && m2 === m) === index)
+    .sort(([h1, m1], [h2, m2]) => h1 * 60 + m1 - (h2 * 60 + m2))
+    .map(([h, m]) => ({ id: timeKey(h, m), label: `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}` }))
+  const ageOptions: Option[] = (AGE_GROUPS as string[]).map((group) => ({ id: group, label: labels.ageGroup(group) }))
+
+  const removeRow = (id: string) => {
+    setConfirmNames(null)
+    setRows((list) => list.filter((item) => item.id !== id))
+  }
+  const seatsHeld = copyMode ? going.length : holders
+  const seatsOpen = SEATS_SHOWN - seatsHeld
+
+  const addChild = (
+    <AriaButton
+      onPress={() => setPicking(true)}
+      className={cx(
+        'inline-flex h-10 items-center gap-1.5 rounded-full px-3.5 text-[0.90625rem] font-medium text-accent-ink outline-none',
+        'shadow-[inset_0_0_0_1.5px_var(--line-strong)] transition-colors duration-150 data-hovered:bg-hover data-focus-visible:ring-2 data-focus-visible:ring-focus'
+      )}
+    >
+      <PlusIcon aria-hidden weight="bold" className="size-4" />
+      {t.calendar.lesson.addChildren}
+    </AriaButton>
+  )
 
   const childrenPart = (
-    <section aria-labelledby="lesson-children" className="flex flex-col gap-3">
-      <div className="flex min-h-8 items-center gap-3">
-        <h3 id="lesson-children" className={`${fieldLabelClass} min-w-0 flex-1`}>
+    <section aria-labelledby="lesson-children" className="flex flex-col gap-2.5">
+      <div className="flex items-baseline justify-between gap-3">
+        <h3 id="lesson-children" className={fieldLabelClass}>
           {t.calendar.lesson.children}
-          {rows.length > 0 && (
-            <span className="ml-2 font-normal text-ink-3 tabular">
-              {holders}/{SEATS_SHOWN}
-            </span>
-          )}
         </h3>
-        {!picking && (
-          <Button size="sm" variant="quiet" icon={<PlusIcon aria-hidden weight="bold" className="size-4" />} onPress={() => setPicking(true)} className="-mr-2">
-            {t.calendar.lesson.addChildren}
-          </Button>
+        {rows.length > 0 && (
+          <span className="text-[0.84375rem] font-medium text-ink-3">
+            {holders}/{SEATS_SHOWN}
+          </span>
         )}
       </div>
       {unmarked > 0 && <Notice tone="action">{plural(t.calendar.lesson.unmarkedHint, unmarked)}</Notice>}
       {holders > SEATS_SHOWN && !copyMode && <Notice tone="action">{fmt(t.calendar.lesson.seats, { count: holders })}</Notice>}
       {overLimit && <Notice tone="negative">{fmt(t.calendar.lesson.tooMany, { limit: maxCapacity, count: going.length })}</Notice>}
       {copyMode && rows.some((row) => !row.isActive) && <Notice>{t.calendar.lesson.copyArchived}</Notice>}
-      {picking && <ChildPicker selected={selected} onToggle={toggleChild} onDone={() => setPicking(false)} />}
-      {rows.length === 0
-        ? !picking && <p className="text-sm text-ink-2">{editing ? t.calendar.lesson.noChildren : t.calendar.lesson.childrenRequired}</p>
-        : (
-          <ul className="divide-y divide-line">
-            {rows.map((row) => {
-              const overdue = dayPassed && !copyMode && row.status === 'scheduled'
-              return (
-                <li key={row.id} className="flex items-center gap-3 py-2">
-                  <Peg seat={{ id: row.id, name: row.name, status: copyMode ? 'scheduled' : row.status, overdue }} size="md" />
-                  <div className="min-w-0 flex-1">
-                    <p className="flex min-w-0 items-center gap-2">
-                      <span className="truncate text-[0.9375rem] font-medium">{row.name}</span>
-                      {!row.isActive && <Mark tone="neutral">{t.today.archived}</Mark>}
-                    </p>
-                    {row.detail && <p className="truncate text-[0.8125rem] text-ink-3">{row.detail}</p>}
-                  </div>
-                  {editing && !copyMode && (
-                    <StatusMenu
-                      status={row.status}
-                      options={STATUSES}
-                      onChange={(status) => setRows((list) => list.map((item) => (item.id === row.id ? { ...item, status } : item)))}
-                      label={fmt(t.children.detail.lessonStatus, { name: row.name })}
-                      overdue={overdue}
-                      overdueLabel={t.calendar.lesson.notMarked}
-                    />
-                  )}
-                  <IconButton
-                    size="sm"
-                    label={fmt(t.calendar.lesson.remove, { name: row.name })}
-                    onPress={() => {
-                      setConfirmNames(null)
-                      setRows((list) => list.filter((item) => item.id !== row.id))
-                    }}
-                    className="-mr-1.5 shrink-0"
-                  >
-                    <XIcon aria-hidden className="size-4" />
-                  </IconButton>
-                </li>
-              )
-            })}
-          </ul>
-        )}
+      {picking ? (
+        <ChildPicker selected={selected} onToggle={toggleChild} onDone={() => setPicking(false)} />
+      ) : editing ? (
+        // An existing lesson: a row per child with their attendance, in a felt well
+        <div className="on-felt rounded-[1.25rem] bg-felt">
+          {rows.length === 0 ? (
+            <p className="px-4 pt-3.5 text-sm text-ink-2">{t.calendar.lesson.noChildren}</p>
+          ) : (
+            <ul>
+              {rows.map((row) => {
+                const overdue = dayPassed && !copyMode && row.status === 'scheduled'
+                return (
+                  <li key={row.id} className="flex items-center gap-3 border-t border-line py-2.5 pr-2 pl-3.5 first:border-t-0">
+                    <Avatar name={row.name} size="sm" />
+                    <div className="min-w-0 flex-1">
+                      <p className="flex min-w-0 items-center gap-2">
+                        <span className="truncate text-[0.9375rem] font-medium">{row.name}</span>
+                        {!row.isActive && <Mark tone="neutral">{t.today.archived}</Mark>}
+                      </p>
+                      {row.detail && <p className="truncate text-[0.8125rem] text-ink-3">{row.detail}</p>}
+                    </div>
+                    {editing && !copyMode && (
+                      <StatusMenu
+                        status={row.status}
+                        options={STATUSES}
+                        onChange={(status) => setRows((list) => list.map((item) => (item.id === row.id ? { ...item, status } : item)))}
+                        label={fmt(t.children.detail.lessonStatus, { name: row.name })}
+                        overdue={overdue}
+                        overdueLabel={t.calendar.lesson.notMarked}
+                      />
+                    )}
+                    <IconButton size="sm" label={fmt(t.calendar.lesson.remove, { name: row.name })} onPress={() => removeRow(row.id)} className="shrink-0">
+                      <XIcon aria-hidden className="size-4" />
+                    </IconButton>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+          <div className={cx('px-3 pb-3', rows.length === 0 ? 'pt-3' : 'border-t border-line pt-3')}>{addChild}</div>
+        </div>
+      ) : (
+        // A new lesson: the children as people chips on a felt well
+        <div className="on-felt flex flex-wrap items-center gap-2 rounded-[1.25rem] bg-felt p-3">
+          {rows.map((row) => (
+            <span key={row.id} className="inline-flex h-10 max-w-full min-w-0 items-center gap-2 rounded-full bg-piece pr-1 pl-1.5 shadow-lift dark:shadow-none">
+              <Avatar name={row.name} size="xs" tone="sky" />
+              <span className="min-w-0 truncate text-[0.90625rem] font-medium">{row.name}</span>
+              <IconButton size="sm" label={fmt(t.calendar.lesson.remove, { name: row.name })} onPress={() => removeRow(row.id)} className="size-8! shrink-0">
+                <XIcon aria-hidden className="size-3.5" />
+              </IconButton>
+            </span>
+          ))}
+          {addChild}
+          {rows.length === 0 && <span className="px-1 text-[0.84375rem] text-ink-3">{t.calendar.lesson.childrenRequired}</span>}
+        </div>
+      )}
+      {!picking && rows.length > 0 && (
+        <p className="flex items-center gap-2.5 px-0.5 text-sm text-ink-2">
+          <SeatDots taken={seatsHeld} capacity={SEATS_SHOWN} />
+          {seatsOpen > 0 ? plural(t.calendar.lesson.seatsLeft, seatsOpen) : t.calendar.lesson.seatsFull}
+        </p>
+      )}
       {confirmNames && (
-        <div role="alert" className="rounded-control bg-negative-wash px-3 py-3 text-[0.8125rem] text-negative-ink">
+        <div role="alert" className="rounded-control bg-negative-wash px-3.5 py-3 text-[0.84375rem] text-negative-ink">
           <p className="text-pretty">{fmt(t.calendar.lesson.removeRecorded, { names: confirmNames.join(', ') })}</p>
           <div className="mt-2.5 flex flex-wrap gap-2">
             <Button size="sm" variant="secondary" onPress={() => setConfirmNames(null)} isDisabled={busy}>
@@ -373,35 +415,28 @@ function LessonForm({
   )
 
   const whenPart = (
-    <div className="flex flex-col gap-4">
-      <DateField
-        label={t.calendar.lesson.date}
-        value={day}
-        onChange={(next) => {
-          if (next) setDay(next)
-          setTimeTaken(false)
-        }}
-        isDisabled={copyMode}
-      />
-      <div className="grid grid-cols-[minmax(0,7.5rem)_minmax(0,1fr)] items-start gap-3">
+    <div className="flex flex-col gap-3">
+      <div className="grid grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] items-start gap-2.5">
+        <DateField
+          label={t.calendar.lesson.date}
+          value={day}
+          onChange={(next) => {
+            if (next) setDay(next)
+            setTimeTaken(false)
+          }}
+          isDisabled={copyMode}
+        />
         <Select
           label={t.calendar.lesson.hour}
-          options={hourOptions}
-          value={hour === null ? null : String(hour)}
+          options={timeOptions}
+          value={hour === null || minute === null ? null : timeKey(hour, minute)}
           onChange={(value) => {
-            setHour(Number(value))
+            const [h, m] = value.split(':').map(Number)
+            setHour(h)
+            setMinute(m)
             setTimeTaken(false)
           }}
-          placeholder="––"
-        />
-        <Segmented
-          label={t.calendar.lesson.minute}
-          options={minuteOptions}
-          value={minute === null ? null : String(minute)}
-          onChange={(value) => {
-            setMinute(Number(value))
-            setTimeTaken(false)
-          }}
+          placeholder="––:––"
         />
       </div>
       {timeTaken && <Notice tone="negative">{t.calendar.minuteTaken}</Notice>}
@@ -409,12 +444,80 @@ function LessonForm({
   )
 
   const whatPart = (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-1.5">
-        <span className={fieldLabelClass}>{t.calendar.lesson.ageGroup}</span>
-        <Chips aria-label={t.calendar.lesson.ageGroup} options={ageOptions} selected={ageGroup ? [ageGroup] : []} onChange={(next) => next[0] && setAgeGroup(next[0])} />
+    <div className="flex flex-col gap-5">
+      <div className="flex flex-col gap-2">
+        <span id="lesson-age" className={fieldLabelClass}>
+          {t.calendar.lesson.ageGroup}
+        </span>
+        <ToggleButtonGroup
+          aria-labelledby="lesson-age"
+          selectionMode="single"
+          disallowEmptySelection
+          selectedKeys={ageGroup ? [ageGroup] : []}
+          onSelectionChange={(keys) => {
+            const next = [...keys][0]
+            if (next != null) setAgeGroup(String(next))
+          }}
+          className="flex flex-wrap gap-[0.4375rem]"
+        >
+          {ageOptions.map((option) => (
+            <ToggleButton
+              key={option.id}
+              id={option.id}
+              className={cx(
+                'relative inline-flex h-[2.125rem] items-center rounded-full bg-field px-[0.8125rem] text-sm font-medium whitespace-nowrap text-ink-2 outline-none',
+                'pointer-coarse:after:absolute pointer-coarse:after:inset-x-0 pointer-coarse:after:-inset-y-1',
+                'transition-[background-color,color,box-shadow] duration-150 data-hovered:bg-track data-hovered:text-ink',
+                'data-selected:bg-sky-felt data-selected:text-sky-ink data-selected:shadow-[inset_0_0_0_2px_var(--sky)] data-selected:data-hovered:bg-sky-felt',
+                'data-focus-visible:ring-2 data-focus-visible:ring-focus data-focus-visible:ring-offset-2 data-focus-visible:ring-offset-sheet'
+              )}
+            >
+              {option.label}
+            </ToggleButton>
+          ))}
+        </ToggleButtonGroup>
       </div>
-      <Segmented<LessonType> label={t.calendar.lesson.type} options={typeOptions} value={type} onChange={setType} />
+      <div className="flex flex-col gap-2">
+        <span id="lesson-type" className={fieldLabelClass}>
+          {t.calendar.lesson.type}
+        </span>
+        {/* Three felt tiles; the chosen one takes its type's felt, a ring and a check */}
+        <ToggleButtonGroup
+          aria-labelledby="lesson-type"
+          selectionMode="single"
+          disallowEmptySelection
+          selectedKeys={type ? [type] : []}
+          onSelectionChange={(keys) => {
+            const next = [...keys][0]
+            if (next != null) setType(String(next) as LessonType)
+          }}
+          className="grid grid-cols-3 gap-2"
+        >
+          {TYPES.map((value) => (
+            <ToggleButton
+              key={value}
+              id={value}
+              className={cx(
+                typeClass(value),
+                'group relative flex min-w-0 flex-col items-start gap-2 rounded-[1.125rem] bg-field px-3 py-3 text-left text-[0.9375rem] font-medium text-ink outline-none',
+                'sm:flex-row sm:items-center sm:gap-2.5 sm:py-[0.8125rem]',
+                'transition-[background-color,color,box-shadow,scale] duration-150 data-hovered:bg-track data-pressed:scale-[0.98]',
+                'data-selected:bg-(--t-felt) data-selected:text-(--t-ink) data-selected:shadow-[inset_0_0_0_2px_var(--t-mid)] data-selected:data-hovered:bg-(--t-felt)',
+                'data-focus-visible:ring-2 data-focus-visible:ring-focus data-focus-visible:ring-offset-2 data-focus-visible:ring-offset-sheet'
+              )}
+            >
+              <LessonShape type={value} size="md" />
+              <span className="min-w-0 truncate">{labels.lessonType(value)}</span>
+              <span
+                aria-hidden
+                className="absolute -top-1.5 -right-1.5 hidden size-5 place-items-center rounded-full bg-(--t-ink) text-(--t-felt) ring-2 ring-sheet group-data-selected:grid"
+              >
+                <CheckIcon weight="bold" className="size-3" />
+              </span>
+            </ToggleButton>
+          ))}
+        </ToggleButtonGroup>
+      </div>
       {type === 'ozel' && (
         <TextField
           label={t.calendar.lesson.description}
@@ -431,6 +534,7 @@ function LessonForm({
 
   const copyPart = editing && (
     <div className="flex flex-col gap-4">
+      <FormRule />
       <Switch
         isSelected={copyMode}
         onChange={(on) => {
@@ -450,14 +554,13 @@ function LessonForm({
   )
 
   const parts: ReactNode[] = editing ? [childrenPart, whenPart, whatPart, copyPart] : [whenPart, whatPart, childrenPart]
+  // An existing lesson saves only once something changed; a new one as soon as it is complete
+  const unchanged = editing && !copyMode && !dirty
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-6 pt-1">
       {parts.map((part, index) => (
-        <div key={index} className="flex flex-col gap-5">
-          {index > 0 && <FormRule />}
-          {part}
-        </div>
+        <Fragment key={index}>{part}</Fragment>
       ))}
 
       <SheetFooter>
@@ -473,10 +576,20 @@ function LessonForm({
               >
                 {t.calendar.lesson.delete}
               </Button>
-            ) : undefined
+            ) : (
+              <Button variant="quiet" onPress={() => closeSheet?.()} isDisabled={busy}>
+                {t.common.cancel}
+              </Button>
+            )
           }
         >
-          <Button variant="primary" isDisabled={!valid || Boolean(confirmNames)} isPending={busy} onPress={() => void save()} className="max-md:flex-1">
+          <Button
+            variant="primary"
+            isDisabled={!valid || Boolean(confirmNames) || unchanged}
+            isPending={busy}
+            onPress={() => void save()}
+            className="max-md:flex-1"
+          >
             {copyMode ? t.calendar.lesson.copyAction : editing ? t.calendar.lesson.save : t.calendar.lesson.create}
           </Button>
         </SheetActions>

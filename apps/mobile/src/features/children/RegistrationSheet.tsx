@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { Alert, Pressable, StyleSheet, View, type TextInputInstance } from 'react-native'
 import { router, type Href } from 'expo-router'
 import { useQuery } from '@tanstack/react-query'
@@ -23,13 +23,13 @@ import { capitalizeName, capitalizeWords, upperFirst } from '@hellokido/core/rul
 import { FREE, periodHint, sameInstant, UNDECIDED } from '@hellokido/core/view'
 import { keys, useLabels, useRefresh, useRegistrations } from '../../data/queries'
 import { useI18n } from '../../providers/I18n'
-import { EmptyState, Notice, Skeleton } from '../../ui/Bits'
-import { Button } from '../../ui/Button'
+import { EmptyState, Skeleton } from '../../ui/Bits'
 import { PeriodField, Segmented, SelectField, Stepper, TextField } from '../../ui/Fields'
-import { SheetActions, SheetScreen, useSheet } from '../../ui/Sheet'
+import { FormGroup } from '../../ui/Screen'
+import { formAction, SheetActions, SheetScreen, useReportForm, useSheet, type FormState } from '../../ui/Sheet'
 import { DOT, Text } from '../../ui/Text'
 import { useToast } from '../../ui/Toast'
-import { PaymentFields, usePackageOptions, usePackagePrice, type FormState } from '../payment/fields'
+import { groupNotes, usePackageOptions, usePackagePrice, usePaymentRows } from '../payment/fields'
 import { useTakeOffWaitlist } from '../waitlist/handoff'
 
 const IDLE: FormState = { dirty: false, busy: false }
@@ -62,12 +62,14 @@ export function RegistrationSheet({ id, waitlistId }: { id?: string; waitlistId?
       subtitle={row?.student_name ?? (entry ? t.waitlist.fromWaitlist : undefined)}
       dirty={state.dirty}
       busy={state.busy}
+      action={formAction(state, id ? t.common.save : t.common.add)}
     >
       {waiting ? (
+        // The form's own shapes: the child, the parent, the package
         <View style={styles.stack}>
-          <Skeleton height={50} radius={14} />
-          <Skeleton height={50} radius={14} />
-          <Skeleton height={50} radius={14} />
+          <Skeleton height={88} radius={26} />
+          <Skeleton height={88} radius={26} />
+          <Skeleton height={88} radius={26} />
         </View>
       ) : id && !row ? (
         <EmptyState icon="info" title={t.children.detail.notFound} />
@@ -243,7 +245,6 @@ function RegistrationForm({ registration: row, fromWaitlist, onStateChange }: Fo
       packageType !== initial.packageType ||
       note !== initial.note ||
       Boolean(start || end || status || amount || extra)
-  useEffect(() => onStateChange({ dirty, busy }), [dirty, busy, onStateChange])
 
   const describePayment = (values: { status: string | null; amount: number | null; method: string | null; date: Date | string | null }) =>
     values.status !== 'odendi'
@@ -345,48 +346,67 @@ function RegistrationForm({ registration: row, fromWaitlist, onStateChange }: Fo
     router.navigate(`/(tabs)/(children)/child/${id}` as Href)
   }
 
+  // The sheet puts "Add" or "Save" in its bar; a child's details wait for a change before "Save" can be pressed
+  useReportForm(onStateChange, { dirty, busy, ready: valid && (!row || dirty) }, () => void save())
+  const paymentRows = usePaymentRows({ method, onMethod: setMethod, amount, onAmount: setAmount, date, onDate: setDate, suggestion: price })
+  const periodNotes = groupNotes([
+    missingEnd && { tone: 'negative', text: row ? t.children.form.missingEndEdit : t.children.form.missingEnd },
+    hint && { tone: 'action', text: fmt(t.children.form[hint.key], { days: hint.days }) }
+  ])
+
   return (
     <>
-      <TextField
-        label={t.children.form.studentName}
-        value={studentName}
-        onChangeText={(text) => setStudentName(capitalizeName(text) ?? '')}
-        autoCapitalize="words"
-        autoComplete="off"
-        autoCorrect={false}
-        autoFocus={!editing && !fromWaitlist}
-        // "Next" on the keyboard walks the child and the parent field by field
-        returnKeyType="next"
-        submitBehavior="submit"
-        onSubmitEditing={() => ageRef.current?.focus()}
-      />
-      <TextField
-        ref={ageRef}
-        label={t.children.form.studentAge}
-        placeholder={t.children.form.agePlaceholder}
-        value={age}
-        onChangeText={(text) => setAge(capitalizeWords(text) ?? '')}
-        autoCapitalize="words"
-        autoComplete="off"
-        returnKeyType="next"
-        submitBehavior="submit"
-        onSubmitEditing={() => parentRef.current?.focus()}
-      />
+      <FormGroup>
+        <TextField
+          label={t.children.form.studentName}
+          value={studentName}
+          onChangeText={(text) => setStudentName(capitalizeName(text) ?? '')}
+          autoCapitalize="words"
+          autoComplete="off"
+          autoCorrect={false}
+          autoFocus={!editing && !fromWaitlist}
+          // "Next" on the keyboard walks the child and the parent field by field
+          returnKeyType="next"
+          submitBehavior="submit"
+          onSubmitEditing={() => ageRef.current?.focus()}
+        />
+        <TextField
+          ref={ageRef}
+          label={t.children.form.studentAge}
+          placeholder={t.children.form.agePlaceholder}
+          value={age}
+          onChangeText={(text) => setAge(capitalizeWords(text) ?? '')}
+          autoCapitalize="words"
+          autoComplete="off"
+          returnKeyType="next"
+          submitBehavior="submit"
+          onSubmitEditing={() => parentRef.current?.focus()}
+        />
+      </FormGroup>
 
-      <View style={styles.break} />
-      <TextField
-        ref={parentRef}
-        label={t.children.form.parentName}
-        value={parentName}
-        onChangeText={(text) => setParentName(capitalizeName(text) ?? '')}
-        autoCapitalize="words"
-        autoComplete="off"
-        autoCorrect={false}
-        returnKeyType="next"
-        submitBehavior="submit"
-        onSubmitEditing={() => phoneRef.current?.focus()}
-      />
-      <View style={styles.phone}>
+      <FormGroup
+        footer={
+          owner && owner !== 'unknown' ? (
+            <Pressable onPress={() => openOwner(owner.id)} accessibilityRole="link" hitSlop={8} style={({ pressed }) => [styles.link, pressed && { opacity: 0.6 }]}>
+              <Text variant="foot" weight="600" tone="accentInk">
+                {t.children.form.openOwner}
+              </Text>
+            </Pressable>
+          ) : undefined
+        }
+      >
+        <TextField
+          ref={parentRef}
+          label={t.children.form.parentName}
+          value={parentName}
+          onChangeText={(text) => setParentName(capitalizeName(text) ?? '')}
+          autoCapitalize="words"
+          autoComplete="off"
+          autoCorrect={false}
+          returnKeyType="next"
+          submitBehavior="submit"
+          onSubmitEditing={() => phoneRef.current?.focus()}
+        />
         <TextField
           ref={phoneRef}
           label={t.children.form.parentPhone}
@@ -402,36 +422,11 @@ function RegistrationForm({ registration: row, fromWaitlist, onStateChange }: Fo
           textContentType="telephoneNumber"
           error={phoneMessage}
         />
-        {owner && owner !== 'unknown' && (
-          <Pressable onPress={() => openOwner(owner.id)} accessibilityRole="link" hitSlop={8} style={({ pressed }) => [styles.link, pressed && { opacity: 0.6 }]}>
-            <Text variant="foot" weight="600" tone="accentInk">
-              {t.children.form.openOwner}
-            </Text>
-          </Pressable>
-        )}
-      </View>
+      </FormGroup>
 
-      <View style={styles.break} />
-      <SelectField label={t.children.form.packageType} placeholder={t.children.form.packagePlaceholder} options={packageOptions} value={packageType} onChange={changePackage} />
-      {free ? (
-        <Notice>{t.children.form.freeNote}</Notice>
-      ) : (
-        <>
-          <PeriodField
-            label={t.children.form.period}
-            hint={range ? undefined : t.children.form.periodHelp}
-            startLabel={t.mobile.periodStart}
-            endLabel={t.mobile.periodEnd}
-            start={start}
-            end={end}
-            onStart={(next) => {
-              setStart(next)
-              if (end && end < next) setEnd(null)
-            }}
-            onEnd={setEnd}
-          />
-          {missingEnd && <Notice tone="negative">{row ? t.children.form.missingEndEdit : t.children.form.missingEnd}</Notice>}
-          {hint && <Notice tone="action">{fmt(t.children.form[hint.key], { days: hint.days })}</Notice>}
+      <FormGroup footer={free ? t.children.form.freeNote : undefined}>
+        <SelectField label={t.children.form.packageType} placeholder={t.children.form.packagePlaceholder} options={packageOptions} value={packageType} onChange={changePackage} />
+        {!free && (
           <Stepper
             label={t.children.form.extraLessons}
             value={extra}
@@ -440,12 +435,28 @@ function RegistrationForm({ registration: row, fromWaitlist, onStateChange }: Fo
             decreaseLabel={t.children.form.extraDecrease}
             increaseLabel={t.children.form.extraIncrease}
           />
-        </>
+        )}
+      </FormGroup>
+
+      {!free && (
+        <PeriodField
+          label={t.children.form.period}
+          hint={range ? undefined : t.children.form.periodHelp}
+          startLabel={t.mobile.periodStart}
+          endLabel={t.mobile.periodEnd}
+          start={start}
+          end={end}
+          onStart={(next) => {
+            setStart(next)
+            if (end && end < next) setEnd(null)
+          }}
+          onEnd={setEnd}
+          footer={periodNotes}
+        />
       )}
 
       {!free && (
-        <>
-          <View style={styles.break} />
+        <FormGroup>
           <Segmented<'odendi' | 'beklemede'>
             label={t.children.form.status}
             options={[
@@ -455,28 +466,20 @@ function RegistrationForm({ registration: row, fromWaitlist, onStateChange }: Fo
             value={status === 'odendi' || status === 'beklemede' ? status : null}
             onChange={changeStatus}
           />
-          {status === 'odendi' && (
-            <PaymentFields method={method} onMethod={setMethod} amount={amount} onAmount={setAmount} date={date} onDate={setDate} suggestion={price} />
-          )}
-        </>
+          {status === 'odendi' && paymentRows}
+        </FormGroup>
       )}
 
-      <TextField label={t.children.form.note} placeholder={t.children.form.notePlaceholder} value={note} onChangeText={(text) => setNote(upperFirst(text) ?? '')} multiline />
+      <FormGroup title={t.children.form.note}>
+        <TextField label={t.children.form.note} placeholder={t.children.form.notePlaceholder} value={note} onChangeText={(text) => setNote(upperFirst(text) ?? '')} multiline />
+      </FormGroup>
 
-      <SheetActions error={error}>
-        <Button variant="primary" size="lg" disabled={!valid} busy={busy} onPress={() => void save()}>
-          {row ? t.children.form.save : t.children.form.create}
-        </Button>
-      </SheetActions>
+      <SheetActions error={error} />
     </>
   )
 }
 
 const styles = StyleSheet.create({
-  stack: { gap: 14 },
-  // A step more room between the child, the parent, the package and the payment: the spacer sits
-  // between two of the sheet's 20pt gaps and takes most of them back, so a group break is 28pt
-  break: { marginVertical: -6 },
-  phone: { gap: 8 },
-  link: { alignSelf: 'flex-start', paddingHorizontal: 2 }
+  stack: { gap: 24 },
+  link: { alignSelf: 'flex-start' }
 })

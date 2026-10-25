@@ -7,6 +7,7 @@ import { LoadError, Skeleton } from '../../ui/Bits'
 import { Button } from '../../ui/Button'
 import { TextField } from '../../ui/Field'
 import { arrivalOf } from '../finance/OnTheWay'
+import { SettingBody } from './bits'
 import { parseDays, parseRate, rateText } from './rules'
 
 // A round amount, so the example shows whole liras for any rate with two decimals
@@ -24,8 +25,18 @@ export function CardSettings() {
   const [busy, setBusy] = useState(false)
 
   const saved = catalog.data?.settings
-  if (catalog.isError) return <LoadError message={t.common.loadFailed} retryLabel={t.common.retry} onRetry={() => void catalog.refetch()} />
-  if (!saved) return <Skeleton className="h-[7.5rem]" />
+  if (catalog.isError)
+    return (
+      <SettingBody>
+        <LoadError message={t.common.loadFailed} retryLabel={t.common.retry} onRetry={() => void catalog.refetch()} />
+      </SettingBody>
+    )
+  if (!saved)
+    return (
+      <SettingBody>
+        <Skeleton className="h-[7.5rem]" />
+      </SettingBody>
+    )
 
   const daysInput = daysDraft ?? String(saved.cardSettlementDays)
   const rateInput = rateDraft ?? rateText(saved.cardCommissionRate, locale)
@@ -62,7 +73,7 @@ export function CardSettings() {
       : null
 
   return (
-    <div className="flex flex-col gap-4">
+    <SettingBody className="flex flex-col gap-4">
       <div className="grid items-start gap-4 sm:grid-cols-2">
         <TextField
           label={t.settings.card.days}
@@ -88,12 +99,12 @@ export function CardSettings() {
         />
       </div>
       <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-        {example && <p className="min-w-0 flex-1 basis-[18rem] text-sm text-ink-2 text-pretty">{example}</p>}
+        {example && <p className="min-w-0 flex-1 basis-[18rem] text-[0.875rem] leading-[1.3125rem] text-ink-2 text-pretty">{example}</p>}
         {/* Turns blue once there is something to save */}
         <Button variant={changed ? 'primary' : 'secondary'} isDisabled={!changed} isPending={busy} onPress={() => void save()}>
           {t.common.save}
         </Button>
       </div>
-    </div>
+    </SettingBody>
   )
 }

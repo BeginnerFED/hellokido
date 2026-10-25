@@ -1,419 +1,512 @@
 ---
 name: HelloKido Admin
-description: The daily panel of a small kids' workshop, on the web and on the iPhone; calm, white, native-feeling, after the Vizion Menu panel.
+description: The daily panel of a small kids' workshop, on the web and on the iPhone; a felt board of matte cards on a plain page, with the logo's colours as the material of the lessons.
 colors:
-  ground: "#ffffff"
-  surface: "#ffffff"
-  surface-2: "#fafafa"
-  well: "#f5f5f5"
-  hover: "#f4f4f5"
-  track: "#f0f0f0"
-  line: "#e5e5e5"
-  line-strong: "#d4d4d4"
-  ink: "#0a0a0a"
-  ink-2: "#525252"
-  ink-3: "#737373"
-  ink-4: "#a3a3a3"
+  page: "#ffffff"
+  sheet: "#ffffff"
+  felt: "#f1f4f7"
+  track: "#e4e9ee"
+  raised: "#ffffff"
+  hover: "rgb(19 32 43 / 0.06)"
+  line: "#dfe5ea"
+  line-strong: "#c3cdd6"
+  ink: "#13202b"
+  ink-2: "#44525f"
+  ink-3: "#5d6a77"
+  mute: "#aeb8c1"
   accent: "#0086c6"
   accent-ink: "#00679b"
-  accent-solid: "#0077b3"
-  accent-line: "#b6d9ee"
-  accent-wash: "#f0f7fb"
-  accent-wash-2: "#e1eff8"
-  on-accent: "#ffffff"
-  action: "#f59e0b"
-  action-ink: "#92400e"
-  action-line: "#f3d58a"
-  action-wash: "#fffbeb"
-  positive: "#22a55a"
-  positive-ink: "#15803d"
-  positive-line: "#bbe5c8"
-  positive-wash: "#f0fdf4"
-  negative: "#dc2626"
-  negative-ink: "#b91c1c"
-  negative-line: "#f5c2c2"
-  negative-wash: "#fef2f2"
-  pink: "#db5a8a"
-  pink-ink: "#a3305c"
-  pink-line: "#f2c4d5"
-  pink-wash: "#fdf2f6"
-  type-duyusal: "#e0a100"
-  type-ingilizce: "#0086c6"
-  type-ozel: "#db5a8a"
-  series-in: "#0086c6"
-  series-out: "#e0752d"
-  focus: "#0086c6"
-  dark-ground: "#0a0a0a"
-  dark-surface: "#111111"
-  dark-surface-2: "#161616"
-  dark-well: "#1c1c1c"
-  dark-line: "#262626"
-  dark-line-strong: "#3a3a3a"
-  dark-ink: "#fafafa"
-  dark-ink-2: "#d4d4d4"
-  dark-ink-3: "#a3a3a3"
-  dark-accent: "#38a8e0"
-  dark-accent-ink: "#7cc6ec"
-  dark-accent-wash: "#0b2231"
-  phone-ground: "#f5f5f3"
-  phone-surface-2: "#f6f5f2"
-  phone-band: "#faf9f7"
-  phone-line: "#e6e4df"
-  phone-line-2: "#efede8"
-  phone-line-strong: "#d3d0c8"
-  phone-ink: "#1c1b18"
-  phone-ink-2: "#5c5850"
-  phone-ink-3: "#6f6a61"
-  phone-accent-line: "#c0dcec"
-  phone-accent-wash: "#edf5fa"
-  phone-action: "#e3a300"
-  phone-pressed: "#ebe9e4"
-  phone-dark-pressed: "#262626"
+  fill: "#0077b3"
+  on-fill: "#ffffff"
+  sky: "#0086c6"
+  sky-felt: "#e0eff9"
+  sky-ink: "#08466a"
+  sky-track: "#c9e2f3"
+  sun: "#e9b200"
+  sun-felt: "#fbefc5"
+  sun-ink: "#634700"
+  sun-track: "#f2dd98"
+  pink: "#da5d87"
+  pink-felt: "#fae3eb"
+  pink-ink: "#872850"
+  pink-track: "#f1c9d7"
+  green: "#1e8a4c"
+  green-ink: "#17703d"
+  amber: "#e39a00"
+  amber-ink: "#8a4a00"
+  action-wash: "#fdf3dc"
+  red: "#d33a2c"
+  red-ink: "#b42318"
+  negative-wash: "#fdeeec"
+  out: "#e0752d"
+  cash: "#e9b200"
+  now-chip: "#c2416f"
+  scrim: "rgb(10 22 32 / 0.3)"
+  dark-page: "#0e151b"
+  dark-sheet: "#141c23"
+  dark-felt: "#18212a"
+  dark-track: "#222d37"
+  dark-raised: "#33414e"
+  dark-line: "#283440"
+  dark-line-strong: "#3b4855"
+  dark-ink: "#edf2f6"
+  dark-ink-2: "#b7c2cc"
+  dark-ink-3: "#8f9ba7"
+  dark-mute: "#4e5b67"
+  dark-accent: "#3aa8e0"
+  dark-accent-ink: "#8ccdf0"
+  dark-sky-felt: "#10304a"
+  dark-sky-ink: "#a9d8f5"
+  dark-sky-track: "#1a4565"
+  dark-sun-felt: "#33290b"
+  dark-sun-ink: "#f3d77e"
+  dark-sun-track: "#4a3c12"
+  dark-pink: "#e57fa3"
+  dark-pink-felt: "#371726"
+  dark-pink-ink: "#f2aecb"
+  dark-pink-track: "#522238"
+  dark-green: "#3dbb72"
+  dark-green-ink: "#6fd39a"
+  dark-amber: "#f0b429"
+  dark-amber-ink: "#f6c760"
+  dark-out: "#f08a45"
+  phone-pressed: "#e7eaed"
+  phone-late-tile: "#f9ebcc"
+  phone-negative: "#d92d2d"
+  phone-glass: "rgba(255,255,255,0.86)"
 typography:
-  headline:
-    fontFamily: "Euclid Circular A, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif"
-    fontSize: "1.625rem"
+  page-title:
+    fontFamily: "Geologica, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif"
+    fontSize: "2.125rem"
     fontWeight: 600
-    lineHeight: 1.25
-    letterSpacing: "-0.02em"
+    lineHeight: "2.5rem"
+    letterSpacing: "-0.025em"
+  money:
+    fontFamily: "Geologica, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "3.5rem"
+    fontWeight: 600
+    lineHeight: "3.75rem"
+    letterSpacing: "-0.035em"
+    fontFeature: "\"tnum\""
+  big-count:
+    fontFamily: "Geologica, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "3.25rem"
+    fontWeight: 600
+    lineHeight: "3.375rem"
+    letterSpacing: "-0.035em"
+    fontFeature: "\"tnum\""
+  hero-time:
+    fontFamily: "Geologica, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "2.5rem"
+    fontWeight: 600
+    lineHeight: "2.75rem"
+    letterSpacing: "-0.03em"
+    fontFeature: "\"tnum\""
   figure:
-    fontFamily: "Euclid Circular A, ui-sans-serif, system-ui, sans-serif"
+    fontFamily: "Geologica, ui-sans-serif, system-ui, sans-serif"
     fontSize: "1.625rem"
     fontWeight: 600
-    lineHeight: 1.25
+    lineHeight: "2rem"
     letterSpacing: "-0.02em"
     fontFeature: "\"tnum\""
   period:
-    fontFamily: "Euclid Circular A, ui-sans-serif, system-ui, sans-serif"
-    fontSize: "1.0625rem"
+    fontFamily: "Geologica, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "1.375rem"
     fontWeight: 600
-  title:
-    fontFamily: "Euclid Circular A, ui-sans-serif, system-ui, sans-serif"
+    lineHeight: "1.75rem"
+    letterSpacing: "-0.015em"
+  card-title:
+    fontFamily: "Geologica, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "1.1875rem"
+    fontWeight: 600
+    lineHeight: "1.5625rem"
+    letterSpacing: "-0.015em"
+  summary:
+    fontFamily: "Geologica, ui-sans-serif, system-ui, sans-serif"
     fontSize: "0.96875rem"
-    fontWeight: 600
-    letterSpacing: "-0.01em"
+    fontWeight: 400
+    lineHeight: "1.375rem"
   body:
-    fontFamily: "Euclid Circular A, ui-sans-serif, system-ui, sans-serif"
-    fontSize: "0.875rem"
+    fontFamily: "Geologica, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "0.9375rem"
     fontWeight: 400
     lineHeight: 1.45
-  meta:
-    fontFamily: "Euclid Circular A, ui-sans-serif, system-ui, sans-serif"
-    fontSize: "0.8125rem"
+  sub:
+    fontFamily: "Geologica, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "0.84375rem"
     fontWeight: 400
+    lineHeight: "1.125rem"
   label:
-    fontFamily: "Euclid Circular A, ui-sans-serif, system-ui, sans-serif"
-    fontSize: "0.78125rem"
+    fontFamily: "Geologica, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "0.8125rem"
     fontWeight: 500
+    lineHeight: "1.0625rem"
   phone-title:
-    fontFamily: "system-ui"
-    fontSize: "25px"
+    fontFamily: "Geologica"
+    fontSize: "30px"
     fontWeight: 600
-    lineHeight: "30px"
-    letterSpacing: "-0.5px"
+    lineHeight: "36px"
+    letterSpacing: "-0.75px"
+  phone-money:
+    fontFamily: "Geologica"
+    fontSize: "46px"
+    fontWeight: 600
+    lineHeight: "50px"
+    letterSpacing: "-1.6px"
+  phone-hero:
+    fontFamily: "Geologica"
+    fontSize: "36px"
+    fontWeight: 600
+    lineHeight: "40px"
+    letterSpacing: "-1.1px"
+  phone-figure:
+    fontFamily: "Geologica"
+    fontSize: "22px"
+    fontWeight: 600
+    lineHeight: "26px"
+    letterSpacing: "-0.45px"
   phone-section:
-    fontFamily: "system-ui"
-    fontSize: "21px"
+    fontFamily: "Geologica"
+    fontSize: "20px"
     fontWeight: 600
-    lineHeight: "25px"
-    letterSpacing: "-0.38px"
-  phone-body:
-    fontFamily: "system-ui"
+    lineHeight: "26px"
+    letterSpacing: "-0.3px"
+  phone-headline:
+    fontFamily: "Geologica"
     fontSize: "17px"
-    fontWeight: 400
+    fontWeight: 600
     lineHeight: "22px"
-  phone-foot:
-    fontFamily: "system-ui"
-    fontSize: "13px"
+  phone-body:
+    fontFamily: "Geologica"
+    fontSize: "16px"
+    fontWeight: 400
+    lineHeight: "21px"
+  phone-sub:
+    fontFamily: "Geologica"
+    fontSize: "13.5px"
     fontWeight: 400
     lineHeight: "18px"
+  phone-foot:
+    fontFamily: "Geologica"
+    fontSize: "12.5px"
+    fontWeight: 400
+    lineHeight: "16px"
 rounded:
-  tablet: "8px"
-  control: "10px"
-  tile: "10px"
-  panel: "16px"
-  phone-card: "18px"
-  sheet: "20px"
+  tablet: "12px"
+  control: "16px"
+  menu: "18px"
+  tile: "22px"
+  panel: "26px"
+  sheet: "28px"
   full: "9999px"
+  phone-picker: "10px"
+  phone-date-tile: "14px"
+  phone-type-tile: "20px"
 spacing:
-  row: "12px"
   gutter: "16px"
-  gutter-md: "24px"
-  gutter-lg: "40px"
-  phone-section: "30px"
+  gutter-sm: "24px"
+  page-desktop: "36px 40px"
+  card-x: "22px"
+  card-gap: "14px"
+  top-bar: "68px"
+  phone-section: "22px"
+  phone-card-pad: "18px"
 components:
   button-primary:
-    backgroundColor: "{colors.accent-solid}"
-    textColor: "{colors.on-accent}"
+    backgroundColor: "{colors.fill}"
+    textColor: "{colors.on-fill}"
     rounded: "{rounded.full}"
-    padding: "0 16px"
-    height: "38px"
+    padding: "0 17px"
+    height: "40px"
   button-secondary:
-    backgroundColor: "{colors.surface}"
+    backgroundColor: "{colors.raised}"
     textColor: "{colors.ink}"
     rounded: "{rounded.full}"
-    padding: "0 16px"
-    height: "38px"
-  button-secondary-hover:
-    backgroundColor: "{colors.surface-2}"
+    padding: "0 17px"
+    height: "40px"
   button-quiet:
-    textColor: "{colors.accent-ink}"
+    backgroundColor: "{colors.felt}"
+    textColor: "{colors.ink}"
+    rounded: "{rounded.full}"
+    padding: "0 17px"
+    height: "40px"
+  button-ghost:
+    textColor: "{colors.ink-2}"
     rounded: "{rounded.full}"
   input:
-    backgroundColor: "{colors.surface}"
+    backgroundColor: "{colors.felt}"
     textColor: "{colors.ink}"
     rounded: "{rounded.control}"
-    padding: "0 12px"
-    height: "40px"
+    padding: "0 14px"
+    height: "46px"
   search-pill:
-    backgroundColor: "{colors.surface-2}"
+    backgroundColor: "{colors.felt}"
     textColor: "{colors.ink-3}"
     rounded: "{rounded.full}"
-    height: "38px"
+    height: "40px"
+    width: "340px"
   chip:
-    backgroundColor: "{colors.surface}"
-    textColor: "{colors.ink-2}"
+    textColor: "{colors.ink}"
     rounded: "{rounded.full}"
     padding: "0 12px"
     height: "32px"
   chip-selected:
-    backgroundColor: "{colors.accent-wash}"
-    textColor: "{colors.accent-ink}"
+    backgroundColor: "{colors.sky-felt}"
+    textColor: "{colors.sky-ink}"
   segmented:
-    backgroundColor: "{colors.well}"
+    backgroundColor: "{colors.track}"
     rounded: "{rounded.full}"
-    padding: "4px"
+    padding: "3px"
   segmented-selected:
-    backgroundColor: "{colors.surface}"
+    backgroundColor: "{colors.raised}"
     textColor: "{colors.ink}"
     rounded: "{rounded.full}"
-    height: "30px"
-  mark:
-    backgroundColor: "{colors.surface}"
-    rounded: "{rounded.full}"
-    padding: "0 10px"
-    height: "24px"
+    height: "32px"
+  mark-action:
+    textColor: "{colors.amber-ink}"
     typography: "{typography.label}"
   avatar:
-    backgroundColor: "{colors.surface-2}"
+    backgroundColor: "{colors.raised}"
     textColor: "{colors.ink-2}"
-    rounded: "{rounded.tile}"
+    rounded: "{rounded.full}"
     size: "36px"
   card:
-    backgroundColor: "{colors.surface}"
-    rounded: "{rounded.panel}"
-  band:
-    backgroundColor: "{colors.surface-2}"
-    textColor: "{colors.ink-3}"
-    padding: "8px 20px"
-    typography: "{typography.label}"
-  rail-item-active:
-    backgroundColor: "{colors.hover}"
+    backgroundColor: "{colors.felt}"
     textColor: "{colors.ink}"
-    rounded: "{rounded.tablet}"
-    height: "36px"
+    rounded: "{rounded.panel}"
+  card-ingilizce:
+    backgroundColor: "{colors.sky-felt}"
+    textColor: "{colors.sky-ink}"
+    rounded: "{rounded.panel}"
+  card-duyusal:
+    backgroundColor: "{colors.sun-felt}"
+    textColor: "{colors.sun-ink}"
+    rounded: "{rounded.panel}"
+  card-ozel:
+    backgroundColor: "{colors.pink-felt}"
+    textColor: "{colors.pink-ink}"
+    rounded: "{rounded.panel}"
+  figure-tile:
+    backgroundColor: "{colors.felt}"
+    textColor: "{colors.ink}"
+    rounded: "{rounded.tile}"
+    padding: "16px 18px"
+  nav-item-active:
+    backgroundColor: "{colors.raised}"
+    textColor: "{colors.ink}"
+    rounded: "{rounded.full}"
+    height: "42px"
+  sidebar:
+    backgroundColor: "{colors.felt}"
+    rounded: "{rounded.panel}"
+    width: "236px"
+  menu:
+    backgroundColor: "{colors.raised}"
+    textColor: "{colors.ink}"
+    rounded: "{rounded.menu}"
+    padding: "6px"
+  sheet-web:
+    backgroundColor: "{colors.sheet}"
+    rounded: "{rounded.sheet}"
+    width: "500px"
   phone-card:
-    backgroundColor: "{colors.surface}"
-    rounded: "{rounded.phone-card}"
+    backgroundColor: "{colors.felt}"
+    rounded: "{rounded.panel}"
   phone-button:
-    backgroundColor: "{colors.surface}"
-    textColor: "{colors.phone-ink}"
+    backgroundColor: "{colors.raised}"
+    textColor: "{colors.ink}"
     rounded: "{rounded.full}"
     height: "44px"
-    padding: "0 16px"
-  phone-promo-pill:
-    backgroundColor: "{colors.phone-accent-wash}"
-    textColor: "{colors.accent-ink}"
-    height: "46px"
+    padding: "0 18px"
+  phone-chip:
+    backgroundColor: "{colors.felt}"
+    textColor: "{colors.ink}"
+    rounded: "{rounded.full}"
+    height: "34px"
     padding: "0 13px"
-    rounded: "14px"
 ---
 
 # Design System: HelloKido Admin
 
 ## Overview
 
-**Creative North Star: "The Quiet Workbench"**
+**Creative North Star: "Keçe pano" (the felt board)**
 
-The panel is a working tool that steps out of the way. A white canvas, neutral greys, 1px hairlines and one HelloKido blue carry the whole interface; colour is spent only on meaning: a status dot, a lesson-type dot, the one filled button in an area. The look follows the Vizion Menu dashboard the owner approved: cards with a header, a ruled body and a footer link; grey bands for column heads and groups; pill controls; square initials tiles for people.
+The workshop's sensory classroom has a felt board: soft, matte pieces in a few colours laid on a plain ground. The panel is that board. The page is plain white (deep night blue in the dark, never black). Content sits on matte felt cards: filled, borderless, shadowless, generously rounded. The logo's three colours are not decoration; they are the material of the lessons: İngilizce is sky felt, Duyusal sunshine felt, Özel pink felt, each with an ink of its own hue. Everything that is not a lesson is neutral felt. Small things you press or that stand for a person are lifted pieces: white pills and circles with a soft lift.
 
-There are two surfaces with one vocabulary. The web panel (Vite, React, Tailwind 4) is pure white with neutral greys. The iPhone app (Expo, "Template 2") sits on a warm grey canvas with white cards of 18px radius, the system font, the phone's own title bar, tab bar, switches and action sheets. Marks, dots, share bars, tiles and the seat board look the same on both.
+Two surfaces share one token table and one vocabulary. The web panel (Vite, React, Tailwind 4) floats a felt sidebar beside the page and opens work in a felt sheet at the right. The iPhone app (Expo) keeps the phone's own chrome: the floating glass tab bar, native page sheets, native pickers and switches; everything inside them is the same felt board. Type is Geologica on both, set big and confident for times, counts and money, always in tabular figures.
 
-Density is a working tool's: readable between lessons, numbers in tabular figures, everything opens on the current day, week or month. Light is the default; both surfaces have a full dark theme with the same roles.
+Density is a working tool's: readable between lessons, everything opens on the current day, week or money period, and time-shaped data is drawn as time (the day ribbon, the week board, the child's period calendar, the period strip). The public parents' calendar (`/takvim`, `apps/web/src/public-calendar`) keeps its own look and is outside this system.
 
 **Key Characteristics:**
-- One blue voice; every other hue is a signal with one meaning, shown mostly as a dot.
-- Hairlines before shadows; shadows only for the selected piece of a pill track and floating layers.
-- Cards are the one container: header, border-t body, optional footer with an underlined link.
-- Pills for controls, rounded squares for people, 16px (web) / 18px (phone) for containers.
-- Native on the phone: system font, native tabs, native switches and pickers, haptics on selection.
+- A plain page; matte felt cards with no border and no shadow, 26px round.
+- Lessons carry their type as material (tinted felt + a shape), so a lesson reads at a glance and without colour.
+- One filled blue button per area; amber only for "do something"; an absence is grey.
+- Geologica 400/500/600/700, big tabular figures, sentence case everywhere.
+- Shadows only on lifted pieces and on what floats (sidebar pieces, menus, sheets, the glass tab bar).
 
 ## Colors
 
-A neutral white-and-grey room with one HelloKido blue; status colours live in small dots, outlined chips and soft washes.
+A cool white-and-felt board with one HelloKido blue for action, three logo colours as lesson material, and a few status inks that live in dots and words.
 
 ### Primary
-- **HelloKido Blue** (#0086c6): bars, dots, focus rings, chart series "in", the share bar of lessons left, the selected tab icon on the phone.
-- **Deep Blue** (#0077b3): the fill of primary buttons and switches (white on it is 4.9:1); the same value in dark.
-- **Blue Ink** (#00679b): blue text: quiet buttons, selected chips, promo pills, the selected phone tab.
-- **Blue Line / Washes** (#b6d9ee, #f0f7fb, #e1eff8): the outline and fill of selected chips, info notices and the phone's promo pills.
+- **Deep Blue fill** (#0077b3): the one filled button of an area ("+ Yeni", "Ödeme al", "Ekle"), switch and radio fills, today's date circle on the phone. White on it is 4.9:1; it stays the same value in dark.
+- **HelloKido Blue** (#0086c6): focus rings, carets, selection, today, chart "in", the share bar.
+- **Blue Ink** (#00679b): blue words: the active nav icon, the chosen phone tab, phone numbers, plain buttons, "Ekle" rows.
 
 ### Secondary
-- **Action Amber** (#f59e0b web, #e3a300 phone): "needs your action" only: payment due, a lesson whose attendance was forgotten, a package running low. Ink #92400e, line #f3d58a, wash #fffbeb.
+- **Action Amber** (#e39a00, ink #8a4a00): "needs your action" only: a payment due, forgotten attendance, a package with two or fewer lessons left, a monthly expense past its day. Drawn as a 7px dot plus amber-ink words, a 22%-amber count pill on the Today nav item, or a tinted date tile; never a filled block.
 
 ### Tertiary
-- **Settled Green** (#22a55a): attended, paid, done. Ink #15803d.
-- **Logo Pink** (#db5a8a): make-up lessons and the "özel" lesson type. Ink #a3305c.
-- **Danger Red** (#dc2626): failure, destructive actions, a seat over the planned six. Ink #b91c1c.
-- **Lesson-type dots**: duyusal (#e0a100), ingilizce (#0086c6), özel (#db5a8a). An 8px dot before the lesson name, never a fill.
-- **Money out** (#e0752d): chart series for expenses, paired with blue for money in.
+- **Lesson felts.** İngilizce sky (felt #e0eff9, ink #08466a, track #c9e2f3, mid #0086c6); Duyusal sun (felt #fbefc5, ink #634700, track #f2dd98, mid #e9b200); Özel pink (felt #fae3eb, ink #872850, track #f1c9d7, mid #da5d87). The felt fills a whole lesson card, block or chosen tile; the track carries its controls; the mid tone draws its shape, seat dots and mini beads.
+- **Settled Green** (#1e8a4c, ink #17703d): attended beads, done.
+- **Danger Red** (#d33a2c web, #d92d2d phone; ink #b42318): failure, destructive actions, load errors.
+- **Money Out** (#e0752d) and **Cash** (#e9b200): the chart's expense series and the cash part of the money bar.
+- **Now Chip** (#c2416f, white words): the time label on the pink now-line.
 
 ### Neutral
-- **White Canvas** (#ffffff): web ground, rail and surface are all white; structure comes from lines.
-- **Band Grey** (#fafafa): column heads, group bands, the search pill, the resting avatar tile.
-- **Well** (#f5f5f5) and **Hover** (#f4f4f5): pill tracks, and the active / hovered nav item.
-- **Hairline** (#e5e5e5) and **Strong Hairline** (#d4d4d4): every border; strong for hover and dashed "gave up the seat" tiles.
-- **Inks**: ink (#0a0a0a), ink-2 (#525252) for secondary text, ink-3 (#737373, 4.7:1 on white) for meta, ink-4 (#a3a3a3) never for text that must be read (the empty part of "4/6").
-- **Phone neutrals**: warm canvas (#f5f5f3), card edge (#e6e4df), inner row rules (#efede8, a step lighter, starting after the leading tile), outline of everyday buttons (#d3d0c8), inks #1c1b18 / #5c5850 / #6f6a61.
+- **Page** (#ffffff): the ground of every screen, the top bar and (web) sheets.
+- **Felt** (#f1f4f7): every neutral card, the sidebar, the search pill, quiet buttons, fields on the page.
+- **Track** (#e4e9ee): segmented and attendance tracks, empty beads, quiet fills on a felt card, skeletons.
+- **Raised** (#ffffff): pieces lifted off felt: segment thumbs, secondary buttons, the active nav item, avatars and fields on a felt card, menus.
+- **Line** (#dfe5ea) and **Line Strong** (#c3cdd6): rules between rows inside a card, hour lines, sheet footers; strong for hover on fields and outlined chips.
+- **Inks**: ink (#13202b, a blue-black, never #000), ink-2 (#44525f) for secondary words and labels, ink-3 (#5d6a77) for meta; **mute** (#aeb8c1) is never text: absent beads, empty seat rings, closed days.
 
-**Dark theme.** Web: ground #0a0a0a, surface #111111, bands #161616, well #1c1c1c, lines #262626 / #3a3a3a, inks #fafafa / #d4d4d4 / #a3a3a3, blue lifts to #38a8e0 with ink #7cc6ec; Deep Blue stays #0077b3 for fills. Phone dark matches, with surface #161616 and a lighter "raised" piece (#2e2e2e) for the selected segment, because white would sink into the dark well.
+**Dark theme.** Deep night blue, not black: page #0e151b, sheet #141c23, felt #18212a, track #222d37, raised #33414e (a thumb would sink into the dark track, so it is two steps lighter). Lesson felts become deep tints with light inks; status inks lighten; Deep Blue fill stays #0077b3. On a lesson card in dark the segment thumb is the type ink mixed 24% into its track.
 
 ### Named Rules
-**The One Blue Rule.** HelloKido blue is the only accent. Emphasis uses Deep Blue, Blue Ink or a blue wash, never a new hue.
+**The Lesson Is the Material Rule.** A lesson-type colour fills a whole surface only for that lesson (Today's hero, next-lesson tiles, calendar blocks, the chosen type tile). Anything that is not a lesson is neutral felt.
 
-**The Amber Means Act Rule.** Amber appears only where the admin has something to do. No decorative or category amber (the duyusal dot is the one type colour in that family).
+**The One Fill Rule.** One Deep Blue filled button per area. No black fills, no second accent, no violet.
 
-**The Absence Is Grey Rule.** Attendance reads: attended green, absent grey, make-up pink, forgotten amber. An absence is counted, never shown as danger. Red is kept for failure and for a seat beyond the planned six.
+**The Amber Means Act Rule.** Amber appears only where the admin has something to do. Nothing decorative is amber.
 
-**The Dot Carries the Hue Rule.** Status colour sits in a 5–6px dot, a tinted ink and a tinted outline on a white chip; filled colour blocks are reserved for the primary button.
+**The Absence Is Grey Rule.** Attended green, absent grey (mute), make-up pink, forgotten amber. An absence is counted, never shown as danger.
 
 ## Typography
 
-**Web Font:** Euclid Circular A (400, 500, 600 woff from fonts.cdnfonts.com, declared in `apps/web/src/styles/app.css`; the files are not kept in the public repository), fallback ui-sans-serif, system-ui, -apple-system, Segoe UI.
-**Phone Font:** the system font (San Francisco), sizes close to the iPhone's own text styles.
+**Font:** Geologica (OFL) at 400, 500, 600 and 700, with ui-sans-serif, system-ui, -apple-system, Segoe UI as fallback. Web loads it from Google Fonts in `apps/web/index.html` (skipped on the public calendar); the phone bundles four static faces and maps each weight to its own family in `ui/Text.tsx`. The phone's native nav-bar titles and tab bar stay system chrome.
 
-**Character:** A round geometric sans with even, friendly figures on the web; native type on the phone so it reads like an Apple app. One family per surface.
+**Character:** A soft, slightly squarish grotesque with friendly, even figures; big confident numbers carry the screens, words stay calm.
 
 ### Hierarchy
-- **Page title** (600, 26px desktop / 22px phone web, 1.25, -0.02em): one per page, left-aligned in the page header.
-- **Figure** (600, 26px / 22px, tabular): the large number in a FigureGrid cell.
-- **Period** (600, 17px): the month or week heading of Calendar and Finance; first letter capitalised.
-- **Card title** (600, 15.5px, -0.01em): card and section headings; description under it at 13.5px ink-3.
-- **Body** (400, 14px, 1.45): names, rows, buttons. Summaries under titles stop at 65–72ch.
-- **Meta** (400, 13px, ink-3): sub-lines under names, footers, periods.
-- **Label** (500, 12.5px): marks and band text.
-- **Phone**: title 25/30 600, section 21/25 600, headline and body 17/22, sub 15/20, foot 13/18, caption 12/16. Inputs are 16–17px so iOS never zooms.
+- **Page title** (600, 34/40 desktop, 28/36 below 1024px, -0.025em): one per page; Today's title is the date.
+- **Money / big count / hero time** (600, 56/60, 52/54, 40/44; -0.035 to -0.03em): Finance's amount to share, a child's lessons left, the running lesson's time. Phone: 46/50, 48/50, 36/40.
+- **Figure** (600, 26/32, -0.02em): the number on a figure tile. Phone 22–24.
+- **Period** (600, 22/28): the money period or week name, first letter capitalised.
+- **Card title** (600, 19/25, -0.015em): card and section heads; phone section heads 20/26 outside the card.
+- **Summary** (400, 15.5/22, ink-2): one sentence under the page title, max 72ch.
+- **Body** (400, 15–15.5; names 500): rows and buttons; the root size is 14/1.45.
+- **Sub** (400, 13.5/18, ink-3): sub-lines, descriptions, card footers.
+- **Label** (500, 13/17): marks, counts, group heads (13/600 ink-2), column heads (12.5/500 at 80%). Nothing under 11px.
 
 ### Named Rules
-**The Tabular Figures Rule.** Every time, count, date number and amount is set in tabular figures.
+**The Tabular Figures Rule.** The whole admin body is set in tabular figures; every time, count and amount lines up.
 
 **The Turkish Money Rule.** Amounts are typed and shown the Turkish way in every interface language (13.850 or 13.850,50 followed by ₺).
 
-**The Sentence Case Rule.** Headings and labels are sentence case; a localised month or weekday heading capitalises only its first letter. No uppercase tracked labels.
+**The Sentence Case Rule.** Headings and labels are sentence case; no uppercase labels, no eyebrows above headings.
 
 ## Layout
 
-**Web shell.** From 1024px: a fixed white rail (256px, collapsible to 64px) with the logo, nav items and the account block, divided by hairlines. The account block (workshop name, email, an up-down caret at the right) sits at the foot of the rail, 10px from the bottom edge, and is the only way to the account controls on desktop. Each page has a sticky 64px top bar with the rail toggle, crumbs (root › section › page) and a 320px search pill with a shortcut key. Below 1024px the rail becomes a bottom tab bar (68px, white, hairline on top, filled blue icon when active) with a "More" sheet.
+**Web shell.** From 1024px a floating felt sidebar (236px, inset 12px from the window, 26px round; collapsed to a 72px icon rail) holds the logo alone at the top (150×86, light and dark files), the nav, then Ayarlar and the account block at the foot. The page has a 68px top bar with no band and no hairline: a 38px felt circle for the sidebar toggle, crumbs at 13.5 ink-3 with the last crumb in ink, and a 340px felt search pill with a raised "Ctrl K" key. Below 1024px the sidebar becomes a floating glass tab bar (page at 72% with a real backdrop blur, `--float` shadow, 58px tall, inset 12px) with a "More" sheet.
 
-**Page frame.** Content is centred at 80rem (90rem for wide pages: Children, Finance) with 16 / 24 / 40px side padding and 36px top padding on desktop. The header holds the title, an optional one-line summary in ink-3, the page toolbar and one primary "New" pill at the far right. Cards stack with 24px gaps; side-by-side cards use weighted flex (7:5 on Today) or two-column grids.
+**Page frame.** Content is centred at 82rem (92rem for wide pages) with 16 / 24px side padding, 36 / 40px on desktop. The header holds the title and summary at the left, and the toolbar at the right in this order: quiet buttons, segmented controls, then one primary. Cards sit 14–20px apart in weighted grids (Today 1.5fr : 1fr; Finance 1.3fr : 1fr : 1fr and 1.55fr : 1fr; Children a 372px list beside a detail column with no outer card).
 
-**Patterns as used.**
-- *Today*: an overview card with a FigureGrid of clickable figures; a lessons card with a pill-track tab (Today / Past, counts inside), each lesson as a grey band (time, type dot, title, age group, seat count, mark) and child rows (tile, name, package, share bar, attendance track); then a work card and a tomorrow card side by side.
-- *Children*: a list card (search pill, filter chips, divided rows) in a 22–30rem column beside the detail column.
-- *Finance*: period navigation (back / this period / forward, the period's days as a heading, an "other period" menu with presets, a custom range and the period start day); an overview card with a FigureGrid of four figures (in, out, balance, on the way to the bank), each hint giving the count and the previous period's figure, and one footer line of how money came in; then a periods chart (6 or 12 periods, blue in and orange out, the viewed period shaded) and movements beside a column of smaller cards. No progress bars.
-- *Money periods*: every money view uses the period start day from Settings (1–28; 1 gives calendar months). A period runs from that day to the day before it next month and opens on the period that holds today.
-- *Settings*: from 1280px a sticky 168px section index beside a 46rem column of boxed sections.
+**Phone.** Tab roots hide the system bar and draw an in-content header: a 30pt title, one 15pt ink-2 line, 44pt glass round buttons at the right. Pushed pages keep the native transparent header. Screen gutter 16, 22 between sections, section head 10 above its card. Rows are 54–64pt with 16pt side padding; rules between rows start at 16pt and run across the content.
 
-**Phone app.** Native tabs (Today, Calendar, Children, Finance, More), compact native title bars (no large titles: they left an empty white band above the page), pages that scroll under them on the warm canvas. Screen padding 16px, 30px between sections, section heads 21px with a count at the right. Rows are at least 56px with 14 × 12px padding and 12px gaps. Today opens with a summary line and a sideways strip of blue promo pills for what waits. Finance opens with a period bar (‹ period name ⌄ ›, a caption with the start day or "back to this period"), one overview card (the balance large, in and out as two pressable halves, a "to the bank" row) and ends with the periods chart.
-
-**Breakpoints.** 640px (phone layout ends, inputs leave 16px), 768px (sheets move from the bottom to the right), 1024px (rail and top bar replace the tab bar; buttons drop from 44 to 38px), 1280px (settings index).
+**Breakpoints.** 640px (16px inputs end), 768px (sheets move from the bottom to the right), 1024px (sidebar and top bar replace the tab bar; md buttons drop from 44 to 40px).
 
 ### Named Rules
-**The One Container Rule.** The card is the panel's container. Groups inside a card are grey bands and hairline-divided rows, never a card inside a card.
+**The One Container Rule.** The felt card is the container. Inside it, groups are label rows and line-divided rows, never a card inside a card.
 
-**The Current Period Rule.** Calendar opens on the current week or month and Finance on the current money period; time-based data is shown as a calendar before a list.
+**The Current Period Rule.** Today opens on today, Calendar on the current week, Finance on the money period that holds today; time-based data is drawn as time before it is listed.
 
 ## Elevation & Depth
 
-The system is flat and line-built. Depth comes from 1px hairlines and the grey band step; resting cards carry no shadow. Only two shadows exist, plus the sticky phone header that gains a hairline once content scrolls under it.
+The board is matte. Felt cards and tiles have no border and no shadow; depth comes from the step between page, felt, track and raised. Two shadows exist, plus a scrim.
 
 ### Shadow Vocabulary
-- **Piece** (`box-shadow: 0 1px 2px rgb(0 0 0 / 0.08), 0 0 0 1px rgb(0 0 0 / 0.05)`): the selected piece of a pill track (segmented control, card tabs, attendance track). The phone uses a matching 1px / 0.08 native shadow.
-- **Lift** (`box-shadow: 0 1px 2px rgb(0 0 0 / 0.05), 0 12px 32px -8px rgb(0 0 0 / 0.16)`): sheets, popovers, menus, confirm dialogs, toasts.
+- **Lift** (`box-shadow: 0 1px 2px rgb(16 40 60 / 0.14), 0 3px 8px -3px rgb(16 40 60 / 0.16)`): a piece lifted off the felt: segment and attendance thumbs, secondary buttons, the active nav item, the search key, people chips, switch knobs.
+- **Float** (`box-shadow: 0 24px 48px -20px rgb(16 40 60 / 0.35), 0 2px 6px rgb(16 40 60 / 0.08)`): what floats over the page: sheets, menus, popovers, toasts, the web glass tab bar. The phone's glass round buttons use a lighter float (`0 8px 20px -10px rgba(16,40,60,0.30), 0 1px 3px rgba(16,40,60,0.10)`). Dark versions use black at 0.35/0.4 and 0.7/0.4.
+- **Scrim** (rgb(10 22 32 / 0.3)): behind sheets and dialogs.
 
 ### Named Rules
-**The Hairline First Rule.** If a line can separate it, a line separates it. Shadows mark only a chosen piece or a layer above the page; never a coloured glow.
+**The Matte Felt Rule.** If it is a card, it is filled and flat. A shadow means "lifted piece" or "floating layer", never a coloured glow.
 
 ## Shapes
 
-Three silhouettes: pills for controls (buttons, chips, segmented tracks, search, marks, share bars), rounded squares for people (initials tiles at 10px radius web, 11px on the phone), and soft rectangles for containers (16px cards and popovers on the web, 18px cards on the phone, 20px sheet tops and dialogs). Fields and notices are 10px on the web and 14px on the phone; menu items and rail items 8px. Borders are 1px everywhere; dashed only for a seat given up or an empty placeholder.
+Soft rectangles for containers, pills and circles for everything you press or that stands for a person. Radii nest: sheet 28 → card and sidebar 26 → figure tile 22 → menu 18 → field and selected list row 16 → calendar block 12. Buttons, chips, segmented tracks, marks' pills, search, avatars and beads are full pills or circles. Phone adds type tiles 20, notices 20, date tiles 14 and the compact picker pill 10. Lines are 1px rules inside cards; outlines appear only on filter chips (1.5px inset line), planned beads and empty seats (1.5px mute ring), and a postponed seat (dashed).
+
+**Lesson shapes.** İngilizce a circle, Duyusal a rounded square, Özel a diamond (a square turned 45°), 10px in text, 6 under the phone's week days, 18 (web) / 22 (phone) on tiles. Shape plus colour, so types read without colour.
 
 ### Named Rules
-**The Pill and Square Rule.** Things you press are pills; people are squares; containers are soft rectangles. A round avatar appears only for the signed-in account.
+**The Round Piece Rule.** Things you press are pills; people are circles; containers are soft felt rectangles.
 
 ## Components
 
 ### Buttons
-- **Shape:** full pill, 38px tall on desktop and 44px below 1024px (sm 32px, lg 48px); the phone uses 50 / 44 / 34px pills.
-- **Primary:** Deep Blue fill and border, white text, 16px padding; hover darkens 14% toward black; press scales to 0.98. One per area.
-- **Secondary:** white with a hairline border, ink text; hover strengthens the border and turns band grey. On the phone this is the default button, outlined in #d3d0c8.
-- **Ghost / Quiet / Danger:** ghost is ink-2 on transparent with hover grey; quiet is Blue Ink with a blue-wash hover; danger is a red fill, danger-soft red ink.
-- **Focus:** 2px blue ring with 2px offset. Small buttons get a 44px touch area through an invisible extension.
+- **Shape:** full pill; web 40 (44 below 1024px) / sm 32 / lg 48; phone 48 / 44 / 34. Small buttons keep a 44pt touch area.
+- **Primary:** Deep Blue fill, white 500 words (600 on the phone); hover mixes 14% toward black; press scales to 0.98.
+- **Secondary:** raised white with Lift, ink words; for row actions (Tahsil et, Yenile, Gir, Kaydet).
+- **Quiet:** felt, no shadow (a track step on a felt card); for toolbar extras and the X of a sheet. **Ghost** is ink-2 words until hovered; **danger** is a red fill, **danger-soft** red words.
+- **Icon buttons:** 38–40px felt circles on the web; on the phone 44pt glass circles over the page, 34pt raised circles on felt.
+- **Focus:** 2px blue ring, 2px offset.
 
 ### Chips and Marks
-- **Filter chips:** 32px pills, white with hairline, ink-2; selected turns blue wash with Blue Line and Blue Ink; a count rides inside in tabular figures. On phones they scroll sideways in one row.
-- **Mark (status):** an outlined chip with a dot: 24px pill, white fill, tone-coloured 1px line and ink, 6px dot, 12.5px medium text. Tones: action, positive, negative, accent, pink, neutral. The phone version is 22px with a tinted wash.
+- **Filter chips (web):** 32px outlined pills (1.5px inset line), ink words, a 600 count; selected turns sky felt with sky ink and no outline. **Phone chips:** 34pt felt pills in a sideways strip; selected sky felt.
+- **Mark:** a 7px dot and 13/500 words in the status ink, no outline, no fill. Tones: action (amber), positive (green), neutral (ink-3 with a mute dot), plus accent, pink and negative.
+- **Live mark:** "Şimdi, 48 dk kaldı": a 30px raised pill with an 8px pink dot in a 3px 22% pink ring; in dark on a lesson card it takes the card's track.
 
 ### Segmented controls and tabs
-A grey well pill with 4px padding; options are 30px pills in ink-3; the chosen one is white with the Piece shadow. Card tabs carry counts (amber when something waits). The attendance track has Attended / Absent / Other ▾, the chosen piece showing a dot of its meaning; Other opens a menu (web) or the phone's action sheet.
+A track pill with 3px padding; options 32px (28 small) in ink-2; the chosen one is raised with Lift. CardTabs carry counts in 600 ink-3, amber ink when overdue; on a phone-wide card they come apart into sideways chips. On a lesson card the track is the type's track and the words its ink. The attendance picker is "Katıldı | Gelmedi | Diğer ▾": the thumb slides in 180ms, a chosen Katıldı shows a check in green ink, Diğer opens a menu (web) or action sheet (phone).
 
 ### Cards / Containers
-- **Card:** white, 1px hairline, 16px radius, clipped. Header 16–20px side padding, 18px top, 14px bottom, title plus optional one-line description and right-aligned controls. Body starts with a border-t and runs edge to edge. Footer is a border-t line of 13px ink-3 text with a **CardLink** at the right: ink-2 text underlined in the strong hairline, with a small caret.
-- **Band:** a band-grey strip with a bottom hairline, 8px × 16–20px padding, 12.5px ink-3; used for column heads (sticky when needed) and group heads such as one lesson.
-- **FigureGrid:** figures side by side, divided by 1px gaps over the line colour; each cell is a label, a large tabular number and a hint; clickable cells show a caret and hover band grey.
-- **Section boxed:** a small card with a ruled header and padded body, for side columns and settings.
-- **Phone card:** white, 1px #e6e4df, 18px radius; rows divided by #efede8 rules that start after the leading tile.
+- **Card:** felt, 26px, no border, no shadow, clipped. Header 18px top, 22px sides, 12px bottom: card title, an aside at 14 ink-3, an optional 13.5 ink-3 description. Footer is a plain row over a 1px line: 13.5 ink-3 words, an underlined ink text link and the main action.
+- **Lesson card:** the same card in the type's felt and ink.
+- **Group head:** a 13/600 ink-2 label on the felt with a 13 ink-3 aside; no grey strip.
+- **Figure tile:** a separate 22px tile in the quiet colour (felt on the page, track on a felt card): a dot and 15/500 ink-2 label, the 26/600 figure, up to two 13.5 sub-lines; the whole tile is the button. Phone stat tiles are felt, 22pt round, 24pt figure.
+- **Phone card:** felt, 26pt; rows 16pt sides, 1px line between; padded cards 18pt.
 
 ### Inputs / Fields
-- **Web:** 40px (44px below 1024px), 10px radius, hairline border, white, a 1px 0.04 shadow; hover strengthens the border; focus turns the border blue with a 3px blue ring at 20%; invalid turns red.
-- **Search pill:** 38–40px full pill on band grey with a magnifier; turns white on focus.
-- **Phone:** 50px boxes, 14px radius, label above in 13px semibold ink-2; focus turns the border blue. Search is a 46px pill. Dates use the native inline calendar; amounts end in ₺; switches are native with a Deep Blue track and white knob.
+- **Web:** felt fields (raised on a felt card), 46px, 16px radius, a transparent 1.5px edge; hover shows line-strong; focus turns the edge blue with a 3px 20% blue ring; invalid red. Labels 13.5/600 ink-2 above. Amounts end in a live "₺" preview.
+- **Search:** a 42–44px felt pill with a magnifier that turns blue on focus. The top bar's search is a 340×40 felt pill.
+- **Phone:** fields are rows inside felt cards; compact native date pickers with a track pill; search a 46pt felt pill; switches are native with a Deep Blue track. Group labels 13.5/600 ink-2 above a card, notes 13.5 ink-3 under it.
 
 ### Navigation
-- **Rail:** 36px items, 8px radius, 14.5px ink with an 18px Phosphor icon; active and hover are the hover grey, active text medium. No coloured active marker.
-- **Web tab bar:** five places plus More, 11px medium labels, ink-3 at rest, ink with a filled Deep Blue icon when active.
-- **Phone tabs:** the native tab bar with SF Symbols; Blue Ink when selected, ink-3 at rest, blue-wash indicator on Android.
+- **Web sidebar items:** 42px pills, 15/500 ink-2 with a 20px ink-3 Phosphor icon; hover takes the hover tint; the active item is a raised pill with Lift, ink words and a Blue Ink icon. Counts ride at the right as 22px pills: waiting work in 22% amber with amber ink, the waitlist on track.
+- **Web tab bar (< 1024px):** the floating glass bar; Blue Ink (accent in dark) with a filled icon when active, ink-2 at rest, an amber dot on Today when work waits.
+- **Phone tabs:** the iPhone's own floating glass bar (NativeTabs) with SF Symbols, tinted Blue Ink in light and HelloKido Blue in dark; never painted.
 
 ### Sheets and overlays
-Every task opens in a sheet: from the bottom on phones (92dvh max, 20px top radius, grab handle), from the right at 768px and up (30rem or 42rem wide, square, hairline on the left). Short confirmations use a 26rem dialog; menus and popovers are 16px-radius white panels with Lift.
+- **Web:** every task opens in a sheet: a floating panel at the right from 768px (500px or 42rem wide, inset 12px, 28px round, page colour, Float, over the scrim; slides in 240ms), from the bottom on phones (92dvh, 28px top radius, grab handle). Header: a 24/30 title, a 14.5 ink-2 description and a quiet X circle; the footer is sticky over a line, quiet actions left, the primary right. Menus and popovers are raised 18px panels with Float and 40px pill items.
+- **Phone:** the native page sheet (`presentation: 'modal'`) with a real navigation bar in the sheet colour and no rule under it; fields sit on felt cards inside.
 
 ### Signature pieces
-- **Initials tile (Avatar / Peg):** a rounded square with one or two initials ("AD" for Ada Demir), band grey with ink-2 at rest. As a seat it is tinted by attendance: attended green wash, make-up pink wash, absent well grey, forgotten amber wash, postponed or cancelled dashed and struck through.
-- **Seat board:** the children holding a seat as tiles, a thin rule, those who gave it up, then "4/6". A child past six gets a red outline and the count turns red.
-- **Share bar:** a 6px pill track (#f0f0f0) filled blue by the share of lessons left; amber when it runs low; free packages show none.
-- **Lesson-type dot:** 8px dot before a lesson name.
-- **Promo pills (phone):** 46px blue-wash pieces (14px radius, so softly squared rather than fully round) with Blue Line and Blue Ink, an icon and a count ("3 payments due"), scrolling sideways at the top of Today; each jumps to its list.
+- **Beads:** a package as one 26px pill per lesson: attended green with a white check, absent mute, planned a 1.5px mute ring; a legend of matching dots under it. **Mini beads** in rows: 9px dots in the card's type mid tone plus the count (amber ink at two or fewer).
+- **Seat dots:** one dot per seat, filled in the type's mid tone, rings for free seats ("6 kişilik derste 2 yer boş").
+- **Peg / seat board:** children holding a seat as initials circles tinted by attendance (attended green wash, make-up pink felt, absent track, forgotten amber), then a thin rule, those who gave it up (dashed, struck through), then "4/6". A child past the planned six is flagged; the two surfaces differ on how (see the report).
+- **Day ribbon and week board (web):** lessons as type-felt blocks at their real time; past time and closed days carry the fine hatch; the pink now-line runs behind the blocks with a now-chip label.
 
 ## Do's and Don'ts
 
 ### Do:
-- **Do** use the semantic roles from `apps/web/src/styles/app.css` and `apps/mobile/src/theme/colors.ts`, never the raw sky/pink/yellow ramps.
-- **Do** build every new page from Page, Card (header / body / footer with CardLink), Band, FigureGrid and Section boxed.
-- **Do** show status as a Mark (outlined chip with a dot) and people as square initials tiles.
-- **Do** keep amber for "needs your action", grey for absence and red for failure or over-capacity only.
-- **Do** keep every control a pill and give it a 44px touch area on touch screens.
-- **Do** set numbers in tabular figures and amounts in Turkish format in all three languages.
-- **Do** open every task in a sheet: from the right at 768px and up, from the bottom on phones.
-- **Do** use the phone's own pieces (title bar, tab bar, switches, date picker, action sheets, haptics) instead of drawing them.
-- **Do** keep motion between 150 and 320ms, ease-out-expo for arrivals, and honour reduced motion.
+- **Do** use the roles in `apps/web/src/styles/app.css` (`page`, `felt`, `track`, `raised`, `ink-*`, `fill`, the `type-sky / type-sun / type-pink` classes) and `apps/mobile/src/theme/colors.ts` (`typeTone`); the older role names there are aliases, not a second palette.
+- **Do** build pages from Page, Card (with `tone` for a lesson), Band, Figure tiles, CardTabs, Section and Sheet.
+- **Do** give a lesson its type's felt and shape, and everything else neutral felt.
+- **Do** keep one Deep Blue (#0077b3) filled button per area and amber for "needs your action" only.
+- **Do** set figures big and tabular, and amounts in Turkish format in all three languages.
+- **Do** keep every control a pill with a 44px touch area on touch screens.
+- **Do** use the phone's own chrome (glass tab bar, native page sheets, pickers, switches, action sheets, haptics).
+- **Do** keep motion short (thumb 180ms, sheet 240ms, press 0.98–0.99) and honour reduced motion.
+- **Do** check every screen in light and dark.
 
 ### Don't:
-- **Don't** use gradients, gradient text or coloured glow shadows (the loading shimmer is the only gradient).
-- **Don't** nest a card inside a card; group with bands and hairlines.
-- **Don't** add side-stripe accents (a coloured left border on rows, cards or notices).
+- **Don't** give a card a border or a shadow, or put a card inside a card.
+- **Don't** use black fills, violet, gradients, gradient text or glow shadows; the hatch and the loading shimmer are the only gradients.
+- **Don't** colour an absence red or fill a status with a solid block.
+- **Don't** add side-stripe accents, uppercase labels or eyebrows above headings.
 - **Don't** use emoji or text glyphs as icons; icons are Phosphor on the web and SF Symbols on the phone.
-- **Don't** introduce a second accent hue or a second type family on a surface.
-- **Don't** colour an absence red or fill a status chip with solid colour.
-- **Don't** use uppercase tracked kickers or eyebrows above headings.
-- **Don't** "fix" the approved patterns: outlined dot chips, pill buttons, square initials tiles, grey band heads, cards with header and footer, blue promo pills, lesson-type dots.
-- **Don't** restyle the public calendar (`#/takvim`) from this file; it keeps its own look.
+- **Don't** introduce a second type family or a second accent hue.
+- **Don't** paint over the iPhone's tab bar or draw its glass yourself.
+- **Don't** restyle the public parents' calendar (`/takvim`) from this file; it keeps its own look.

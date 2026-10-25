@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, StyleSheet, View, type TextInputInstance } from 'react-native'
+import { useMemo, useRef, useState } from 'react'
+import { Alert, type TextInputInstance } from 'react-native'
 import { useQuery } from '@tanstack/react-query'
 import * as Haptics from 'expo-haptics'
 import { startOfDay } from 'date-fns'
@@ -10,33 +10,25 @@ import { capitalizeName, capitalizeWords, upperFirst } from '@hellokido/core/rul
 import { askedOn, CONTACTED, UNDECIDED, WAITING, type WaitStatus } from '@hellokido/core/view'
 import { keys, useLabels, useRefresh } from '../../data/queries'
 import { useI18n } from '../../providers/I18n'
-import { EmptyState, Skeleton } from '../../ui/Bits'
+import { EmptyState, ListSkeleton } from '../../ui/Bits'
 import { Button } from '../../ui/Button'
 import { DateField, Segmented, SelectField, TextField } from '../../ui/Fields'
+import { CardButton, FormGroup } from '../../ui/Screen'
 import { SheetActions, SheetScreen, useSheet } from '../../ui/Sheet'
 import { useToast } from '../../ui/Toast'
-import type { FormState } from '../payment/fields'
-
-const IDLE: FormState = { dirty: false, busy: false }
 
 /** A family who asked for a place: added when they call, changed when something new is heard. */
 export function WaitlistSheet({ id }: { id?: string }) {
   const { t } = useI18n()
-  const [state, setState] = useState(IDLE)
   const list = useQuery({ queryKey: keys.waitlist, queryFn: listWaitlist, enabled: Boolean(id) })
   const entry = id ? (list.data?.find((row) => row.id === id) ?? null) : null
-  const waiting = Boolean(id) && list.isPending
-  const missing = Boolean(id) && !waiting && !entry
 
+  if (!id || entry) return <WaitlistForm entry={entry} />
   return (
-    <SheetScreen title={id ? t.waitlist.form.editTitle : t.waitlist.form.newTitle} subtitle={entry?.student_name} dirty={state.dirty} busy={state.busy}>
-      {waiting ? (
-        <View style={styles.stack}>
-          <Skeleton height={50} radius={13} />
-          <Skeleton height={50} radius={13} />
-          <Skeleton height={50} radius={13} />
-        </View>
-      ) : missing ? (
+    <SheetScreen title={t.waitlist.form.editTitle}>
+      {list.isPending ? (
+        <ListSkeleton rows={3} />
+      ) : (
         <EmptyState
           icon="info"
           title={list.isError ? t.common.loadFailed : t.waitlist.form.notFound}
@@ -48,18 +40,17 @@ export function WaitlistSheet({ id }: { id?: string }) {
             ) : undefined
           }
         />
-      ) : (
-        <WaitlistForm entry={entry} onStateChange={setState} />
       )}
     </SheetScreen>
   )
 }
 
-function WaitlistForm({ entry, onStateChange }: { entry: WaitlistEntry | null; onStateChange: (state: FormState) => void }) {
+function WaitlistForm({ entry }: { entry: WaitlistEntry | null }) {
   const { t, fmt } = useI18n()
   const labels = useLabels()
   const toast = useToast()
   const refresh = useRefresh()
+  // This form draws its own SheetScreen, so the bar's action closes the sheet it is in through this
   const sheet = useSheet()
 
   // A new entry starts on today and as waiting, the way families usually ask
@@ -114,7 +105,6 @@ function WaitlistForm({ entry, onStateChange }: { entry: WaitlistEntry | null; o
   const dirty = entry
     ? Object.keys(changes).length > 0
     : Boolean(child || age || parent || phone || note) || pkg !== initial.pkg || status !== initial.status || day?.getTime() !== initial.day.getTime()
-  useEffect(() => onStateChange({ dirty, busy }), [dirty, busy, onStateChange])
 
   const packageOptions = useMemo(() => WAITLIST_PACKAGES.map((code) => ({ id: code, label: labels.packageName(code) })), [labels])
 
@@ -181,92 +171,93 @@ function WaitlistForm({ entry, onStateChange }: { entry: WaitlistEntry | null; o
     ])
   }
 
+  // The child, the parent, what they asked about and a note: each a group, as a contact card is laid out
   return (
-    <>
-      <TextField
-        label={t.waitlist.form.childName}
-        value={child}
-        onChangeText={(text) => setChild(capitalizeName(text) ?? '')}
-        autoCapitalize="words"
-        autoComplete="off"
-        autoCorrect={false}
-        autoFocus={!entry}
-        returnKeyType="next"
-        submitBehavior="submit"
-        onSubmitEditing={() => ageRef.current?.focus()}
-      />
-      <TextField
-        ref={ageRef}
-        label={t.waitlist.form.age}
-        placeholder={t.waitlist.form.agePlaceholder}
-        value={age}
-        onChangeText={(text) => setAge(capitalizeWords(text) ?? '')}
-        autoCapitalize="words"
-        autoComplete="off"
-        returnKeyType="next"
-        submitBehavior="submit"
-        onSubmitEditing={() => parentRef.current?.focus()}
-      />
-      <View style={styles.break} />
-      <TextField
-        ref={parentRef}
-        label={t.waitlist.form.parentName}
-        value={parent}
-        onChangeText={(text) => setParent(capitalizeName(text) ?? '')}
-        autoCapitalize="words"
-        autoComplete="off"
-        autoCorrect={false}
-        returnKeyType="next"
-        submitBehavior="submit"
-        onSubmitEditing={() => phoneRef.current?.focus()}
-      />
-      <TextField
-        ref={phoneRef}
-        label={t.waitlist.form.phone}
-        value={phone}
-        onChangeText={(text) => setPhone(phoneDigits(text))}
-        onBlur={() => setPhoneLeft(true)}
-        keyboardType="phone-pad"
-        inputMode="tel"
-        autoComplete="tel"
-        textContentType="telephoneNumber"
-        error={phone && !phoneOk && phoneLeft ? t.waitlist.form.phoneHint : undefined}
-      />
-      <View style={styles.break} />
-      <SelectField label={t.waitlist.form.package} placeholder={t.waitlist.form.package} options={packageOptions} value={pkg} onChange={setPkg} />
-      <DateField label={t.waitlist.form.contactDate} value={day} onChange={setDay} shortcuts />
-      <Segmented<WaitStatus>
-        label={t.waitlist.form.status}
-        options={[
-          { id: WAITING, label: t.waitlist.form.statusWaiting },
-          { id: CONTACTED, label: t.waitlist.form.statusContacted }
-        ]}
-        value={status}
-        onChange={setStatus}
-      />
-      <TextField
-        label={t.waitlist.form.note}
-        placeholder={t.waitlist.form.notePlaceholder}
-        value={note}
-        onChangeText={(text) => setNote(upperFirst(text) ?? '')}
-        multiline
-      />
-      <SheetActions error={error}>
-        <Button variant="primary" size="lg" disabled={!valid} busy={busy} onPress={() => void save()}>
-          {t.waitlist.form.save}
-        </Button>
-        {entry && (
-          <Button variant="danger" size="md" icon="delete" disabled={busy} onPress={remove}>
-            {t.waitlist.delete}
-          </Button>
-        )}
-      </SheetActions>
-    </>
+    <SheetScreen
+      title={entry ? t.waitlist.form.editTitle : t.waitlist.form.newTitle}
+      subtitle={entry?.student_name}
+      dirty={dirty}
+      busy={busy}
+      // A new family is added, a known one saved, as the phone's own forms say it
+      // A known family waits for a change before it can be saved
+      action={{ label: entry ? t.waitlist.form.save : t.common.add, disabled: !valid || (entry !== null && !dirty), onPress: () => void save() }}
+    >
+      <FormGroup>
+        <TextField
+          label={t.waitlist.form.childName}
+          value={child}
+          onChangeText={(text) => setChild(capitalizeName(text) ?? '')}
+          autoCapitalize="words"
+          autoComplete="off"
+          autoCorrect={false}
+          autoFocus={!entry}
+          returnKeyType="next"
+          submitBehavior="submit"
+          onSubmitEditing={() => ageRef.current?.focus()}
+        />
+        <TextField
+          ref={ageRef}
+          label={t.waitlist.form.age}
+          placeholder={t.waitlist.form.agePlaceholder}
+          value={age}
+          onChangeText={(text) => setAge(capitalizeWords(text) ?? '')}
+          autoCapitalize="words"
+          autoComplete="off"
+          returnKeyType="next"
+          submitBehavior="submit"
+          onSubmitEditing={() => parentRef.current?.focus()}
+        />
+      </FormGroup>
+      <FormGroup>
+        <TextField
+          ref={parentRef}
+          label={t.waitlist.form.parentName}
+          value={parent}
+          onChangeText={(text) => setParent(capitalizeName(text) ?? '')}
+          autoCapitalize="words"
+          autoComplete="off"
+          autoCorrect={false}
+          returnKeyType="next"
+          submitBehavior="submit"
+          onSubmitEditing={() => phoneRef.current?.focus()}
+        />
+        <TextField
+          ref={phoneRef}
+          label={t.waitlist.form.phone}
+          value={phone}
+          onChangeText={(text) => setPhone(phoneDigits(text))}
+          onBlur={() => setPhoneLeft(true)}
+          keyboardType="phone-pad"
+          inputMode="tel"
+          autoComplete="tel"
+          textContentType="telephoneNumber"
+          error={phone && !phoneOk && phoneLeft ? t.waitlist.form.phoneHint : undefined}
+        />
+      </FormGroup>
+      <FormGroup>
+        <SelectField label={t.waitlist.form.package} placeholder={t.waitlist.form.package} options={packageOptions} value={pkg} onChange={setPkg} />
+        <DateField label={t.waitlist.form.contactDate} value={day} onChange={setDay} shortcuts />
+        <Segmented<WaitStatus>
+          label={t.waitlist.form.status}
+          options={[
+            { id: WAITING, label: t.waitlist.form.statusWaiting },
+            { id: CONTACTED, label: t.waitlist.form.statusContacted }
+          ]}
+          value={status}
+          onChange={setStatus}
+        />
+      </FormGroup>
+      <FormGroup>
+        <TextField
+          label={t.waitlist.form.note}
+          placeholder={t.waitlist.form.notePlaceholder}
+          value={note}
+          onChangeText={(text) => setNote(upperFirst(text) ?? '')}
+          multiline
+        />
+      </FormGroup>
+      <SheetActions error={error}>{entry && <CardButton label={t.waitlist.delete} destructive disabled={busy} onPress={remove} />}</SheetActions>
+    </SheetScreen>
   )
 }
 
-const styles = StyleSheet.create({
-  stack: { gap: 14 },
-  // A step more room between the child, the parent and the package (28pt instead of the sheet's 20)
-  break: { marginVertical: -6 }
-})

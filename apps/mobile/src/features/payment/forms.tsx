@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { View } from 'react-native'
+import { StyleSheet, View } from 'react-native'
 import { useQuery } from '@tanstack/react-query'
 import * as Haptics from 'expo-haptics'
 import {
@@ -25,12 +25,13 @@ import { upperFirst } from '@hellokido/core/rules/text.js'
 import { FREE, fromDateKey, periodHint, sameInstant, type DateRange } from '@hellokido/core/view'
 import { useCatalog, useLabels, useRefresh } from '../../data/queries'
 import { useI18n } from '../../providers/I18n'
-import { Notice, Skeleton, type NoticeTone } from '../../ui/Bits'
+import { Skeleton } from '../../ui/Bits'
 import { Button } from '../../ui/Button'
-import { AmountField, Chip, DateField, FieldLabel, PeriodField, SelectField, Segmented, Stepper, TextField } from '../../ui/Fields'
-import { SheetActions, useSheet } from '../../ui/Sheet'
+import { AmountField, DateField, PeriodField, SelectField, Segmented, Stepper, TextField } from '../../ui/Fields'
+import { FormGroup, Row } from '../../ui/Screen'
+import { SheetActions, useReportForm, useSheet, type FormState } from '../../ui/Sheet'
 import { useToast } from '../../ui/Toast'
-import { amountError, PaymentFields, usePackageOptions, usePackagePrice, type FormState } from './fields'
+import { amountError, groupNotes, usePackageOptions, usePackagePrice, usePaymentRows, type Note } from './fields'
 
 const saved = () => void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
 const failed = () => void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error)
@@ -74,7 +75,6 @@ export function CollectForm({ registration, entry, onStateChange }: CollectProps
 
   const valid = Boolean(method && isPositiveAmount(amount) && date)
   const dirty = method !== null || date !== null || amount !== (entry ? formatAmountForInput(entry.amount) : '')
-  useEffect(() => onStateChange({ dirty, busy }), [dirty, busy, onStateChange])
 
   const once = useSaveOnce()
   const write = async () => {
@@ -112,15 +112,14 @@ export function CollectForm({ registration, entry, onStateChange }: CollectProps
     }
   }
   const save = () => once(write)
+  // The sheet puts the save in its bar
+  useReportForm(onStateChange, { dirty, busy, ready: valid }, () => void save())
+  const paymentRows = usePaymentRows({ method, onMethod: setMethod, amount, onAmount: setAmount, date, onDate: setDate, suggestion: price })
 
   return (
     <>
-      <PaymentFields method={method} onMethod={setMethod} amount={amount} onAmount={setAmount} date={date} onDate={setDate} suggestion={price} />
-      <SheetActions error={error}>
-        <Button variant="primary" size="lg" disabled={!valid} busy={busy} onPress={() => void save()}>
-          {t.children.collect.save}
-        </Button>
-      </SheetActions>
+      <FormGroup>{paymentRows}</FormGroup>
+      <SheetActions error={error} />
     </>
   )
 }
@@ -225,7 +224,7 @@ export function ExtendForm({ registration, mode, extension, onStateChange }: Ext
   const movesPeriod = startsNewPeriod(current.package_start_date, start)
   const preview = editing ? null : previewExtension(source.data ?? null, packageType, start, extra)
 
-  let notice: { tone: NoticeTone; text: string } | null = null
+  let notice: Note | null = null
   if (missingEnd) {
     notice = { tone: 'negative', text: t.children.form.missingEnd }
   } else if (!editing && range && packageType) {
@@ -260,7 +259,6 @@ export function ExtendForm({ registration, mode, extension, onStateChange }: Ext
     !sameInstant(date, initial.date) ||
     note !== initial.note ||
     extra !== 0
-  useEffect(() => onStateChange({ dirty, busy }), [dirty, busy, onStateChange])
 
   const once = useSaveOnce()
   const write = async () => {
@@ -318,10 +316,28 @@ export function ExtendForm({ registration, mode, extension, onStateChange }: Ext
     }
   }
   const save = () => once(write)
+  // A correction waits for a change before "Save" can be pressed
+  useReportForm(onStateChange, { dirty, busy, ready: valid && (!editing || dirty) }, () => void save())
+  const paymentRows = usePaymentRows({ method, onMethod: setMethod, amount, onAmount: setAmount, date, onDate: setDate, suggestion: price })
+
+  // What the period and the package will do, under the period's card
+  const notes = groupNotes([hint && { tone: 'action', text: fmt(t.children.form[hint.key], { days: hint.days }) }, notice])
 
   return (
     <>
-      <SelectField label={t.children.form.packageType} placeholder={t.children.form.packagePlaceholder} options={packageOptions} value={packageType} onChange={setPackageType} />
+      <FormGroup>
+        <SelectField label={t.children.form.packageType} placeholder={t.children.form.packagePlaceholder} options={packageOptions} value={packageType} onChange={setPackageType} />
+        {!editing && (
+          <Stepper
+            label={t.children.extend.addExtra}
+            value={extra}
+            onChange={setExtra}
+            max={MAX_EXTRA_LESSONS}
+            decreaseLabel={t.children.form.extraDecrease}
+            increaseLabel={t.children.form.extraIncrease}
+          />
+        )}
+      </FormGroup>
       <PeriodField
         label={t.children.form.period}
         hint={range ? undefined : t.children.form.periodHelp}
@@ -340,55 +356,44 @@ export function ExtendForm({ registration, mode, extension, onStateChange }: Ext
         }}
         minimumDate={minDate}
         footer={
-          mode === 'renew' ? (
-            <Chip
-              label={t.children.extend.useCurrent}
-              onPress={() => {
-                const period = periodOf(current)
-                setStart(period.start)
-                setEnd(period.end)
-                setRangeTouched(true)
-              }}
-            />
+          notes || mode === 'renew' ? (
+            <View style={styles.periodNotes}>
+              {notes}
+              {mode === 'renew' && (
+                <Button
+                  variant="plain"
+                  size="sm"
+                  onPress={() => {
+                    const period = periodOf(current)
+                    setStart(period.start)
+                    setEnd(period.end)
+                    setRangeTouched(true)
+                  }}
+                  style={styles.link}
+                >
+                  {t.children.extend.useCurrent}
+                </Button>
+              )}
+            </View>
           ) : undefined
         }
       />
-      {hint && <Notice tone="action">{fmt(t.children.form[hint.key], { days: hint.days })}</Notice>}
-      {notice && <Notice tone={notice.tone}>{notice.text}</Notice>}
-      {!editing && (
-        <Stepper
-          label={t.children.extend.addExtra}
-          value={extra}
-          onChange={setExtra}
-          max={MAX_EXTRA_LESSONS}
-          decreaseLabel={t.children.form.extraDecrease}
-          increaseLabel={t.children.form.extraIncrease}
+      <FormGroup>
+        <Segmented
+          label={t.children.form.status}
+          options={[
+            { id: 'odendi', label: t.children.form.paid },
+            { id: 'beklemede', label: t.children.form.pending }
+          ]}
+          value={status}
+          onChange={changeStatus}
         />
-      )}
-      <Segmented
-        label={t.children.form.status}
-        options={[
-          { id: 'odendi', label: t.children.form.paid },
-          { id: 'beklemede', label: t.children.form.pending }
-        ]}
-        value={status}
-        onChange={changeStatus}
-      />
-      {status === 'odendi' && (
-        <PaymentFields method={method} onMethod={setMethod} amount={amount} onAmount={setAmount} date={date} onDate={setDate} suggestion={price} />
-      )}
-      <TextField
-        label={t.children.form.note}
-        placeholder={t.children.form.notePlaceholder}
-        value={note}
-        onChangeText={(text) => setNote(upperFirst(text) ?? '')}
-        multiline
-      />
-      <SheetActions error={error}>
-        <Button variant="primary" size="lg" disabled={!valid} busy={busy} onPress={() => void save()}>
-          {editing ? t.common.save : t.children.extend.save}
-        </Button>
-      </SheetActions>
+        {status === 'odendi' && paymentRows}
+      </FormGroup>
+      <FormGroup title={t.children.form.note}>
+        <TextField label={t.children.form.note} placeholder={t.children.form.notePlaceholder} value={note} onChangeText={(text) => setNote(upperFirst(text) ?? '')} multiline />
+      </FormGroup>
+      <SheetActions error={error} />
     </>
   )
 }
@@ -464,7 +469,6 @@ export function IncomeForm({ kind, registrationId, entry, collect, onStateChange
     !sameInstant(date, initial.date) ||
     !sameInstant(due, initial.due) ||
     note !== initial.note
-  useEffect(() => onStateChange({ dirty, busy }), [dirty, busy, onStateChange])
 
   const once = useSaveOnce()
   const write = async () => {
@@ -511,49 +515,57 @@ export function IncomeForm({ kind, registrationId, entry, collect, onStateChange
     }
   }
   const save = () => once(write)
+  // An entry being corrected waits for a change before "Save" can be pressed
+  useReportForm(onStateChange, { dirty, busy, ready: valid && (!entry || dirty) }, () => void save())
+  const paymentRows = usePaymentRows({ method, onMethod: setMethod, amount, onAmount: setAmount, date, onDate: setDate })
 
   return (
     <>
-      {kind === 'other' &&
-        (catalog ? (
-          <SelectField label={t.finance.entry.category} placeholder={t.finance.entry.categoryPlaceholder} options={categoryOptions} value={category} onChange={setCategory} />
-        ) : (
-          // Until the categories are here an open list would be an empty box
-          <View>
-            <FieldLabel>{t.finance.entry.category}</FieldLabel>
-            <Skeleton height={50} radius={18} />
-          </View>
-        ))}
-      <TextField
-        label={t.finance.entry.description}
-        placeholder={kind === 'child' ? t.finance.entry.descriptionChild : t.finance.entry.descriptionOther}
-        value={description}
-        onChangeText={(text) => setDescription(upperFirst(text) ?? '')}
-        autoComplete="off"
-      />
-      <Segmented
-        label={t.finance.entry.status}
-        options={[
-          { id: 'odendi', label: t.finance.entry.paid },
-          { id: 'beklemede', label: t.finance.entry.expected }
-        ]}
-        value={status}
-        onChange={changeStatus}
-      />
-      {paid ? (
-        <PaymentFields method={method} onMethod={setMethod} amount={amount} onAmount={setAmount} date={date} onDate={setDate} />
-      ) : (
-        <>
-          <AmountField label={t.finance.entry.expectedAmount} value={amount} onChange={setAmount} error={amountError(amount, t.common.amountInvalid)} />
-          <DateField label={t.finance.entry.dueDate} value={due} onChange={setDue} hint={t.finance.entry.dueHelp} />
-        </>
-      )}
-      <TextField label={t.finance.entry.note} placeholder={t.finance.entry.notePlaceholder} value={note} onChangeText={(text) => setNote(upperFirst(text) ?? '')} multiline />
-      <SheetActions error={error}>
-        <Button variant="primary" size="lg" disabled={!valid} busy={busy} onPress={() => void save()}>
-          {t.finance.entry.save}
-        </Button>
-      </SheetActions>
+      {/* The same groups as the expense sheet: what and which kind, then the money, then a note */}
+      <FormGroup>
+        <TextField
+          label={t.finance.entry.description}
+          // Short, so the words fit beside the label on a small phone
+          placeholder={kind === 'child' ? t.children.phone.feePlaceholder : t.children.phone.otherPlaceholder}
+          value={description}
+          onChangeText={(text) => setDescription(upperFirst(text) ?? '')}
+          autoComplete="off"
+        />
+        {kind === 'other' &&
+          (catalog ? (
+            <SelectField label={t.finance.entry.category} placeholder={t.finance.entry.categoryPlaceholder} options={categoryOptions} value={category} onChange={setCategory} />
+          ) : (
+            // Until the categories are here an open list would be empty
+            <Row title={t.finance.entry.category} value={<Skeleton height={14} width={90} />} />
+          ))}
+      </FormGroup>
+      <FormGroup>
+        <Segmented
+          label={t.finance.entry.status}
+          options={[
+            { id: 'odendi', label: t.finance.entry.paid },
+            { id: 'beklemede', label: t.finance.entry.expected }
+          ]}
+          value={status}
+          onChange={changeStatus}
+        />
+        {paid
+          ? paymentRows
+          : [
+              <AmountField key="expected" label={t.finance.entry.expectedAmount} value={amount} onChange={setAmount} error={amountError(amount, t.common.amountInvalid)} />,
+              <DateField key="due" label={t.finance.entry.dueDate} value={due} onChange={setDue} hint={t.finance.entry.dueHelp} />
+            ]}
+      </FormGroup>
+      <FormGroup title={t.finance.entry.note}>
+        <TextField label={t.finance.entry.note} placeholder={t.finance.entry.notePlaceholder} value={note} onChangeText={(text) => setNote(upperFirst(text) ?? '')} multiline />
+      </FormGroup>
+      <SheetActions error={error} />
     </>
   )
 }
+
+const styles = StyleSheet.create({
+  periodNotes: { flexGrow: 1, flexShrink: 1, minWidth: 0, gap: 6, alignItems: 'flex-start' },
+  // The plain button's words line up with the footnote above it
+  link: { marginLeft: -4 }
+})

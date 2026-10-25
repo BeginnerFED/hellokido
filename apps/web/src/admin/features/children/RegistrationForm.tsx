@@ -413,7 +413,7 @@ export function RegistrationForm({ registration: row, prefill, onDone, onStateCh
 
       <SheetFooter>
         <SheetActions>
-          <Button variant="primary" isDisabled={!valid} isPending={busy} onPress={() => save()} className="max-md:flex-1">
+          <Button variant="primary" isDisabled={!valid || (editing && !dirty)} isPending={busy} onPress={() => save()} className="max-md:flex-1">
             {row ? t.children.form.save : t.children.form.create}
           </Button>
         </SheetActions>

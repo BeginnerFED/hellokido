@@ -9,10 +9,10 @@ import { useActions } from '../../shell/Actions'
 import { LoadError, Mark } from '../../ui/Bits'
 import { Button, IconButton } from '../../ui/Button'
 import { Menu, MenuItem } from '../../ui/Menu'
-import { Section } from '../../ui/Page'
+import { Card } from '../../ui/Page'
 import { useSheet } from '../../ui/useSheet'
 import { cx } from '../../ui/cx'
-import { ListSkeleton, Rows, methodName } from './bits'
+import { DateTile, ListSkeleton, Rows, cardPad, methodName } from './bits'
 import type { VisibleRange } from './Moves'
 import { dueDayInPeriod, inPeriod, type Period } from './period'
 import { RecurringSheet } from './RecurringSheet'
@@ -115,60 +115,70 @@ export function MonthlySection({
   }
 
   return (
-    <Section
-      boxed
+    <Card
       title={t.finance.monthly.title}
       aside={active.length > 0 && !waiting ? fmt(t.finance.monthly.progress, { done, total: active.length }) : undefined}
       className={className}
+      footer={
+        active.length > 0 && (
+          <Button variant="ghost" size="sm" className="-ml-3" icon={<PlusIcon aria-hidden weight="bold" className="size-4" />} onPress={() => sheet.open(null)}>
+            {t.finance.monthly.add}
+          </Button>
+        )
+      }
     >
       {templates.isError ? (
-        <LoadError message={t.common.loadFailed} retryLabel={t.common.retry} onRetry={() => void templates.refetch()} />
+        <div className={cardPad}>
+          <LoadError message={t.common.loadFailed} retryLabel={t.common.retry} onRetry={() => void templates.refetch()} />
+        </div>
       ) : !templates.data ? (
         <ListSkeleton rows={2} />
       ) : active.length === 0 ? (
-        <div className="flex flex-col items-start gap-3">
-          <p className="max-w-[46ch] text-sm text-ink-2 text-pretty">{t.finance.monthly.empty}</p>
+        <div className={cx(cardPad, 'flex flex-col items-start gap-3')}>
+          <p className="max-w-[46ch] text-[0.9375rem] text-ink-2 text-pretty">{t.finance.monthly.empty}</p>
           <Button size="sm" variant="secondary" icon={<PlusIcon aria-hidden weight="bold" className="size-4" />} onPress={() => sheet.open(null)}>
             {t.finance.monthly.add}
           </Button>
         </div>
       ) : (
         <>
-          <Rows className={cx('transition-opacity duration-200', waiting && 'opacity-60')}>
+          <Rows className={cx('pb-1 transition-opacity duration-200', waiting && 'opacity-60')}>
             {active.map((row) => {
               const expense = recorded.get(row.id)
               const due = dueDayInPeriod(period, row.day_of_month)
               const late = !expense && !future && (!current || today > due)
               const method = methodName(t, labels, row.payment_method)
               return (
-                <li key={row.id} className="flex items-center gap-3 py-2.5">
-                  <span
-                    aria-hidden
-                    className={cx(
-                      'grid size-8 shrink-0 place-items-center rounded-tablet text-[0.8125rem] font-semibold tabular',
-                      expense ? 'bg-positive-wash text-positive-ink' : late ? 'bg-action-wash text-action-ink' : 'bg-well text-ink-2'
-                    )}
-                  >
-                    {expense ? <CheckIcon weight="bold" className="size-4" /> : due.getDate()}
-                  </span>
+                <li key={row.id} className="flex items-center gap-3 py-[0.6875rem]">
+                  <DateTile day={due} tone={expense ? 'done' : late ? 'late' : 'plain'}>
+                    {expense && <CheckIcon weight="bold" className="size-[1.125rem]" />}
+                  </DateTile>
                   <div className="min-w-0 flex-1">
-                    <p className="flex min-w-0 items-center gap-2">
-                      <span className="min-w-0 truncate text-[0.9375rem] font-medium text-ink">{row.title}</span>
-                      {late && <Mark tone="action">{t.finance.monthly.late}</Mark>}
-                    </p>
-                    <p className="truncate text-[0.8125rem] text-ink-3">
+                    <p className="truncate text-[0.96875rem] leading-[1.3125rem] font-medium text-ink">{row.title}</p>
+                    <p className="flex min-w-0 items-center gap-2 text-[0.84375rem] leading-[1.125rem] text-ink-3">
                       {expense ? (
-                        fmt(t.finance.monthly.recorded, { date: date(expense.expense_date ?? expense.created_at ?? '', { day: 'numeric', month: 'short' }) })
+                        <span className="truncate">
+                          {fmt(t.finance.monthly.recorded, { date: date(expense.expense_date ?? expense.created_at ?? '', { day: 'numeric', month: 'short' }) })}
+                        </span>
                       ) : (
                         <>
-                          {/* The tablet shows the day; it is read out here */}
+                          {/* The tile shows the day; it is read out here */}
                           <span className="sr-only">{fmt(t.finance.monthly.day, { day: row.day_of_month })} · </span>
-                          {[labels.expenseCategory(row.expense_type), method].filter(Boolean).join(' · ')}
+                          {late ? (
+                            <Mark tone="action">{t.finance.monthly.late}</Mark>
+                          ) : (
+                            <span className="truncate">{[labels.expenseCategory(row.expense_type), method].filter(Boolean).join(' · ')}</span>
+                          )}
                         </>
                       )}
                     </p>
                   </div>
-                  <span className={cx('shrink-0 text-sm tabular', expense || row.amount != null ? 'font-semibold text-ink' : 'text-ink-3')}>
+                  <span
+                    className={cx(
+                      'shrink-0 whitespace-nowrap',
+                      expense || row.amount != null ? 'text-[0.96875rem] font-semibold text-ink' : 'text-[0.84375rem] text-ink-3'
+                    )}
+                  >
                     {expense ? money(expense.amount) : row.amount != null ? money(row.amount) : t.finance.monthly.varies}
                   </span>
                   {!expense && (
@@ -205,12 +215,9 @@ export function MonthlySection({
               )
             })}
           </Rows>
-          <Button variant="ghost" size="sm" className="mt-1 -ml-3" icon={<PlusIcon aria-hidden weight="bold" className="size-4" />} onPress={() => sheet.open(null)}>
-            {t.finance.monthly.add}
-          </Button>
         </>
       )}
       {sheet.isOpen || sheet.key > 0 ? <RecurringSheet key={sheet.key} isOpen={sheet.isOpen} onOpenChange={sheet.setOpen} template={sheet.payload} /> : null}
-    </Section>
+    </Card>
   )
 }

@@ -54,15 +54,15 @@ function ToastView({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
           accessible={!toast.action}
           accessibilityRole="alert"
           accessibilityLiveRegion="polite"
-          style={[styles.toast, { backgroundColor: c.surface, borderColor: c.line }]}
+          style={[styles.toast, { backgroundColor: c.raised, boxShadow: c.floatShadow }]}
         >
           <Icon name={icon} size={20} color={iconColor} />
           <View style={styles.words}>
-            <Text variant="sub" weight="500">
+            <Text weight="500" style={styles.title}>
               {toast.title}
             </Text>
             {toast.body && (
-              <Text variant="foot" tone="ink2">
+              <Text variant="sub" tone="ink2">
                 {toast.body}
               </Text>
             )}
@@ -77,7 +77,7 @@ function ToastView({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
               hitSlop={10}
               style={({ pressed }) => [styles.action, pressed && { opacity: 0.6 }]}
             >
-              <Text variant="sub" weight="600" tone="accentInk">
+              <Text weight="600" tone="accentInk" style={styles.title}>
                 {toast.action.label}
               </Text>
             </Pressable>
@@ -104,14 +104,10 @@ const styles = StyleSheet.create({
     paddingLeft: 13,
     paddingRight: 16,
     paddingVertical: 11,
-    borderRadius: 22,
-    borderWidth: StyleSheet.hairlineWidth,
-    shadowColor: '#1c1b18',
-    shadowOpacity: 0.14,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 6
+    // It floats over the page: the only kind of thing that casts a shadow here
+    borderRadius: 22
   },
   words: { flexShrink: 1 },
+  title: { fontSize: 15, lineHeight: 20 },
   action: { marginLeft: 6, paddingVertical: 2 }
 })

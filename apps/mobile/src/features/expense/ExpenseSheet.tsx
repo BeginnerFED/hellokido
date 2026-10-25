@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { Alert, StyleSheet, View } from 'react-native'
 import { useQuery } from '@tanstack/react-query'
 import * as Haptics from 'expo-haptics'
@@ -21,10 +21,11 @@ import { keys, useCatalog, useLabels, useRefresh } from '../../data/queries'
 import { useI18n } from '../../providers/I18n'
 import { EmptyState, Skeleton } from '../../ui/Bits'
 import { Button } from '../../ui/Button'
-import { AmountField, Chip, DateField, FieldLabel, Segmented, SwitchField, TextField } from '../../ui/Fields'
-import { SheetActions, SheetScreen, useSheet } from '../../ui/Sheet'
+import { AmountField, DateField, Segmented, SelectField, SwitchField, TextField } from '../../ui/Fields'
+import { CardButton, FormGroup, Row } from '../../ui/Screen'
+import { formAction, SheetActions, SheetScreen, useReportForm, useSheet, type FormState } from '../../ui/Sheet'
 import { useToast } from '../../ui/Toast'
-import { amountError, METHODS, type FormState } from '../payment/fields'
+import { amountError, METHODS } from '../payment/fields'
 
 export type ExpenseParams = {
   /** An expense to correct. */
@@ -59,12 +60,13 @@ export function ExpenseSheet({ params }: { params: ExpenseParams }) {
       subtitle={template ? `${t.finance.expense.fromMonthly}: ${template.title}` : undefined}
       dirty={state.dirty}
       busy={state.busy}
+      action={formAction(state, t.finance.expense.save)}
     >
       {waiting ? (
         <View style={styles.stack}>
-          <Skeleton height={50} radius={13} />
-          <Skeleton height={96} radius={13} />
-          <Skeleton height={50} radius={13} />
+          <Skeleton height={88} radius={26} />
+          <Skeleton height={176} radius={26} />
+          <Skeleton height={88} radius={26} />
         </View>
       ) : failed ? (
         <EmptyState
@@ -136,7 +138,8 @@ function ExpenseForm({ expense, template, day: dayParam, onStateChange }: FormPr
     day?.getTime() !== initial.day.getTime() ||
     note !== initial.note ||
     repeat
-  useEffect(() => onStateChange({ dirty, busy: busy !== null }), [dirty, busy, onStateChange])
+  // An expense being corrected is saved once something changed; a new one as soon as it is filled in
+  useReportForm(onStateChange, { dirty, busy: busy !== null, ready: valid && (expense === null || dirty) }, () => void save())
 
   const fail = (message: string) => {
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error)
@@ -240,57 +243,45 @@ function ExpenseForm({ expense, template, day: dayParam, onStateChange }: FormPr
 
   return (
     <>
-      <TextField
-        label={t.finance.expense.what}
-        placeholder={t.finance.expense.whatPlaceholder}
-        value={title}
-        onChangeText={(text) => setTitle(upperFirst(text) ?? '')}
-        autoComplete="off"
-        // The type chips come next, not another box, so the key closes the keyboard
-        returnKeyType="done"
-      />
-      <View>
-        <FieldLabel>{t.finance.expense.category}</FieldLabel>
-        <View accessibilityRole="radiogroup" accessibilityLabel={t.finance.expense.category} style={styles.chips}>
-          {categories.length === 0
-            ? [0, 1, 2, 3, 4].map((key) => <Skeleton key={key} width={84} height={38} radius={19} />)
-            : categories.map((option) => (
-                <Chip key={option.id} label={option.label} selected={category === option.id} onPress={() => setCategory(option.id)} />
-              ))}
-        </View>
-      </View>
-      <AmountField label={t.finance.expense.amount} value={amount} onChange={setAmount} error={amountError(amount, t.common.amountInvalid)} />
-      <Segmented<PaymentMethod>
-        label={t.finance.expense.method}
-        options={METHODS.map((id) => ({ id, label: t.finance.methodShort[id] ?? id }))}
-        value={method}
-        onChange={setMethod}
-      />
-      <DateField label={t.finance.expense.date} value={day} onChange={setDay} shortcuts />
+      <FormGroup>
+        <TextField
+          label={t.finance.expense.what}
+          placeholder={t.finance.expense.whatPlaceholder}
+          value={title}
+          onChangeText={(text) => setTitle(upperFirst(text) ?? '')}
+          autoComplete="off"
+          // The type is picked from a list next, not typed, so the key closes the keyboard
+          returnKeyType="done"
+        />
+        {catalog ? (
+          <SelectField label={t.finance.expense.category} placeholder={t.finance.expense.categoryPlaceholder} options={categories} value={category} onChange={setCategory} />
+        ) : (
+          // Until the types are here an open list would be empty
+          <Row title={t.finance.expense.category} value={<Skeleton height={14} width={90} radius={7} />} />
+        )}
+      </FormGroup>
+      <FormGroup>
+        <AmountField label={t.finance.expense.amount} value={amount} onChange={setAmount} error={amountError(amount, t.common.amountInvalid)} />
+        <Segmented<PaymentMethod>
+          label={t.finance.expense.method}
+          options={METHODS.map((id) => ({ id, label: t.finance.methodShort[id] ?? id }))}
+          value={method}
+          onChange={setMethod}
+        />
+        <DateField label={t.finance.expense.date} value={day} onChange={setDay} shortcuts />
+      </FormGroup>
       <TextField label={t.finance.expense.note} placeholder={t.finance.expense.notePlaceholder} value={note} onChangeText={(text) => setNote(upperFirst(text) ?? '')} multiline />
       {!expense && !template && (
-        <SwitchField
-          label={t.finance.expense.repeat}
-          hint={repeat && day ? fmt(t.finance.expense.repeatHint, { day: day.getDate() }) : undefined}
-          value={repeat}
-          onChange={setRepeat}
-        />
+        <FormGroup footer={repeat && day ? fmt(t.finance.expense.repeatHint, { day: day.getDate() }) : undefined}>
+          <SwitchField label={t.finance.expense.repeat} value={repeat} onChange={setRepeat} />
+        </FormGroup>
       )}
-      <SheetActions error={error}>
-        <Button variant="primary" size="lg" disabled={!valid || busy === 'delete'} busy={busy === 'save'} onPress={() => void save()}>
-          {t.finance.expense.save}
-        </Button>
-        {expense && (
-          <Button variant="danger" size="md" icon="delete" disabled={busy === 'save'} busy={busy === 'delete'} onPress={remove}>
-            {t.finance.expense.delete}
-          </Button>
-        )}
-      </SheetActions>
+      <SheetActions error={error} />
+      {expense && <CardButton label={t.finance.expense.delete} destructive busy={busy === 'delete'} disabled={busy === 'save'} onPress={remove} />}
     </>
   )
 }
 
 const styles = StyleSheet.create({
-  stack: { gap: 14 },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }
+  stack: { gap: 24 }
 })

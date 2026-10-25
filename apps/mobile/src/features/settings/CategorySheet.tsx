@@ -1,22 +1,21 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Alert, StyleSheet, View } from 'react-native'
+import { useMemo, useState } from 'react'
+import { Alert } from 'react-native'
 import * as Haptics from 'expo-haptics'
 import { addCategory, deleteCategory, updateCategory, type Catalog, type ExpenseCategory, type IncomeCategory } from '@hellokido/core/api'
 import { filledNames, localName, namesOf, sameName, type Names } from '@hellokido/core/view'
 import { useCatalog, useRefresh } from '../../data/queries'
 import { useI18n } from '../../providers/I18n'
-import { EmptyState, Skeleton } from '../../ui/Bits'
+import { EmptyState, ListSkeleton } from '../../ui/Bits'
 import { Button } from '../../ui/Button'
 import { SwitchField } from '../../ui/Fields'
+import { CardButton, FormGroup } from '../../ui/Screen'
 import { SheetActions, SheetScreen, useSheet } from '../../ui/Sheet'
 import { useToast } from '../../ui/Toast'
-import type { FormState } from '../payment/fields'
 import { NameFields } from './bits'
 
 export type CategoryKind = 'expense' | 'income'
 type Category = ExpenseCategory | IncomeCategory
 
-const IDLE: FormState = { dirty: false, busy: false }
 const TABLES = { expense: 'expense_categories', income: 'income_categories' } as const
 // "Other" keeps sort order 999 so it stays last; a new category goes right before it
 const LAST = 999
@@ -27,45 +26,38 @@ const listOf = (catalog: Catalog | undefined, kind: CategoryKind): Category[] =>
 export function CategorySheet({ kind, code }: { kind: CategoryKind; code?: string }) {
   const { t } = useI18n()
   const catalog = useCatalog()
-  const [state, setState] = useState(IDLE)
   const form = t.settings.categories.form
   const category = code ? (listOf(catalog.data, kind).find((row) => row.code === code) ?? null) : null
 
+  if (catalog.data && (!code || category)) return <CategoryForm kind={kind} category={category} catalog={catalog.data} />
   return (
-    <SheetScreen title={code ? form.editTitle : form.newTitle} subtitle={kind === 'expense' ? form.expenseKind : form.incomeKind} dirty={state.dirty} busy={state.busy}>
-      {!catalog.data ? (
-        catalog.isError ? (
-          <EmptyState
-            icon="info"
-            title={t.common.loadFailed}
-            action={
-              <Button size="sm" icon="refresh" busy={catalog.isFetching} onPress={() => void catalog.refetch()}>
-                {t.common.retry}
-              </Button>
-            }
-          />
-        ) : (
-          <View style={styles.stack}>
-            <Skeleton height={50} radius={13} />
-            <Skeleton height={50} radius={13} />
-            <Skeleton height={50} radius={13} />
-          </View>
-        )
-      ) : code && !category ? (
+    <SheetScreen title={code ? form.editTitle : form.newTitle} subtitle={kind === 'expense' ? form.expenseKind : form.incomeKind}>
+      {catalog.data ? (
         <EmptyState icon="info" title={form.notFound} />
+      ) : catalog.isError ? (
+        <EmptyState
+          icon="info"
+          title={t.common.loadFailed}
+          action={
+            <Button size="sm" icon="refresh" busy={catalog.isFetching} onPress={() => void catalog.refetch()}>
+              {t.common.retry}
+            </Button>
+          }
+        />
       ) : (
-        <CategoryForm kind={kind} category={category} catalog={catalog.data} onStateChange={setState} />
+        <ListSkeleton rows={2} />
       )}
     </SheetScreen>
   )
 }
 
-type FormProps = { kind: CategoryKind; category: Category | null; catalog: Catalog; onStateChange: (state: FormState) => void }
+type FormProps = { kind: CategoryKind; category: Category | null; catalog: Catalog }
 
-function CategoryForm({ kind, category, catalog, onStateChange }: FormProps) {
+function CategoryForm({ kind, category, catalog }: FormProps) {
   const { t, fmt, locale } = useI18n()
   const toast = useToast()
   const refresh = useRefresh()
+  // This form draws its own SheetScreen, so the bar's action closes the sheet it is in through this
   const sheet = useSheet()
   const form = t.settings.categories.form
   const table = TABLES[kind]
@@ -81,7 +73,6 @@ function CategoryForm({ kind, category, catalog, onStateChange }: FormProps) {
   const duplicate = names.tr.trim() !== '' && siblings.some((row) => sameName(row.name_tr, names.tr))
   const valid = Boolean(names.tr.trim()) && !duplicate
   const dirty = names.tr !== initial.names.tr || names.en !== initial.names.en || names.uk !== initial.names.uk || active !== initial.active
-  useEffect(() => onStateChange({ dirty, busy }), [dirty, busy, onStateChange])
 
   const gone = () => {
     toast({ tone: 'warning', title: form.notFound })
@@ -160,23 +151,22 @@ function CategoryForm({ kind, category, catalog, onStateChange }: FormProps) {
   }
 
   return (
-    <>
+    <SheetScreen
+      title={category ? form.editTitle : form.newTitle}
+      subtitle={kind === 'expense' ? form.expenseKind : form.incomeKind}
+      dirty={dirty}
+      busy={busy}
+      // A new category is added, a known one saved, as the phone's own forms say it
+      // A known one waits for a change before it can be saved; a new one only for a free name
+      action={{ label: category ? t.common.save : t.common.add, disabled: !valid || (category !== null && !dirty), onPress: () => void save() }}
+    >
       <NameFields value={names} onChange={setNames} error={duplicate ? form.duplicate : undefined} autoFocus={!category} />
-      {category && <SwitchField label={form.active} hint={form.activeHint} value={active} onChange={setActive} />}
-      <SheetActions error={error}>
-        <Button variant="primary" size="lg" disabled={!valid} busy={busy} onPress={() => void save()}>
-          {t.common.save}
-        </Button>
-        {category && !category.is_system && (
-          <Button variant="danger" size="md" icon="delete" disabled={busy} onPress={remove}>
-            {form.delete}
-          </Button>
-        )}
-      </SheetActions>
-    </>
+      {category && (
+        <FormGroup footer={form.activeHint}>
+          <SwitchField label={form.active} value={active} onChange={setActive} />
+        </FormGroup>
+      )}
+      <SheetActions error={error}>{category && !category.is_system && <CardButton label={form.delete} destructive disabled={busy} onPress={remove} />}</SheetActions>
+    </SheetScreen>
   )
 }
-
-const styles = StyleSheet.create({
-  stack: { gap: 14 }
-})

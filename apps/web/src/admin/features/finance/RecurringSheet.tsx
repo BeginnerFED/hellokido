@@ -83,7 +83,7 @@ function RecurringForm({ template, onDone, onStateChange }: { template: Recurrin
   useEffect(() => onStateChange({ dirty, busy }), [dirty, busy, onStateChange])
 
   const save = async () => {
-    if (!valid || busy || !category || !method) return
+    if (!valid || busy || !category || !method || (template && !dirty)) return
     setBusy(true)
     try {
       await saveRecurring(template?.id ?? null, {
@@ -190,7 +190,8 @@ function RecurringForm({ template, onDone, onStateChange }: { template: Recurrin
             )
           }
         >
-          <Button variant="primary" isDisabled={!valid} isPending={busy} onPress={() => void save()} className="max-md:flex-1">
+          {/* An edit has nothing to save until something changed */}
+          <Button variant="primary" isDisabled={!valid || (template !== null && !dirty)} isPending={busy} onPress={() => void save()} className="max-md:flex-1">
             {t.common.save}
           </Button>
         </SheetActions>

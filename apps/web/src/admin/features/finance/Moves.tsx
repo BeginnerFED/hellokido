@@ -205,7 +205,7 @@ export function MovesSection({
         )
       }
     >
-      <div className="flex flex-col gap-3 border-b border-line px-4 py-3.5 sm:px-5">
+      <div className="flex flex-col gap-3 px-4 pt-0.5 pb-3 sm:px-[1.375rem]">
         <div className="flex flex-wrap items-center gap-2">
           <Segmented<MoveKind>
             aria-label={t.finance.moves.kindLabel}
@@ -223,7 +223,7 @@ export function MovesSection({
           />
         </div>
         {/* Phones: one row that scrolls sideways */}
-        <div className="flex items-center gap-2 max-lg:-mx-4 max-lg:-my-1.5 max-lg:overflow-x-auto max-lg:px-4 max-lg:py-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="flex items-center gap-2 max-lg:-mx-4 max-lg:-my-1.5 max-lg:overflow-x-auto max-lg:px-4 max-lg:py-1.5 sm:max-lg:-mx-[1.375rem] sm:max-lg:px-[1.375rem] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <Chips
             aria-label={t.finance.moves.methodLabel}
             multiple
@@ -253,13 +253,13 @@ export function MovesSection({
       </div>
 
       {isError ? (
-        <div className="p-4 sm:p-5">
+        <div className="px-4 pb-4 sm:px-[1.375rem]">
           <LoadError message={t.common.loadFailed} retryLabel={t.common.retry} onRetry={onRetry} />
         </div>
       ) : !moves ? (
-        <div aria-hidden className="flex flex-col gap-1.5 p-3">
+        <div aria-hidden className="flex flex-col gap-2 px-4 pt-2 pb-4 sm:px-[1.375rem]">
           {Array.from({ length: 6 }, (_, index) => (
-            <Skeleton key={index} className="h-[3.75rem]" />
+            <Skeleton key={index} className="h-12" />
           ))}
         </div>
       ) : moves.length === 0 ? (
@@ -284,22 +284,22 @@ export function MovesSection({
             }
           />
         ) : (
-          <div aria-busy={waiting} className={cx('-mb-px transition-opacity duration-200', waiting && 'opacity-60')}>
+          <div aria-busy={waiting} className={cx('pb-2 transition-opacity duration-200', waiting && 'opacity-60')}>
             {days.map((group) => {
               const day = date(group.day, isSameYear(group.day, now) ? { weekday: 'long', day: 'numeric', month: 'long' } : { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
               const net = group.moves.reduce((sum, move) => sum + (move.kind === 'in' ? move.amount : -move.amount), 0)
               return (
-                <section key={group.key} aria-labelledby={`day-${group.key}`}>
+                <section key={group.key} aria-labelledby={`day-${group.key}`} className="border-t border-line pt-1.5">
                   <Band className="justify-between">
-                    <h3 id={`day-${group.key}`} className="font-medium text-ink-2 first-letter:uppercase">
+                    <h3 id={`day-${group.key}`} className="first-letter:uppercase">
                       {day}
                     </h3>
-                    <span className="tabular">
+                    <span className="font-medium text-ink-3">
                       {net >= 0 ? '+' : MINUS}
                       {money(Math.abs(net))}
                     </span>
                   </Band>
-                  <ul className="divide-y divide-line border-b border-line">
+                  <ul className="[&>li+li]:border-t [&>li+li]:border-line">
                     {group.moves.map((move) => (
                       <li key={move.key}>
                         <MoveRow move={move} />
@@ -316,8 +316,8 @@ export function MovesSection({
 }
 
 const rowClass = cx(
-  'flex w-full items-center gap-3 px-4 py-3 text-left no-underline outline-none transition-colors duration-150 sm:px-5',
-  'data-hovered:bg-surface-2 data-pressed:bg-hover data-focus-visible:ring-2 data-focus-visible:ring-focus data-focus-visible:ring-inset'
+  'flex w-full items-center gap-3 px-4 py-[0.6875rem] text-left no-underline outline-none transition-colors duration-150 sm:px-[1.375rem]',
+  'data-hovered:bg-hover data-pressed:bg-hover data-focus-visible:ring-2 data-focus-visible:ring-focus data-focus-visible:ring-inset'
 )
 
 function MoveRow({ move }: { move: Move }) {
@@ -331,12 +331,12 @@ function MoveRow({ move }: { move: Move }) {
       </span>
       <span className="min-w-0 flex-1">
         <span className="flex min-w-0 items-center gap-2">
-          <span className="min-w-0 truncate text-[0.9375rem] font-medium text-ink">{move.title}</span>
+          <span className="min-w-0 truncate text-[0.96875rem] leading-[1.3125rem] font-medium text-ink">{move.title}</span>
           {move.marks}
         </span>
         {/* Phones give the package and its dates a second line rather than cut the dates off */}
         {(move.meta || move.period) && (
-          <span className="mt-0.5 block text-[0.8125rem] text-ink-3 max-lg:line-clamp-2 lg:truncate">
+          <span className="block text-[0.84375rem] leading-[1.125rem] text-ink-3 max-lg:line-clamp-2 lg:truncate">
             {move.meta}
             {move.meta && move.period && ' · '}
             {move.period && <span className="whitespace-nowrap">{move.period}</span>}
@@ -344,11 +344,11 @@ function MoveRow({ move }: { move: Move }) {
         )}
       </span>
       <span className="shrink-0 text-right">
-        <span className="block text-[0.9375rem] font-semibold text-ink tabular">
+        <span className="block text-[0.96875rem] leading-[1.3125rem] font-semibold whitespace-nowrap text-ink">
           {move.kind === 'in' ? '+' : MINUS}
           {money(move.amount)}
         </span>
-        {method && <span className="block text-[0.8125rem] text-ink-3">{method}</span>}
+        {method && <span className="block text-[0.84375rem] leading-[1.125rem] text-ink-3">{method}</span>}
       </span>
     </>
   )

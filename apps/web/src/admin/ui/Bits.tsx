@@ -18,8 +18,8 @@ export function Skeleton({ className }: { className?: string }) {
     <div
       aria-hidden
       className={cx(
-        'animate-shimmer rounded-[0.5rem] bg-[length:200%_100%]',
-        'bg-[linear-gradient(90deg,var(--well)_25%,var(--surface-2)_50%,var(--well)_75%)]',
+        'animate-shimmer rounded-control bg-[length:200%_100%]',
+        'bg-[linear-gradient(90deg,var(--track)_25%,color-mix(in_srgb,var(--track)_45%,var(--felt))_50%,var(--track)_75%)]',
         className
       )}
     />
@@ -32,8 +32,8 @@ export function EmptyState({ title, body, action, className, icon }: EmptyProps)
   return (
     <div className={cx('flex flex-col items-center px-6 py-10 text-center', className)}>
       {icon && <div className="mb-3 text-ink-3">{icon}</div>}
-      <p className="text-[0.9375rem] font-medium text-ink">{title}</p>
-      {body && <p className="mt-1 max-w-sm text-sm text-ink-2 text-pretty">{body}</p>}
+      <p className="text-[0.96875rem] font-medium text-ink">{title}</p>
+      {body && <p className="mt-1 max-w-sm text-[0.84375rem] text-ink-3 text-pretty">{body}</p>}
       {action && <div className="mt-4">{action}</div>}
     </div>
   )
@@ -42,9 +42,9 @@ export function EmptyState({ title, body, action, className, icon }: EmptyProps)
 /** Inline error with a retry, used where a list failed to load. */
 export function LoadError({ message, retryLabel, onRetry }: { message: string; retryLabel: string; onRetry: () => void }) {
   return (
-    <div role="alert" className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-control border border-negative-line bg-negative-wash px-4 py-3 text-sm text-negative-ink">
+    <div role="alert" className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-control bg-negative-wash px-4 py-3 text-sm text-negative-ink">
       <span className="min-w-0 flex-1">{message}</span>
-      <button type="button" onClick={onRetry} className="font-semibold underline-offset-2 hover:underline">
+      <button type="button" onClick={onRetry} className="rounded-[0.25rem] font-semibold underline underline-offset-[3px] outline-none focus-visible:ring-2 focus-visible:ring-focus">
         {retryLabel}
       </button>
     </div>
@@ -53,46 +53,91 @@ export function LoadError({ message, retryLabel, onRetry }: { message: string; r
 
 export type MarkTone = 'action' | 'positive' | 'negative' | 'accent' | 'neutral' | 'pink'
 
-const MARK_TONES: Record<MarkTone, { chip: string; dot: string }> = {
-  action: { chip: 'border-action-line text-action-ink', dot: 'bg-action' },
-  positive: { chip: 'border-positive-line text-positive-ink', dot: 'bg-positive' },
-  negative: { chip: 'border-negative-line text-negative-ink', dot: 'bg-negative' },
-  accent: { chip: 'border-accent-line text-accent-ink', dot: 'bg-accent' },
-  pink: { chip: 'border-pink-line text-pink-ink', dot: 'bg-pink' },
-  neutral: { chip: 'border-line text-ink-3', dot: 'bg-ink-4' }
+const MARK_TONES: Record<MarkTone, { ink: string; dot: string }> = {
+  action: { ink: 'text-amber-ink', dot: 'bg-amber' },
+  positive: { ink: 'text-green-ink', dot: 'bg-green' },
+  negative: { ink: 'text-negative-ink', dot: 'bg-negative' },
+  accent: { ink: 'text-accent-ink', dot: 'bg-accent' },
+  pink: { ink: 'text-pink-ink', dot: 'bg-pink' },
+  neutral: { ink: 'text-ink-3', dot: 'bg-mute' }
 }
 
-/** An outlined status chip with a dot. Amber is for things that need the admin's action. */
+/**
+ * A status as a 7px dot and a word in the status ink; no outline, no fill. Amber ("action") is
+ * only for things the admin has to do; an absence is neutral grey, never red.
+ */
 export function Mark({ tone, children, className, dot = true }: { tone: MarkTone; children: ReactNode; className?: string; dot?: boolean }) {
   const look = MARK_TONES[tone]
   return (
-    <span
-      className={cx(
-        'inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full border bg-surface px-2.5 text-[0.78125rem] font-medium whitespace-nowrap',
-        look.chip,
-        className
-      )}
-    >
-      {dot && <span aria-hidden className={cx('size-1.5 shrink-0 rounded-full', look.dot)} />}
+    <span className={cx('inline-flex shrink-0 items-center gap-1.5 text-[0.8125rem] leading-[1.0625rem] font-medium whitespace-nowrap', look.ink, className)}>
+      {dot && <span aria-hidden className={cx('size-[7px] shrink-0 rounded-full', look.dot)} />}
       {children}
     </span>
   )
 }
 
-/** A square initials tile, the avatar of a child or a parent in every row. */
-export function Avatar({ name, size = 'md', className }: { name: string | null | undefined; size?: 'sm' | 'md' | 'lg'; className?: string }) {
+/** "Şimdi, 48 dk kaldı": a raised pill with a pink dot in a soft ring; on a lesson card in dark it takes the card's track. */
+export function LiveMark({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <span
+      className={cx(
+        'inline-flex h-[1.875rem] shrink-0 items-center gap-[0.4375rem] rounded-full bg-raised pr-3 pl-2.5 text-sm font-medium whitespace-nowrap text-ink',
+        'dark:bg-[var(--t-track,var(--raised))] dark:text-[var(--t-ink,var(--ink))]',
+        className
+      )}
+    >
+      <span aria-hidden className="size-2 shrink-0 rounded-full bg-pink shadow-[0_0_0_3px_color-mix(in_srgb,var(--pink)_22%,transparent)]" />
+      {children}
+    </span>
+  )
+}
+
+const AVATAR_SIZES = {
+  xs: 'size-6 text-[0.6875rem]',
+  sm: 'size-8 text-[0.75rem]',
+  md: 'size-9 text-[0.8125rem]',
+  lg: 'size-12 text-[0.9375rem]',
+  xl: 'size-[4.75rem] text-[1.5rem]'
+}
+
+/**
+ * A child or parent as an initials circle. `piece` takes what it sits on (felt on the page, raised
+ * on a felt card); `sky` marks the selected child or the child of the page; `type` sits on a lesson card.
+ */
+export function Avatar({
+  name,
+  size = 'md',
+  tone = 'piece',
+  className
+}: {
+  name: string | null | undefined
+  size?: keyof typeof AVATAR_SIZES
+  tone?: 'piece' | 'sky' | 'type'
+  className?: string
+}) {
   return (
     <span
       aria-hidden
       className={cx(
-        'grid shrink-0 place-items-center border border-line bg-surface-2 font-semibold text-ink-2',
-        size === 'sm' && 'size-8 rounded-[0.5rem] text-[0.6875rem]',
-        size === 'md' && 'size-9 rounded-tile text-[0.78125rem]',
-        size === 'lg' && 'size-12 rounded-[0.75rem] text-[0.9375rem]',
+        'grid shrink-0 place-items-center rounded-full font-semibold',
+        AVATAR_SIZES[size],
+        tone === 'piece' && 'bg-piece text-ink-2',
+        tone === 'sky' && 'bg-sky-felt text-sky-ink',
+        tone === 'type' && 'bg-raised text-(--t-ink) dark:bg-(--t-track)',
         className
       )}
     >
       {initialsOf(name)}
+    </span>
+  )
+}
+
+/** A 36 icon circle in the piece colour, with an amber dot when its job is overdue. */
+export function IconDisc({ children, alert, className }: { children: ReactNode; alert?: boolean; className?: string }) {
+  return (
+    <span aria-hidden className={cx('relative grid size-9 shrink-0 place-items-center rounded-full bg-piece text-ink-2', className)}>
+      {children}
+      {alert && <span className="absolute top-0 right-0 size-2.5 rounded-full border-2 border-felt bg-amber" />}
     </span>
   )
 }

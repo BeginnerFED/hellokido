@@ -1,8 +1,13 @@
 import { createContext, useCallback, useContext, useMemo, useState } from 'react'
 import { Button as AriaButton, Dialog, DialogTrigger, Link, Popover } from 'react-aria-components'
 import { Outlet, useLocation, useNavigate } from 'react-router'
+import { useQuery } from '@tanstack/react-query'
 import { CaretUpDownIcon, DotsThreeOutlineIcon, SignOutIcon } from '@phosphor-icons/react'
+import { listWaitlist } from '@hellokido/core/api'
 import { LANGUAGE_NAMES, LOCALES, type Locale } from '@hellokido/core/i18n'
+import { keys } from '../data/queries'
+import { useWaiting } from '../features/today/data'
+import { CONTACTED } from '../features/waitlist/rules'
 import { useAuth } from '../providers/Auth'
 import { useI18n } from '../providers/I18n'
 import { useTheme, type ThemeChoice } from '../providers/Theme'
@@ -47,9 +52,9 @@ export function Shell() {
   const value = useMemo(() => ({ collapsed, toggleRail }), [collapsed, toggleRail])
   return (
     <ShellContext.Provider value={value}>
-      <div className={cx('min-h-dvh bg-ground text-ink', collapsed ? 'lg:pl-16' : 'lg:pl-64')}>
+      <div className={cx('min-h-dvh bg-page text-ink', collapsed ? 'lg:pl-24' : 'lg:pl-[16.25rem]')}>
         <Rail collapsed={collapsed} />
-        <main className="pb-[calc(env(safe-area-inset-bottom)+4.75rem)] lg:pb-0">
+        <main className="pb-[calc(env(safe-area-inset-bottom)+6rem)] lg:pb-0">
           <Outlet />
         </main>
         <TabBar />
@@ -58,40 +63,60 @@ export function Shell() {
   )
 }
 
+type Counts = Partial<Record<string, { count: number; tone: 'action' | 'neutral'; label?: string }>>
+
+/** The counts beside the nav items: the work waiting on Today (amber) and the families on the waitlist. */
+function useNavCounts(): Counts {
+  const { plural, t } = useI18n()
+  const waiting = useWaiting()
+  const waitlist = useQuery({ queryKey: keys.waitlist, queryFn: listWaitlist })
+  const queued = (waitlist.data ?? []).filter((entry) => entry.status !== CONTACTED).length
+  return {
+    '/': waiting.ready && waiting.total > 0 ? { count: waiting.total, tone: 'action', label: plural(t.today.waiting, waiting.total) } : undefined,
+    '/waitlist': queued > 0 ? { count: queued, tone: 'neutral' } : undefined
+  }
+}
+
 function Rail({ collapsed }: { collapsed: boolean }) {
   const { t } = useI18n()
   const { pathname } = useLocation()
+  const counts = useNavCounts()
   return (
     <aside
       className={cx(
-        'fixed inset-y-0 left-0 z-30 hidden flex-col gap-3.5 border-r border-rail-line bg-rail px-3 pt-3.5 pb-2.5 lg:flex',
-        collapsed ? 'w-16 px-2.5' : 'w-64'
+        'on-felt fixed top-3 bottom-3 left-3 z-30 hidden flex-col rounded-panel bg-felt pt-[1.375rem] pb-3 lg:flex',
+        collapsed ? 'w-[4.5rem] px-2.5' : 'w-[14.75rem] px-3'
       )}
     >
-      <div className={cx('border-b border-rail-line pb-3.5', collapsed ? 'px-0 pt-1' : 'px-2 pt-1')}>
-        <Link href="/" aria-label={t.shell.nav.today} className="block w-fit rounded-control outline-offset-4">
-          {collapsed ? (
-            <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="Hello Kido" width={40} height={40} className="size-10" />
-          ) : (
-            <Logo className="h-10! w-auto" />
-          )}
-        </Link>
-      </div>
-      <nav aria-label={t.shell.nav.main} className="-mx-1 flex-1 overflow-y-auto px-1">
-        <ul className="flex flex-col gap-0.5">
-          {[...NAV, SETTINGS_NAV].map((item) => (
+      <Link
+        href="/"
+        aria-label={t.shell.nav.today}
+        className={cx('mx-auto mb-[1.375rem] block shrink-0 rounded-control outline-none data-focus-visible:ring-2 data-focus-visible:ring-focus', collapsed ? 'w-10' : 'w-[9.375rem]')}
+      >
+        {collapsed ? (
+          <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="Hello Kido" width={40} height={40} className="size-10" />
+        ) : (
+          <Logo className="h-[5.375rem]! w-[9.375rem]! object-contain" />
+        )}
+      </Link>
+      <nav aria-label={t.shell.nav.main} className="-mx-1 flex min-h-0 flex-1 flex-col overflow-y-auto px-1 py-0.5">
+        <ul className="flex flex-col gap-[3px]">
+          {NAV.map((item) => (
             <li key={item.to}>
-              <RailLink item={item} active={item.match(pathname)} collapsed={collapsed} />
+              <RailLink item={item} active={item.match(pathname)} collapsed={collapsed} badge={counts[item.to]} />
             </li>
           ))}
         </ul>
+        <div className="mt-auto flex flex-col gap-1.5 pt-4">
+          <RailLink item={SETTINGS_NAV} active={SETTINGS_NAV.match(pathname)} collapsed={collapsed} />
+          <AccountBlock collapsed={collapsed} />
+        </div>
       </nav>
-      <AccountBlock collapsed={collapsed} />
     </aside>
   )
 }
 
-function RailLink({ item, active, collapsed }: { item: NavItem; active: boolean; collapsed: boolean }) {
+function RailLink({ item, active, collapsed, badge }: { item: NavItem; active: boolean; collapsed: boolean; badge?: Counts[string] }) {
   const { t } = useI18n()
   const Icon = item.icon
   const label = item.label(t)
@@ -99,16 +124,30 @@ function RailLink({ item, active, collapsed }: { item: NavItem; active: boolean;
     <Link
       href={item.to}
       aria-current={active ? 'page' : undefined}
-      aria-label={collapsed ? label : undefined}
+      aria-label={collapsed ? (badge?.label ? `${label}, ${badge.label}` : label) : undefined}
       className={cx(
-        'flex h-9 items-center gap-2.5 rounded-[0.5rem] text-[0.90625rem] text-ink no-underline outline-none transition-colors duration-150',
+        'relative flex h-[2.625rem] items-center gap-3 rounded-full text-[0.9375rem] font-medium no-underline outline-none transition-[background-color,color,box-shadow] duration-150',
         'data-focus-visible:ring-2 data-focus-visible:ring-focus',
-        collapsed ? 'justify-center px-0' : 'px-2.5',
-        active ? 'bg-hover font-medium' : 'data-hovered:bg-hover'
+        collapsed ? 'justify-center px-0' : 'pr-2.5 pl-3.5',
+        active ? 'bg-raised text-ink shadow-lift' : 'text-ink-2 data-hovered:bg-hover data-hovered:text-ink'
       )}
     >
-      <Icon aria-hidden className="size-[1.125rem] shrink-0" />
+      <Icon aria-hidden className={cx('size-5 shrink-0', active ? 'text-accent-ink' : 'text-ink-3')} />
       {!collapsed && <span className="min-w-0 flex-1 truncate">{label}</span>}
+      {badge &&
+        (collapsed ? (
+          badge.tone === 'action' && <span aria-hidden className="absolute top-2 right-3 size-2 rounded-full bg-amber" />
+        ) : (
+          <span
+            className={cx(
+              'grid h-[1.375rem] min-w-6 shrink-0 place-items-center rounded-full px-[7px] text-[0.78125rem] font-semibold tabular',
+              badge.tone === 'action' ? 'bg-[color-mix(in_srgb,var(--amber)_22%,var(--felt))] text-amber-ink' : 'bg-track text-ink-2'
+            )}
+          >
+            <span aria-hidden>{badge.count}</span>
+            {badge.label && <span className="sr-only">{badge.label}</span>}
+          </span>
+        ))}
     </Link>
   )
 }
@@ -122,36 +161,33 @@ function useAccountName() {
   return { email, initials }
 }
 
-/** The workshop and who is signed in, under the nav; opens the account controls. */
+/** The workshop and who is signed in, at the foot of the rail; opens the account controls. */
 function AccountBlock({ collapsed }: { collapsed: boolean }) {
   const { t } = useI18n()
   const { email, initials } = useAccountName()
   return (
     <DialogTrigger>
-      <div className="border-t border-rail-line pt-2">
-        <AriaButton
-          aria-label={collapsed ? t.shell.account.open : undefined}
-          className={cx(
-            'flex w-full items-center gap-2.5 rounded-[0.5rem] py-2 text-left outline-none transition-colors duration-150 data-hovered:bg-hover data-pressed:bg-hover data-focus-visible:ring-2 data-focus-visible:ring-focus',
-            collapsed ? 'justify-center px-0' : 'pr-2 pl-2.5'
-          )}
-        >
-          {collapsed ? (
-            <span aria-hidden className="grid size-9 place-items-center rounded-full border border-line text-[0.75rem] font-semibold text-ink-2">
-              {initials}
+      <AriaButton
+        aria-label={collapsed ? t.shell.account.open : undefined}
+        className={cx(
+          'flex w-full items-center gap-2.5 rounded-[1.125rem] text-left outline-none transition-colors duration-150 data-focus-visible:ring-2 data-focus-visible:ring-focus',
+          collapsed ? 'justify-center p-1' : 'bg-raised p-2.5 data-hovered:bg-[color-mix(in_oklab,var(--raised)_95%,var(--ink))] dark:bg-track dark:data-hovered:bg-[color-mix(in_oklab,var(--track)_92%,var(--ink))]'
+        )}
+      >
+        <span aria-hidden className="grid size-[2.125rem] shrink-0 place-items-center rounded-full bg-sky-felt text-[0.78125rem] font-semibold text-sky-ink">
+          {initials}
+        </span>
+        {!collapsed && (
+          <>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[0.90625rem] leading-5 font-medium text-ink">{t.shell.workshop}</span>
+              <span className="block truncate text-[0.84375rem] leading-[1.125rem] text-ink-3">{email || t.shell.role}</span>
             </span>
-          ) : (
-            <>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[0.84375rem] font-semibold">{t.shell.workshop}</span>
-                <span className="mt-px block truncate text-[0.8125rem] text-ink-3">{email || t.shell.role}</span>
-              </span>
-              {/* Says the block opens something: the account controls rise above it */}
-              <CaretUpDownIcon aria-hidden weight="bold" className="size-4 shrink-0 text-ink-3" />
-            </>
-          )}
-        </AriaButton>
-      </div>
+            {/* Says the block opens something: the account controls rise above it */}
+            <CaretUpDownIcon aria-hidden className="size-[1.0625rem] shrink-0 text-ink-3" />
+          </>
+        )}
+      </AriaButton>
       <Popover placement="top start" offset={8} className={cx(popoverClass, 'w-[20rem] p-3')}>
         <Dialog aria-label={t.shell.account.theme} className="outline-none">
           <AccountControls />
@@ -172,7 +208,7 @@ function AccountControls() {
   const [busy, setBusy] = useState(false)
   return (
     <div className="flex flex-col gap-4">
-      <p className="truncate text-[0.8125rem] text-ink-3">{fmt(t.shell.account.signedInAs, { email })}</p>
+      <p className="truncate text-[0.84375rem] text-ink-3">{fmt(t.shell.account.signedInAs, { email })}</p>
       <Segmented<ThemeChoice>
         label={t.shell.account.theme}
         size="sm"
@@ -192,7 +228,7 @@ function AccountControls() {
         options={LOCALES.map((id) => ({ id, label: LANGUAGE_NAMES[id] }))}
       />
       <Button
-        variant="secondary"
+        variant="quiet"
         icon={<SignOutIcon aria-hidden className="size-4" />}
         isPending={busy}
         onPress={async () => {
@@ -209,66 +245,71 @@ function AccountControls() {
   )
 }
 
+/** Phones: the four daily places and "More" in a floating glass bar. */
 function TabBar() {
   const { t } = useI18n()
   const { pathname } = useLocation()
   const [moreOpen, setMoreOpen] = useState(false)
+  const counts = useNavCounts()
   const moreActive = MORE_NAV.some((item) => item.match(pathname))
+  const tab = (active: boolean) =>
+    cx(
+      'relative flex h-full w-full flex-col items-center justify-center gap-0.5 rounded-full text-[0.6875rem] font-medium no-underline outline-none',
+      'data-focus-visible:ring-2 data-focus-visible:ring-focus data-focus-visible:ring-inset',
+      active ? 'text-accent-ink dark:text-accent' : 'text-ink-2'
+    )
   return (
     <>
-      <nav aria-label={t.shell.nav.main} className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-surface pb-[env(safe-area-inset-bottom)] lg:hidden">
-        <ul className="mx-auto flex h-[4.25rem] max-w-xl items-stretch">
+      <nav
+        aria-label={t.shell.nav.main}
+        className="fixed inset-x-3 bottom-[max(0.625rem,env(safe-area-inset-bottom))] z-40 mx-auto max-w-xl rounded-full bg-[color-mix(in_srgb,var(--page)_72%,transparent)] p-1 shadow-float backdrop-blur-xl backdrop-saturate-150 lg:hidden"
+      >
+        <ul className="flex h-[3.625rem] items-stretch">
           {TAB_NAV.map((item) => {
             const active = item.match(pathname)
             const Icon = item.icon
+            const badge = counts[item.to]
             return (
-              <li key={item.to} className="flex-1">
-                <Link
-                  href={item.to}
-                  aria-current={active ? 'page' : undefined}
-                  className={cx(
-                    'flex h-full flex-col items-center justify-center gap-1 text-[0.6875rem] font-medium no-underline outline-none',
-                    'data-focus-visible:ring-2 data-focus-visible:ring-focus data-focus-visible:ring-inset',
-                    active ? 'text-ink' : 'text-ink-3'
-                  )}
-                >
-                  <Icon aria-hidden weight={active ? 'fill' : 'regular'} className={cx('size-6', active && 'text-accent-solid')} />
+              <li key={item.to} className="min-w-0 flex-1">
+                <Link href={item.to} aria-current={active ? 'page' : undefined} className={tab(active)}>
+                  <span className="relative">
+                    <Icon aria-hidden weight={active ? 'fill' : 'regular'} className="size-6" />
+                    {badge?.tone === 'action' && <span aria-hidden className="absolute -top-0.5 -right-1 size-2 rounded-full bg-amber" />}
+                  </span>
                   <span className="max-w-full truncate px-1">{item.label(t)}</span>
+                  {badge?.label && <span className="sr-only">{badge.label}</span>}
                 </Link>
               </li>
             )
           })}
-          <li className="flex-1">
-            <AriaButton
-              onPress={() => setMoreOpen(true)}
-              className={cx(
-                'flex h-full w-full flex-col items-center justify-center gap-1 text-[0.6875rem] font-medium outline-none data-focus-visible:ring-2 data-focus-visible:ring-focus data-focus-visible:ring-inset',
-                moreActive ? 'text-ink' : 'text-ink-3'
-              )}
-            >
-              <DotsThreeOutlineIcon aria-hidden weight={moreActive ? 'fill' : 'regular'} className={cx('size-6', moreActive && 'text-accent-solid')} />
+          <li className="min-w-0 flex-1">
+            <AriaButton onPress={() => setMoreOpen(true)} className={tab(moreActive)}>
+              <DotsThreeOutlineIcon aria-hidden weight={moreActive ? 'fill' : 'regular'} className="size-6" />
               <span>{t.shell.nav.more}</span>
             </AriaButton>
           </li>
         </ul>
       </nav>
       <Sheet isOpen={moreOpen} onOpenChange={setMoreOpen} title={t.shell.nav.more}>
-        <ul className="-mx-2 flex flex-col gap-0.5">
+        <ul className="flex flex-col gap-[3px]">
           {MORE_NAV.map((item) => {
             const Icon = item.icon
             const active = item.match(pathname)
+            const badge = counts[item.to]
             return (
               <li key={item.to}>
                 <Link
                   href={item.to}
                   onPress={() => setMoreOpen(false)}
+                  aria-current={active ? 'page' : undefined}
                   className={cx(
-                    'flex h-12 items-center gap-3 rounded-[0.625rem] px-3 text-[0.9375rem] text-ink no-underline outline-none data-hovered:bg-hover data-focus-visible:ring-2 data-focus-visible:ring-focus',
-                    active && 'bg-hover font-medium'
+                    'flex h-12 items-center gap-3 rounded-full px-4 text-[0.9375rem] font-medium no-underline outline-none data-focus-visible:ring-2 data-focus-visible:ring-focus',
+                    active ? 'bg-felt text-ink' : 'text-ink-2 data-hovered:bg-hover'
                   )}
                 >
-                  <Icon aria-hidden className="size-5 text-ink-2" />
-                  {item.label(t)}
+                  <Icon aria-hidden className={cx('size-5', active ? 'text-accent-ink' : 'text-ink-3')} />
+                  <span className="min-w-0 flex-1">{item.label(t)}</span>
+                  {badge && <span className="grid h-[1.375rem] min-w-6 place-items-center rounded-full bg-track px-[7px] text-[0.78125rem] font-semibold text-ink-2">{badge.count}</span>}
                 </Link>
               </li>
             )

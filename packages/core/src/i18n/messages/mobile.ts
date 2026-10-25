@@ -14,8 +14,9 @@ const tr = {
   childMissing: 'Bu çocuğun kaydı bulunamadı.',
   lessonStatus: 'Durumu değiştir',
   paymentActions: 'Ödeme işlemleri',
+  // The short word under the chat button of a child's card
+  messageShort: 'Mesaj',
   // The lesson page acts at once (no save button), so it asks and reports in its own words
-  lessonActions: 'Ders işlemleri',
   editLesson: 'Dersi düzenle',
   copyLesson: 'Başka güne kopyala',
   removeChildTitle: '{name} dersten çıkarılsın mı?',
@@ -55,7 +56,7 @@ const en: Widen<typeof tr> = {
   childMissing: 'This child’s record could not be found.',
   lessonStatus: 'Change status',
   paymentActions: 'Payment actions',
-  lessonActions: 'Lesson actions',
+  messageShort: 'Message',
   editLesson: 'Edit lesson',
   copyLesson: 'Copy to another day',
   removeChildTitle: 'Remove {name} from this lesson?',
@@ -99,7 +100,7 @@ const uk: Widen<typeof tr> = {
   childMissing: 'Запис цієї дитини не знайдено.',
   lessonStatus: 'Змінити статус',
   paymentActions: 'Дії з оплатою',
-  lessonActions: 'Дії із заняттям',
+  messageShort: 'Написати',
   editLesson: 'Редагувати заняття',
   copyLesson: 'Копіювати на інший день',
   removeChildTitle: 'Прибрати {name} з цього заняття?',

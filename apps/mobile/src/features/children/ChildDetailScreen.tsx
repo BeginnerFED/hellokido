@@ -1,24 +1,36 @@
-import { Alert, StyleSheet, View } from 'react-native'
+import { useEffect, useState, type ReactNode } from 'react'
+import { Alert, Linking, Pressable, StyleSheet, View } from 'react-native'
 import { Stack } from 'expo-router'
 import { useQueryClient } from '@tanstack/react-query'
 import * as Haptics from 'expo-haptics'
 import { releaseSeats, remainingTone, setRegistrationActive, upcomingSeats, type Registration, type Usage } from '@hellokido/core/api'
-import { beadsLabel, daysLeft, endText, ENDING_WINDOW_DAYS, formatPeriod, isEnding, isFree, remainingText } from '@hellokido/core/view'
+import { phoneDigits, whatsAppLink } from '@hellokido/core/rules/phone.js'
+import { beadsLabel, daysLeft, formatPeriod, isEnding, isFree } from '@hellokido/core/view'
 import { keys, useActiveUsage, useChildUsage, useLabels, useRefresh, useRegistrations } from '../../data/queries'
 import { headerMenu, tasks } from '../../lib/navigation'
-import { useI18n } from '../../providers/I18n'
+import { useI18n, type I18n } from '../../providers/I18n'
 import { useColors } from '../../theme/colors'
 import { useActionMenu, type MenuItem } from '../../ui/ActionMenu'
-import { EmptyState, LoadError, Notice, Skeleton } from '../../ui/Bits'
+import { EmptyState, initialsOf, LoadError, Mark, Notice, Skeleton } from '../../ui/Bits'
 import { Button } from '../../ui/Button'
-import { displayPhone, PhoneActions } from '../../ui/PhoneActions'
+import { displayPhone } from '../../ui/PhoneActions'
 import { Card, Screen, Section } from '../../ui/Screen'
-import { BeadString } from '../../ui/signature'
-import { DOT, Text } from '../../ui/Text'
+import { BeadLegend, Beads } from '../../ui/signature'
+import { Text } from '../../ui/Text'
 import { useToast } from '../../ui/Toast'
+import { usePackagePrice } from '../payment/fields'
 import { ChildLessons } from './ChildLessons'
 import { MessageHistory, useMessageItems } from './ChildMessages'
 import { ChildPayments } from './ChildPayments'
+import { QuickActions, type QuickAction } from './parts'
+
+/** "Paketi 3 gün sonra bitiyor", "Paketi bugün bitiyor", "Paketi 2 gün önce bitti". */
+export function packageEndText(i18n: Pick<I18n, 't' | 'plural'>, days: number) {
+  const words = i18n.t.children.phone
+  if (days < 0) return i18n.plural(words.ended, -days)
+  if (days === 0) return words.endsToday
+  return i18n.plural(words.endsIn, days)
+}
 
 /** One child: who to call, where the package stands, every payment and every lesson. */
 export function ChildDetailScreen({ id }: { id: string }) {
@@ -26,6 +38,15 @@ export function ChildDetailScreen({ id }: { id: string }) {
   const client = useQueryClient()
   const registrations = useRegistrations()
   const registration = registrations.data?.find((row) => row.id === id)
+  // A child saved a moment ago may not be in the list yet: the list is read once more before the
+  // page says the child is missing, and the page keeps its loading shapes meanwhile
+  const [recheck, setRecheck] = useState<'idle' | 'running' | 'done'>('idle')
+  const { data, isFetching, refetch } = registrations
+  useEffect(() => {
+    if (!data || registration || isFetching || recheck !== 'idle') return
+    setRecheck('running')
+    void refetch().finally(() => setRecheck('done'))
+  }, [data, registration, isFetching, recheck, refetch])
 
   const refresh = () =>
     Promise.all([
@@ -36,22 +57,34 @@ export function ChildDetailScreen({ id }: { id: string }) {
       client.invalidateQueries({ queryKey: keys.childLessons(id) })
     ])
 
-  if (registrations.isError) {
+  if (registrations.isError && !registration) {
     return (
       <Screen>
         <LoadError message={t.children.loadFailed} retryLabel={t.common.retry} onRetry={() => void registrations.refetch()} />
       </Screen>
     )
   }
-  if (!registrations.data) {
+  if (!registration && (!data || isFetching || recheck !== 'done')) {
     return (
       <Screen>
-        {/* The page's own shapes: the parent's card, the payment pill, the package card */}
-        <View style={styles.waiting}>
-          <Skeleton height={16} width="30%" radius={6} style={styles.summary} />
-          <Skeleton height={66} radius={18} />
-          <Skeleton height={50} radius={25} />
-          <Skeleton height={190} radius={18} style={styles.later} />
+        {/* The page's own shapes: the monogram and name, the three buttons, the package and parent cards */}
+        <View style={styles.top}>
+          <View style={styles.who}>
+            <Skeleton height={68} width={68} radius={34} />
+            <View style={styles.whoWords}>
+              <Skeleton height={26} width="70%" />
+              <Skeleton height={14} width="50%" style={styles.whoLine} />
+            </View>
+          </View>
+          <View style={styles.waitingButtons}>
+            {[0, 1, 2].map((key) => (
+              <View key={key} style={styles.flex}>
+                <Skeleton height={44} radius={22} />
+              </View>
+            ))}
+          </View>
+          <Skeleton height={200} radius={26} style={styles.packageGap} />
+          <Skeleton height={104} radius={26} />
         </View>
       </Screen>
     )
@@ -62,12 +95,26 @@ export function ChildDetailScreen({ id }: { id: string }) {
         {/* The page may have shown the child a moment ago: its name and menu go with it */}
         <Stack.Screen options={{ title: '', headerLargeTitleEnabled: false, headerRight: undefined, unstable_headerRightItems: undefined }} />
         <Screen>
-          <EmptyState icon="info" title={t.mobile.childMissing} />
+          <Card padded>
+            <EmptyState icon="info" title={t.mobile.childMissing} />
+          </Card>
         </Screen>
       </>
     )
   }
   return <ChildPage key={registration.id} registration={registration} onRefresh={refresh} />
+}
+
+/** The child's initials on a 68pt circle of sky felt, as on a contact card. */
+function Monogram({ name }: { name: string }) {
+  const c = useColors()
+  return (
+    <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={[styles.monogram, { backgroundColor: c.skyFelt }]}>
+      <Text weight="600" maxFontSizeMultiplier={1.15} style={[styles.monogramText, { color: c.skyInk }]}>
+        {initialsOf(name)}
+      </Text>
+    </View>
+  )
 }
 
 function ChildPage({ registration, onRefresh }: { registration: Registration; onRefresh: () => Promise<unknown> }) {
@@ -77,10 +124,11 @@ function ChildPage({ registration, onRefresh }: { registration: Registration; on
   const refresh = useRefresh()
   const menu = useActionMenu()
   const active = registration.is_active === true
-  const activeUsage = useActiveUsage().data?.[registration.id]
+  const activeUsage = useActiveUsage()
   // Archived children are not in the batch of active ones
-  const ownUsage = useChildUsage(active ? undefined : registration).data
-  const usage = active ? activeUsage : ownUsage
+  const ownUsage = useChildUsage(active ? undefined : registration)
+  const usage = active ? activeUsage.data?.[registration.id] : ownUsage.data
+  const usageQuery = active ? activeUsage : ownUsage
   const name = registration.student_name
   const messages = useMessageItems(registration, usage)
 
@@ -150,11 +198,44 @@ function ChildPage({ registration, onRefresh }: { registration: Registration; on
     { label: t.children.detail.actions.archive, icon: 'archive', onPress: () => void archive() }
   ]
 
+  // Call and WhatsApp only when the number can be dialled, or read as international
+  const digits = phoneDigits(registration.parent_phone)
+  const phone = displayPhone(registration.parent_phone)
+  const call = () => void Linking.openURL(`tel:${digits}`).catch(() => undefined)
+  const offered: (QuickAction | null)[] = [
+    digits ? { key: 'call', label: t.children.phone.call, icon: 'call', onPress: call, accessibilityLabel: t.children.detail.callParent } : null,
+    whatsAppLink(registration.parent_phone)
+      ? {
+          key: 'chat',
+          label: t.mobile.messageShort,
+          icon: 'chat',
+          onPress: () => menu.open(t.messages.send.button, messages, t.messages.send.menuHint),
+          accessibilityLabel: fmt(t.messages.send.label, { name })
+        }
+      : null,
+    active
+      ? {
+          key: 'pay',
+          label: t.children.phone.pay,
+          icon: 'lira',
+          primary: true,
+          onPress: () => tasks.payment({ registrationId: registration.id }),
+          accessibilityLabel: t.children.detail.actions.takePayment
+        }
+      : { key: 'activate', label: t.children.phone.unarchive, icon: 'unarchive', primary: true, onPress: activate, accessibilityLabel: t.children.detail.actions.activate }
+  ]
+  const quick = offered.filter((item): item is QuickAction => item !== null)
+
+  const who = [registration.student_age?.trim(), registration.parent_name ? fmt(t.children.phone.parentOf, { name: registration.parent_name }) : '']
+    .filter(Boolean)
+    .join(', ')
+
   return (
     <>
       <Stack.Screen
         options={{
-          title: name,
+          // The name stands large on the page, as on a contact card; the bar keeps only its buttons
+          title: '',
           // Options merge: an archived child has to take the menu away, not only leave it out
           ...(active ? headerMenu(c, more, items, (list) => menu.open(more, list), 'more') : { headerRight: undefined, unstable_headerRightItems: undefined })
         }}
@@ -162,83 +243,113 @@ function ChildPage({ registration, onRefresh }: { registration: Registration; on
       {menu.element}
       <Screen onRefresh={onRefresh}>
         <View style={styles.top}>
-          {registration.student_age ? (
-            <Text variant="callout" tone="ink2" style={styles.summary}>
-              {registration.student_age}
-            </Text>
-          ) : null}
-          <Card>
-            <View style={styles.parent}>
-              <View style={styles.flex}>
-                {/* The one place the parent's whole name is read: a long one takes a second line */}
-                <Text variant="body" weight="500" numberOfLines={2}>
+          <View style={styles.who}>
+            <Monogram name={name} />
+            <View style={styles.whoWords}>
+              <Text variant="title" numberOfLines={2} accessibilityRole="header">
+                {name}
+              </Text>
+              {who ? (
+                <Text tone="ink2" numberOfLines={2} style={styles.whoSub}>
+                  {who}
+                </Text>
+              ) : null}
+              {!active && (
+                <View style={styles.whoLine}>
+                  <Mark tone="neutral">{t.common.archived}</Mark>
+                </View>
+              )}
+            </View>
+          </View>
+          {!active && <Notice style={styles.archivedNote}>{t.children.detail.archivedNote}</Notice>}
+          <QuickActions items={quick} />
+
+          <View style={styles.cards}>
+            <PackageCard
+              registration={registration}
+              usage={usage}
+              failed={usageQuery.isError && !usage}
+              onRetry={() => void usageQuery.refetch()}
+            />
+            {/* The one place the parent's whole name is read: a long one takes a second line */}
+            <Card>
+              <View style={styles.pair}>
+                <Text tone="ink3" style={styles.pairLabel}>
+                  {t.children.detail.parent}
+                </Text>
+                <Text weight="500" numberOfLines={2} selectable align="right" style={styles.pairValue}>
                   {registration.parent_name}
                 </Text>
-                <Text variant="foot" tone="ink2" tabular selectable>
-                  {t.children.detail.parent}{DOT}{displayPhone(registration.parent_phone)}
-                </Text>
               </View>
-              <PhoneActions
-                phone={registration.parent_phone}
-                whatsAppLabel={fmt(t.messages.send.label, { name })}
-                onWhatsApp={() => menu.open(t.messages.send.button, messages, t.messages.send.menuHint)}
-              />
-            </View>
-          </Card>
-          {active ? (
-            <Button variant="primary" size="lg" icon="money" onPress={() => tasks.payment({ registrationId: registration.id })}>
-              {t.children.detail.actions.takePayment}
-            </Button>
-          ) : (
-            <View style={styles.archived}>
-              <Notice>{t.children.detail.archivedNote}</Notice>
-              <Button icon="unarchive" onPress={activate} style={styles.start}>
-                {t.children.detail.actions.activate}
-              </Button>
-            </View>
-          )}
+              {digits ? (
+                <Pressable
+                  onPress={call}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${t.children.detail.callParent}, ${phone}`}
+                  style={({ pressed }) => [styles.pair, pressed && { backgroundColor: c.pressed }]}
+                >
+                  <Text tone="ink3" style={styles.pairLabel}>
+                    {t.common.phone}
+                  </Text>
+                  <Text weight="500" tone="accentInk" tabular numberOfLines={1} style={styles.pairValue} align="right">
+                    {phone}
+                  </Text>
+                </Pressable>
+              ) : null}
+            </Card>
+          </View>
         </View>
-
-        <PackageSection registration={registration} usage={usage} />
 
         {registration.notes?.trim() ? (
           <Section title={t.children.detail.notesTitle}>
-            <Card>
-              <Text variant="sub" tone="ink2" selectable style={styles.notes}>
+            <Card padded>
+              <Text variant="body" selectable>
                 {registration.notes}
               </Text>
             </Card>
           </Section>
         ) : null}
 
+        <ChildLessons registration={registration} part="upcoming" />
         <ChildPayments registration={registration} />
-        <ChildLessons registration={registration} />
+        <ChildLessons registration={registration} part="past" />
         <MessageHistory registration={registration} />
       </Screen>
     </>
   )
 }
 
-function PackageSection({ registration, usage }: { registration: Registration; usage: Usage | undefined }) {
+/** A line of the package card under a rule: what is the matter at the left, its one button at the right. */
+function CardLine({ children, action }: { children: ReactNode; action?: ReactNode }) {
+  const c = useColors()
+  return (
+    <View style={[styles.line, { borderTopColor: c.line }]}>
+      <View style={styles.lineWords}>{children}</View>
+      {action}
+    </View>
+  )
+}
+
+/**
+ * The package as a felt card: its name and weeks, the lessons left as a big figure, one bead per
+ * lesson with its key, and under a rule what waits: an unpaid period, forgotten attendance, a renewal.
+ */
+function PackageCard({ registration, usage, failed, onRetry }: { registration: Registration; usage: Usage | undefined; failed: boolean; onRetry: () => void }) {
   const c = useColors()
   const i18n = useI18n()
-  const { t, fmt, plural } = i18n
+  const { t, fmt, plural, money } = i18n
   const labels = useLabels()
+  const price = usePackagePrice(registration.package_type)
   const free = isFree(registration)
   const active = registration.is_active === true
   const days = daysLeft(registration)
   const pending = !free && registration.payment_status === 'beklemede'
   const tone = remainingTone(usage)
-  const renewable = active && !free && !pending && (isEnding(registration) || tone === 'out')
-  const soon = days !== null && days <= ENDING_WINDOW_DAYS
+  const out = tone === 'out'
+  // What the end of the package asks for, shown while it nears or once the lessons are used up
+  const ending = active && !free && (isEnding(registration) || out)
+  const late = out || (days !== null && days < 0)
 
-  const counts = usage
-    ? [
-        usage.attended > 0 && plural(t.children.detail.attended, usage.attended),
-        usage.noShow > 0 && plural(t.children.detail.absent, usage.noShow),
-        usage.scheduled - usage.unmarkedPast > 0 && plural(t.children.detail.booked, usage.scheduled - usage.unmarkedPast)
-      ].filter((line): line is string => Boolean(line))
-    : []
   const extras = usage
     ? [
         usage.carried > 0 && plural(t.children.detail.carried, usage.carried),
@@ -247,88 +358,153 @@ function PackageSection({ registration, usage }: { registration: Registration; u
       ].filter((line): line is string => Boolean(line))
     : []
 
+  let body: ReactNode
+  if (failed) {
+    body = (
+      <View style={styles.usageGap}>
+        <LoadError message={t.children.phone.usageFailed} retryLabel={t.common.retry} onRetry={onRetry} />
+      </View>
+    )
+  } else if (!usage) {
+    // The figure, the beads and their key
+    body = (
+      <View style={styles.usageGap}>
+        <Skeleton height={44} width={120} />
+        <Skeleton height={26} radius={13} style={styles.beads} />
+        <Skeleton height={14} width="60%" style={styles.legend} />
+      </View>
+    )
+  } else if (free) {
+    body = (
+      <Text variant="sub" tone="ink2" style={styles.usageGap}>
+        {fmt(t.children.detail.freeUsage, { count: usage.attended })}
+      </Text>
+    )
+  } else {
+    const remaining = Math.max(usage.remaining ?? 0, 0)
+    // Every lesson of the package is a bead: those used, those booked, those still to book
+    const planned = Math.min(Math.max(usage.scheduled, 0), remaining)
+    const open = remaining - planned
+    body = (
+      <>
+        <View style={styles.count}>
+          <Text variant="bigCount" tabular tone={tone === 'low' || out ? 'amberInk' : 'ink'}>
+            {remaining}
+          </Text>
+          <Text tone="ink2" style={styles.countWords}>
+            {plural(t.children.phone.leftUnit, remaining)}
+          </Text>
+        </View>
+        <Beads attended={usage.attended} absent={usage.noShow} planned={planned} open={open} perRow={12} label={beadsLabel(i18n, usage)} style={styles.beads} />
+        <View style={styles.legend}>
+          <BeadLegend
+            attended={plural(t.children.detail.attended, usage.attended)}
+            absent={plural(t.children.detail.absent, usage.noShow)}
+            planned={plural(t.children.detail.booked, planned)}
+            open={open > 0 ? plural(t.children.phone.unbooked, open) : undefined}
+          />
+        </View>
+        {extras.map((line) => (
+          <Text key={line} variant="sub" tone="ink3" style={styles.extra}>
+            {line}
+          </Text>
+        ))}
+      </>
+    )
+  }
+
   return (
-    <Section title={t.children.detail.packageTitle}>
-      <Card>
-        <View style={styles.package}>
-          <View>
-            <Text variant="body" weight="600">
-              {labels.packageName(registration.package_type)}
+    <Card padded>
+      <View style={styles.head}>
+        <Text weight="600" numberOfLines={2} style={styles.flex}>
+          {labels.packageName(registration.package_type)}
+        </Text>
+        <Text variant="sub" tone="ink3" tabular numberOfLines={1}>
+          {free ? t.children.detail.unlimited : formatPeriod(i18n, registration.package_start_date, registration.package_end_date)}
+        </Text>
+      </View>
+      {body}
+
+      {pending && (
+        <CardLine
+          action={
+            active ? (
+              <Button size="sm" onPress={() => tasks.payment({ registrationId: registration.id, choice: 'collect' })}>
+                {t.children.detail.collect}
+              </Button>
+            ) : undefined
+          }
+        >
+          <Mark tone="action">{t.children.phone.unpaid}</Mark>
+          {price ? (
+            <Text variant="sub" tone="ink3" tabular style={styles.lineSub}>
+              {fmt(t.children.form.suggestedPrice, { amount: money(price) })}
             </Text>
-            <Text variant="foot" tone="ink2" tabular>
-              {free ? t.children.detail.unlimited : formatPeriod(i18n, registration.package_start_date, registration.package_end_date)}
-              {active && days !== null && (
-                <Text variant="foot" weight={soon ? '600' : '400'} tone={soon ? 'actionInk' : 'ink3'}>
-                  {DOT}
-                  {endText(i18n, days)}
-                </Text>
-              )}
+          ) : null}
+        </CardLine>
+      )}
+
+      {usage && usage.unmarkedPast > 0 && (
+        <CardLine>
+          <View style={styles.note}>
+            <View style={[styles.noteDot, { backgroundColor: c.amber }]} />
+            <Text variant="sub" tone="amberInk" style={styles.flex}>
+              {plural(t.children.detail.unmarked, usage.unmarkedPast)}
             </Text>
           </View>
+        </CardLine>
+      )}
 
-          {!usage ? (
-            <Skeleton height={72} />
-          ) : free ? (
-            <Text variant="sub" tone="ink2">
-              {fmt(t.children.detail.freeUsage, { count: usage.attended })}
+      {ending && (
+        <CardLine
+          action={
+            // A due payment comes first: a new period cannot open while one waits
+            pending ? undefined : (
+              <Button size="sm" accessibilityLabel={t.children.detail.actions.renew} onPress={() => tasks.payment({ registrationId: registration.id, choice: 'renew' })}>
+                {t.today.ending.renew}
+              </Button>
+            )
+          }
+        >
+          <Mark tone={late ? 'action' : 'neutral'}>{out ? t.children.noneLeft : packageEndText(i18n, days ?? 0)}</Mark>
+          {out && days !== null && (
+            <Text variant="sub" tone="ink3" style={styles.lineSub}>
+              {packageEndText(i18n, days)}
             </Text>
-          ) : (
-            <View style={styles.usage}>
-              <Text variant="title" weight="600" tone={tone === 'out' || tone === 'low' ? 'actionInk' : 'ink'} tabular>
-                {remainingText(i18n, usage)}
-              </Text>
-              <BeadString usage={usage} size="lg" label={beadsLabel(i18n, usage)} />
-              {counts.length > 0 && (
-                <Text variant="foot" tone="ink2">
-                  {counts.join(DOT)}
-                </Text>
-              )}
-              {extras.map((line) => (
-                <Text key={line} variant="foot" tone="ink3">
-                  {line}
-                </Text>
-              ))}
-            </View>
           )}
-
-          {usage && usage.unmarkedPast > 0 && <Notice tone="action">{plural(t.children.detail.unmarked, usage.unmarkedPast)}</Notice>}
-
-          {pending && (
-            <View style={[styles.pending, { backgroundColor: c.actionWash, borderColor: c.actionLine }]}>
-              <Text variant="foot" tone="actionInk" style={styles.flex}>
-                {t.children.detail.pendingLine}
-              </Text>
-              {active && (
-                <Button size="sm" onPress={() => tasks.payment({ registrationId: registration.id, choice: 'collect' })}>
-                  {t.children.detail.collect}
-                </Button>
-              )}
-            </View>
-          )}
-
-          {renewable && (
-            <Button variant="plain" size="sm" icon="refresh" onPress={() => tasks.payment({ registrationId: registration.id, choice: 'renew' })} style={styles.start}>
-              {t.children.detail.actions.renew}
-            </Button>
-          )}
-        </View>
-      </Card>
-    </Section>
+        </CardLine>
+      )}
+    </Card>
   )
 }
 
 const styles = StyleSheet.create({
-  waiting: { gap: 12 },
-  later: { marginTop: 18 },
-  top: { gap: 12 },
-  summary: { marginHorizontal: 4, marginTop: -2 },
   flex: { flex: 1, minWidth: 0 },
-  parent: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingLeft: 16, paddingRight: 12, paddingVertical: 12 },
-  archived: { gap: 12 },
-  start: { alignSelf: 'flex-start' },
-  notes: { paddingHorizontal: 16, paddingVertical: 12 },
-  package: { padding: 16, gap: 14 },
-  usage: { gap: 8 },
-  // Outlined like the kit's Notice, so the two amber lines of the card read as one kind
-  pending: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 12, rowGap: 8, borderRadius: 14, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10 }
+  top: { gap: 0 },
+  who: { flexDirection: 'row', alignItems: 'center', gap: 16, paddingHorizontal: 4, paddingTop: 2, paddingBottom: 18 },
+  whoWords: { flex: 1, minWidth: 0 },
+  whoSub: { fontSize: 15, lineHeight: 20, marginTop: 2 },
+  whoLine: { marginTop: 6 },
+  monogram: { width: 68, height: 68, borderRadius: 34, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  monogramText: { fontSize: 23, lineHeight: 28, letterSpacing: 0.2 },
+  archivedNote: { marginBottom: 14 },
+  waitingButtons: { flexDirection: 'row', gap: 8 },
+  packageGap: { marginTop: 14, marginBottom: 12 },
+  cards: { gap: 12, marginTop: 14 },
+  head: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 },
+  usageGap: { marginTop: 12 },
+  count: { flexDirection: 'row', alignItems: 'baseline', gap: 8, marginTop: 10 },
+  countWords: { fontSize: 17, lineHeight: 22, flexShrink: 1 },
+  beads: { marginTop: 12 },
+  legend: { marginTop: 10 },
+  extra: { marginTop: 6 },
+  line: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 12, rowGap: 8, marginTop: 14, paddingTop: 14, borderTopWidth: 1 },
+  lineWords: { flexGrow: 1, flexShrink: 1, flexBasis: 170, minWidth: 0 },
+  lineSub: { marginTop: 2 },
+  note: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  noteDot: { width: 7, height: 7, borderRadius: 4, marginTop: 6 },
+  // A label at the left, its value at the right, as on the mock's parent card
+  pair: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 16, paddingHorizontal: 18, paddingVertical: 13, minHeight: 50 },
+  pairLabel: { fontSize: 15, lineHeight: 20 },
+  pairValue: { flexShrink: 1 }
 })

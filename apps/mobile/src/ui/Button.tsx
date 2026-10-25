@@ -1,18 +1,26 @@
 import type { ReactNode } from 'react'
 import { ActivityIndicator, Platform, Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native'
-import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated'
+import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated'
 import { useColors, type Colors } from '../theme/colors'
 import { Icon, type IconName } from './Icon'
 import { Text } from './Text'
 
-type Variant = 'primary' | 'tinted' | 'plain' | 'danger'
+/**
+ * primary: the one filled blue button of a screen ("Ödeme al").
+ * secondary: raised white with a soft lift, the small action buttons on felt ("Gir", "Tahsil et").
+ * quiet: felt with no shadow ("Ara", "Mesaj").
+ * plain: blue words only.
+ * danger: raised with red words.
+ * tinted and gray are the older names of secondary.
+ */
+type Variant = 'primary' | 'secondary' | 'quiet' | 'plain' | 'danger' | 'tinted' | 'gray'
 type Size = 'lg' | 'md' | 'sm'
 
-// Every button is a pill, as in the rest of the app's design
+// Pills of 48, 44 and 34
 const SIZES = {
-  lg: { height: 50, radius: 25, paddingHorizontal: 22, font: 16, icon: 19 },
-  md: { height: 44, radius: 22, paddingHorizontal: 16, font: 15, icon: 17 },
-  sm: { height: 34, radius: 17, paddingHorizontal: 13, font: 14, icon: 15 }
+  lg: { height: 48, paddingHorizontal: 22, font: 16, icon: 18 },
+  md: { height: 44, paddingHorizontal: 18, font: 15.5, icon: 18 },
+  sm: { height: 34, paddingHorizontal: 14, font: 14, icon: 15 }
 } as const
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable)
@@ -20,17 +28,19 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable)
 /** The smallest fingertip each phone asks for: 44pt on the iPhone, 48dp on Android. */
 const TOUCH = Platform.OS === 'android' ? 48 : 44
 
-function tones(c: Colors, variant: Variant) {
+function tones(c: Colors, variant: Variant): { background: string; ink: string; shadow?: string } {
   switch (variant) {
+    // The solid blue keeps white words readable (AA); a black fill reads as gloomy here (owner)
     case 'primary':
-      return { background: c.accentSolid, ink: c.onAccent, line: c.accentSolid }
-    // The everyday button: white with a grey outline
-    case 'tinted':
-      return { background: c.surface, ink: c.ink, line: c.lineStrong }
+      return { background: c.fill, ink: c.onFill }
+    case 'quiet':
+      return { background: c.felt, ink: c.ink }
     case 'danger':
-      return { background: c.negativeWash, ink: c.negativeInk, line: c.negativeLine }
+      return { background: c.raised, ink: c.negativeInk, shadow: c.liftShadow }
+    case 'plain':
+      return { background: 'transparent', ink: c.accentInk }
     default:
-      return { background: 'transparent', ink: c.accentInk, line: 'transparent' }
+      return { background: c.raised, ink: c.ink, shadow: c.liftShadow }
   }
 }
 
@@ -47,24 +57,19 @@ type Props = {
   style?: StyleProp<ViewStyle>
 }
 
-export function Button({ children, onPress, variant = 'tinted', size = 'md', icon, disabled, busy, accessibilityLabel, style }: Props) {
+export function Button({ children, onPress, variant = 'secondary', size = 'md', icon, disabled, busy, accessibilityLabel, style }: Props) {
   const c = useColors()
   const s = SIZES[size]
   const tone = tones(c, variant)
   const inactive = Boolean(disabled || busy)
-  const still = useReducedMotion()
-  // 0 at rest, 1 under the finger: the pill dims and gives a little, then settles back
+  // 0 at rest, 1 under the finger: the button dims as the phone's own do, then settles back
   const press = useSharedValue(0)
-  const sinks = variant !== 'plain' && !still
-  const pressStyle = useAnimatedStyle(() => ({
-    opacity: disabled ? 0.45 : 1 - press.get() * 0.28,
-    transform: [{ scale: sinks ? 1 - press.get() * 0.025 : 1 }]
-  }))
+  const pressStyle = useAnimatedStyle(() => ({ opacity: disabled ? 0.4 : 1 - press.get() * 0.3 }))
   return (
     <AnimatedPressable
       onPress={onPress}
-      onPressIn={() => press.set(withTiming(1, { duration: 90 }))}
-      onPressOut={() => press.set(withTiming(0, { duration: 200 }))}
+      onPressIn={() => press.set(withTiming(1, { duration: 60 }))}
+      onPressOut={() => press.set(withTiming(0, { duration: 220 }))}
       disabled={inactive}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
@@ -75,20 +80,25 @@ export function Button({ children, onPress, variant = 'tinted', size = 'md', ico
         styles.base,
         {
           height: s.height,
-          borderRadius: s.radius,
+          borderRadius: s.height / 2,
           paddingHorizontal: variant === 'plain' ? 4 : s.paddingHorizontal,
-          backgroundColor: tone.background,
-          borderWidth: 1,
-          borderColor: tone.line
+          backgroundColor: tone.background
         },
+        tone.shadow !== undefined && { boxShadow: tone.shadow },
         style,
         pressStyle
       ]}
     >
       <View style={[styles.content, busy && styles.hidden]}>
-        {icon && <Icon name={icon} size={s.icon} color={tone.ink} weight="semibold" />}
+        {icon && <Icon name={icon} size={s.icon} color={tone.ink} weight="regular" />}
         {/* A long Turkish label gives up a little size before it gives up its last word */}
-        <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85} weight="500" style={[styles.label, { fontSize: s.font, lineHeight: s.font + 5, color: tone.ink }]}>
+        <Text
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.85}
+          weight={variant === 'primary' ? '600' : '500'}
+          style={[styles.label, { fontSize: s.font, lineHeight: Math.round(s.font + 5), color: tone.ink }]}
+        >
           {children}
         </Text>
       </View>
@@ -97,7 +107,12 @@ export function Button({ children, onPress, variant = 'tinted', size = 'md', ico
   )
 }
 
-/** A round button that is only an icon; the label is what a screen reader says. */
+/**
+ * A round button that is only an icon; the label is what a screen reader says.
+ * glass: the 44pt round button over the page (in-content headers), with the float shadow.
+ * felt: a felt circle with no shadow (Finance's period arrows).
+ * tinted: a raised circle with a soft lift, on felt. well: a track circle. plain: the icon alone.
+ */
 export function IconButton({
   icon,
   label,
@@ -111,16 +126,18 @@ export function IconButton({
   icon: IconName
   label: string
   onPress?: () => void
-  variant?: 'tinted' | 'plain' | 'well'
+  variant?: 'tinted' | 'plain' | 'well' | 'glass' | 'felt'
   size?: number
   color?: string
   disabled?: boolean
   style?: StyleProp<ViewStyle>
 }) {
   const c = useColors()
-  const background = variant === 'tinted' ? c.surface : variant === 'well' ? c.well : 'transparent'
+  const background = { tinted: c.raised, well: c.track, glass: c.glass, felt: c.felt, plain: 'transparent' }[variant]
+  const shadow = variant === 'glass' ? c.floatShadow : variant === 'tinted' ? c.liftShadow : undefined
   // Every round button answers to a whole fingertip, however small it is drawn
   const slop = Math.max(0, (TOUCH - size) / 2)
+  const glyph = variant === 'glass' || variant === 'felt' ? Math.round(size * 0.45) : Math.round(size * 0.5)
   return (
     <Pressable
       onPress={onPress}
@@ -131,19 +148,12 @@ export function IconButton({
       hitSlop={slop}
       style={({ pressed }) => [
         styles.round,
-        {
-          width: size,
-          height: size,
-          borderRadius: size / 2,
-          backgroundColor: background,
-          borderWidth: variant === 'tinted' ? 1 : 0,
-          borderColor: c.line,
-          opacity: disabled ? 0.45 : pressed ? 0.6 : 1
-        },
+        { width: size, height: size, borderRadius: size / 2, backgroundColor: background, opacity: disabled ? 0.4 : pressed ? 0.6 : 1 },
+        shadow !== undefined && { boxShadow: shadow },
         style
       ]}
     >
-      <Icon name={icon} size={Math.round(size * 0.5)} color={color ?? (variant === 'plain' ? c.accentInk : c.ink)} weight="semibold" />
+      <Icon name={icon} size={glyph} color={color ?? (variant === 'plain' ? c.accentInk : c.ink)} weight="regular" />
     </Pressable>
   )
 }

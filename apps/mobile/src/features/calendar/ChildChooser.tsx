@@ -6,11 +6,10 @@ import { byName, matchesChild } from '@hellokido/core/view'
 import { useRegistrations } from '../../data/queries'
 import { useI18n } from '../../providers/I18n'
 import { useColors } from '../../theme/colors'
-import { ListSkeleton, LoadError } from '../../ui/Bits'
+import { Avatar, AVATAR_INSET, EmptyState, ListSkeleton, LoadError } from '../../ui/Bits'
 import { SearchField } from '../../ui/Fields'
 import { Icon } from '../../ui/Icon'
 import { Card } from '../../ui/Screen'
-import { Peg } from '../../ui/signature'
 import { DOT, Text } from '../../ui/Text'
 
 /** "3 yaş · Ayşe Yılmaz": what tells two children apart in a list. */
@@ -18,7 +17,8 @@ export const describeChild = (child: { student_age?: string | null; parent_name?
   [child.student_age, child.parent_name].filter(Boolean).join(DOT)
 
 /**
- * Active children to tick for a lesson, found by their own or a parent's name. Those ticked when
+ * Active children to tick for a lesson, found by their own or a parent's name, as the phone's own
+ * people pickers: a search field over avatar rows with a tick circle at the end. Those ticked when
  * the list opened stay on top, so the order never jumps while ticking; archived children are never
  * offered, and `hidden` ones (already in the lesson) are left out.
  */
@@ -44,11 +44,9 @@ export function ChildChooser({ selected, onToggle, hidden }: { selected: Set<str
       ) : !registrations.data ? (
         <ListSkeleton rows={5} />
       ) : list.length === 0 ? (
-        <Text variant="sub" tone="ink2" align="center" style={styles.empty}>
-          {t.calendar.lesson.pickerEmpty}
-        </Text>
+        <EmptyState icon="search" title={t.calendar.lesson.pickerEmpty} />
       ) : (
-        <Card inset={60}>
+        <Card inset={AVATAR_INSET}>
           {list.map((child) => {
             const on = selected.has(child.id)
             const detail = describeChild(child)
@@ -62,21 +60,22 @@ export function ChildChooser({ selected, onToggle, hidden }: { selected: Set<str
                 accessibilityRole="checkbox"
                 accessibilityState={{ checked: on }}
                 accessibilityLabel={detail ? `${child.student_name}, ${detail}` : child.student_name}
-                style={({ pressed }) => [styles.row, pressed && { backgroundColor: c.well }]}
+                style={({ pressed }) => [styles.row, pressed && { backgroundColor: c.pressed }]}
               >
-                <Peg seat={{ id: child.id, name: child.student_name, status: 'scheduled' }} />
+                <Avatar name={child.student_name} />
                 <View style={styles.flex}>
-                  <Text variant="body" weight={on ? '600' : '400'} numberOfLines={1}>
+                  <Text weight="500" numberOfLines={1}>
                     {child.student_name}
                   </Text>
                   {detail !== '' && (
-                    <Text variant="foot" tone="ink3" numberOfLines={1}>
+                    <Text variant="sub" tone="ink3" numberOfLines={1}>
                       {detail}
                     </Text>
                   )}
                 </View>
-                <View style={[styles.tick, on ? { backgroundColor: c.accentSolid } : { borderWidth: 1.5, borderColor: c.lineStrong }]}>
-                  {on && <Icon name="check" size={13} color={c.onAccent} weight="bold" />}
+                {/* The phone's tick circle: filled in the blue when chosen, an empty ring when not */}
+                <View style={[styles.tick, on ? { backgroundColor: c.fill } : { borderWidth: 1.5, borderColor: c.mute }]}>
+                  {on && <Icon name="check" size={13} color={c.onFill} weight="bold" />}
                 </View>
               </Pressable>
             )
@@ -88,9 +87,8 @@ export function ChildChooser({ selected, onToggle, hidden }: { selected: Set<str
 }
 
 const styles = StyleSheet.create({
-  stack: { gap: 12 },
-  empty: { paddingVertical: 20 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 10, minHeight: 56 },
+  stack: { gap: 16 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 11, minHeight: 62 },
   flex: { flex: 1, minWidth: 0, gap: 1 },
   tick: { width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center' }
 })

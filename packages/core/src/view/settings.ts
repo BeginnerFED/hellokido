@@ -11,14 +11,6 @@ export function parseDays(text: string) {
   return days <= MAX_SETTLEMENT_DAYS ? days : null
 }
 
-/** The first day of a money period: a whole day from 1 to 28, so every month has it. */
-export function parseStartDay(text: string) {
-  const value = text.trim()
-  if (!/^\d{1,2}$/.test(value)) return null
-  const day = Number(value)
-  return day >= 1 && day <= 28 ? day : null
-}
-
 /**
  * A commission rate in percent. A rate never needs a thousands mark, so one comma or dot is
  * always the decimal one: "2,49", "2.49" and "%2,49" all read as 2.49. Empty means none.

@@ -1,66 +1,58 @@
-import { useEffect, useState } from 'react'
-import { StyleSheet, View } from 'react-native'
+import { useState } from 'react'
 import * as Haptics from 'expo-haptics'
 import { updatePackageType, type PackageType } from '@hellokido/core/api'
 import { formatAmountForInput, isPositiveAmount, parseAmount } from '@hellokido/core/rules/money.js'
 import { filledNames, namesOf, type Names } from '@hellokido/core/view'
 import { useCatalog, useLabels, useRefresh } from '../../data/queries'
 import { useI18n } from '../../providers/I18n'
-import { EmptyState, Skeleton } from '../../ui/Bits'
+import { EmptyState, ListSkeleton } from '../../ui/Bits'
 import { Button } from '../../ui/Button'
 import { AmountField, SwitchField } from '../../ui/Fields'
+import { FormGroup } from '../../ui/Screen'
 import { SheetActions, SheetScreen, useSheet } from '../../ui/Sheet'
-import { Text } from '../../ui/Text'
 import { useToast } from '../../ui/Toast'
-import { amountError, type FormState } from '../payment/fields'
+import { amountError } from '../payment/fields'
 import { NameFields } from './bits'
 
-const IDLE: FormState = { dirty: false, busy: false }
 const isFree = (row: PackageType) => row.family === 'free'
 
 /** The price a payment form suggests for a package, its names, and whether new registrations offer it. */
 export function PackageSheet({ code }: { code: string }) {
   const { t } = useI18n()
-  const labels = useLabels()
   const catalog = useCatalog()
-  const [state, setState] = useState(IDLE)
   const pkg = catalog.data?.packages.find((row) => row.code === code) ?? null
 
+  if (pkg) return <PackageForm pkg={pkg} />
   return (
-    <SheetScreen title={t.settings.packages.form.title} subtitle={pkg ? labels.packageName(pkg.code) : undefined} dirty={state.dirty} busy={state.busy}>
-      {!catalog.data ? (
-        catalog.isError ? (
-          <EmptyState
-            icon="info"
-            title={t.common.loadFailed}
-            action={
-              <Button size="sm" icon="refresh" busy={catalog.isFetching} onPress={() => void catalog.refetch()}>
-                {t.common.retry}
-              </Button>
-            }
-          />
-        ) : (
-          <View style={styles.stack}>
-            <Skeleton height={50} radius={13} />
-            <Skeleton height={50} radius={13} />
-            <Skeleton height={50} radius={13} />
-          </View>
-        )
-      ) : !pkg ? (
+    <SheetScreen title={t.settings.packages.form.title}>
+      {catalog.data ? (
         <EmptyState icon="info" title={t.settings.packages.form.notFound} />
+      ) : catalog.isError ? (
+        <EmptyState
+          icon="info"
+          title={t.common.loadFailed}
+          action={
+            <Button size="sm" icon="refresh" busy={catalog.isFetching} onPress={() => void catalog.refetch()}>
+              {t.common.retry}
+            </Button>
+          }
+        />
       ) : (
-        <PackageForm pkg={pkg} onStateChange={setState} />
+        <ListSkeleton rows={3} />
       )}
     </SheetScreen>
   )
 }
 
-function PackageForm({ pkg, onStateChange }: { pkg: PackageType; onStateChange: (state: FormState) => void }) {
+function PackageForm({ pkg }: { pkg: PackageType }) {
   const { t } = useI18n()
+  const labels = useLabels()
   const toast = useToast()
   const refresh = useRefresh()
+  // This form draws its own SheetScreen, so the bar's action closes the sheet it is in through this
   const sheet = useSheet()
   const free = isFree(pkg)
+  const copy = t.settings.packages.form
 
   const [initial] = useState(() => ({ price: pkg.default_price != null ? formatAmountForInput(pkg.default_price) : '', names: namesOf(pkg), active: pkg.is_active }))
   const [price, setPrice] = useState(initial.price)
@@ -71,7 +63,6 @@ function PackageForm({ pkg, onStateChange }: { pkg: PackageType; onStateChange: 
 
   const valid = Boolean(names.tr.trim()) && (free || !price.trim() || isPositiveAmount(price))
   const dirty = price !== initial.price || names.tr !== initial.names.tr || names.en !== initial.names.en || names.uk !== initial.names.uk || active !== initial.active
-  useEffect(() => onStateChange({ dirty, busy }), [dirty, busy, onStateChange])
 
   const save = async () => {
     if (!valid || busy) return
@@ -91,44 +82,41 @@ function PackageForm({ pkg, onStateChange }: { pkg: PackageType; onStateChange: 
     try {
       await updatePackageType(pkg.code, changes)
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
-      toast({ title: t.settings.packages.form.saved })
+      toast({ title: copy.saved })
       void refresh.catalog()
       sheet.finish()
     } catch (caught) {
       if (String((caught as Error)?.message).includes('not_found')) {
-        toast({ tone: 'warning', title: t.settings.packages.form.notFound })
+        toast({ tone: 'warning', title: copy.notFound })
         void refresh.catalog()
         sheet.finish()
         return
       }
-      setError(t.settings.packages.form.failed)
+      setError(copy.failed)
     } finally {
       setBusy(false)
     }
   }
 
   return (
-    <>
+    <SheetScreen
+      title={copy.title}
+      subtitle={labels.packageName(pkg.code)}
+      dirty={dirty}
+      busy={busy}
+      // Nothing to save until something changed
+      action={{ label: t.common.save, disabled: !valid || !dirty, onPress: () => void save() }}
+    >
       {!free && (
-        <View>
-          <AmountField label={t.settings.packages.form.price} value={price} onChange={setPrice} error={amountError(price, t.common.amountInvalid)} />
-          <Text variant="foot" tone="ink3" style={styles.hint}>
-            {t.settings.packages.form.priceHint}
-          </Text>
-        </View>
+        <FormGroup footer={copy.priceHint}>
+          <AmountField label={copy.price} value={price} onChange={setPrice} error={amountError(price, t.common.amountInvalid)} />
+        </FormGroup>
       )}
       <NameFields value={names} onChange={setNames} />
-      <SwitchField label={t.settings.packages.form.active} hint={t.settings.packages.form.activeHint} value={active} onChange={setActive} />
-      <SheetActions error={error}>
-        <Button variant="primary" size="lg" disabled={!valid} busy={busy} onPress={() => void save()}>
-          {t.common.save}
-        </Button>
-      </SheetActions>
-    </>
+      <FormGroup footer={copy.activeHint}>
+        <SwitchField label={copy.active} value={active} onChange={setActive} />
+      </FormGroup>
+      <SheetActions error={error} />
+    </SheetScreen>
   )
 }
-
-const styles = StyleSheet.create({
-  stack: { gap: 14 },
-  hint: { marginTop: 6, paddingHorizontal: 2 }
-})

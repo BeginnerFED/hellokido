@@ -5,15 +5,16 @@ import { ArrowsClockwiseIcon, CoinsIcon, HandCoinsIcon, ReceiptIcon } from '@pho
 import type { Registration, ResolvedExtension } from '@hellokido/core/api'
 import { useActiveUsage, useChildEntries, useLabels, useRegistrations } from '../../data/queries'
 import { useI18n } from '../../providers/I18n'
-import { Skeleton } from '../../ui/Bits'
+import { Avatar, Skeleton } from '../../ui/Bits'
 import { ChoiceList, type ChoiceItem } from '../../ui/ChoiceList'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { SearchField } from '../../ui/Field'
 import { Notice } from '../../ui/Notice'
 import { Sheet } from '../../ui/Sheet'
-import { Peg } from '../../ui/signature'
+import { MiniBeads } from '../../ui/signature'
+import { cx } from '../../ui/cx'
 import { IncomeEntryForm } from '../money/IncomeEntryForm'
-import { UsageLine } from './ChildBits'
+import { beadsLabel, remainingText } from './ChildBits'
 import { CollectForm } from './CollectForm'
 import { ExtendForm, type FormState } from './ExtendForm'
 import { RegistrationForm, type RegistrationPrefill } from './RegistrationForm'
@@ -78,7 +79,8 @@ export type PaymentParams = { registrationId?: string; choice?: PaymentChoice; e
  * paths live in one sheet so going back to change the choice never closes it.
  */
 export function PaymentSheet({ isOpen, onOpenChange, params }: SheetProps & { params: PaymentParams }) {
-  const { t, fmt, money, date } = useI18n()
+  const i18n = useI18n()
+  const { t, fmt, money, date } = i18n
   const labels = useLabels()
   const registrations = useRegistrations().data
   const usage = useActiveUsage().data
@@ -150,13 +152,13 @@ export function PaymentSheet({ isOpen, onOpenChange, params }: SheetProps & { pa
       choices.push({
         id: 'collect',
         title: t.children.payment.collect,
-        hint: `${labels.packageName(row.package_type)} · ${t.children.payment.collectHint}`,
+        hint: `${labels.packageName(row.package_type)}. ${t.children.payment.collectHint}`,
         icon: <HandCoinsIcon aria-hidden className="size-5" />,
         tone: 'action'
       })
     }
     for (const item of pendingEntries) {
-      const due = item.due_date ? ` · ${fmt(t.children.detail.dueOn, { date: date(`${item.due_date}T00:00:00`, { day: 'numeric', month: 'long' }) })}` : ''
+      const due = item.due_date ? `, ${fmt(t.children.detail.dueOn, { date: date(`${item.due_date}T00:00:00`, { day: 'numeric', month: 'long' }) })}` : ''
       choices.push({
         id: `entry:${item.id}`,
         title: item.description || t.children.detail.fee,
@@ -207,18 +209,21 @@ export function PaymentSheet({ isOpen, onOpenChange, params }: SheetProps & { pa
             ) : active.length === 0 ? (
               <p className="px-1 py-6 text-center text-sm text-ink-2">{t.children.payment.noChildren}</p>
             ) : (
-              <ul aria-label={t.children.payment.who} className="-mx-2 flex flex-col">
+              <ul aria-label={t.children.payment.who} className="-mx-2 flex flex-col gap-px">
                 {active.map((item) => (
                   <li key={item.id}>
                     <AriaButton
                       onPress={() => setChildId(item.id)}
-                      className="flex w-full items-center gap-3 rounded-control px-2 py-2 text-left outline-none data-hovered:bg-well data-pressed:bg-well data-focus-visible:ring-2 data-focus-visible:ring-focus"
+                      className={cx(
+                        'flex w-full items-center gap-3 rounded-[1.125rem] px-2.5 py-2 text-left outline-none transition-colors duration-150',
+                        'data-hovered:bg-felt data-pressed:bg-felt data-focus-visible:ring-2 data-focus-visible:ring-focus'
+                      )}
                     >
-                      <Peg seat={{ id: item.id, name: item.student_name, status: 'scheduled' }} size="md" />
+                      <Avatar name={item.student_name} />
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[0.9375rem] font-medium text-ink">{item.student_name}</span>
-                        <span className="block truncate text-[0.8125rem] text-ink-3">
-                          {labels.packageName(item.package_type)} · {item.parent_name}
+                        <span className="block truncate text-[0.96875rem] font-medium text-ink">{item.student_name}</span>
+                        <span className="block truncate text-[0.84375rem] text-ink-3">
+                          {labels.packageName(item.package_type)}, {fmt(t.children.phone.parentOf, { name: item.parent_name })}
                         </span>
                       </span>
                     </AriaButton>
@@ -231,12 +236,16 @@ export function PaymentSheet({ isOpen, onOpenChange, params }: SheetProps & { pa
 
         {step === 'choice' && row && (
           <div className="flex flex-col gap-4">
-            <div className="flex items-center gap-3 rounded-panel bg-surface-2 px-3 py-3">
-              <Peg seat={{ id: row.id, name: row.student_name, status: 'scheduled' }} size="md" />
+            {/* Who it is for, as a plain line: only the choices below are pressable */}
+            <div className="flex items-center gap-3">
+              <Avatar name={row.student_name} tone="sky" />
               <div className="min-w-0 flex-1">
-                <p className="truncate text-[0.8125rem] text-ink-2">{labels.packageName(row.package_type)}</p>
-                <UsageLine usage={usage?.[row.id]} className="mt-1" />
+                <p className="truncate text-[0.9375rem] font-medium text-ink">{labels.packageName(row.package_type)}</p>
+                {!free && usage?.[row.id] && (
+                  <p className="text-[0.84375rem] text-ink-3">{remainingText(i18n, usage[row.id])}</p>
+                )}
               </div>
+              {!free && <MiniBeads usage={usage?.[row.id]} label={usage?.[row.id] ? beadsLabel(i18n, usage[row.id]) : ''} className="shrink-0 [&>span:last-child]:hidden" />}
             </div>
             {free && <Notice>{t.children.payment.freeOnly}</Notice>}
             <ChoiceList aria-label={t.children.payment.whatFor} items={choices} onChoose={choose} />

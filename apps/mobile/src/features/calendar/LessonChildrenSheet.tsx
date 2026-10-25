@@ -6,13 +6,14 @@ import { loadLesson, saveLesson, LESSON_ROW_LIMIT, LessonError, SEATS_SHOWN, typ
 import { holdsSeat } from '@hellokido/core/rules/attendance.js'
 import { keys, useRefresh } from '../../data/queries'
 import { useI18n } from '../../providers/I18n'
-import { EmptyState, LoadError, Notice, Skeleton } from '../../ui/Bits'
+import { EmptyState, LoadError, Skeleton } from '../../ui/Bits'
 import { Button } from '../../ui/Button'
 import { SheetActions, SheetScreen, WithSheet } from '../../ui/Sheet'
 import { DOT, Text } from '../../ui/Text'
 import { useToast } from '../../ui/Toast'
 import { useLessonTitle } from '../../ui/UsageLine'
 import { ChildChooser } from './ChildChooser'
+import { GroupNote } from './parts'
 
 /** Children to add to a lesson that already exists; those in it already are not offered again. */
 export function LessonChildrenSheet({ id }: { id: string }) {
@@ -36,8 +37,8 @@ export function LessonChildrenSheet({ id }: { id: string }) {
           )
         ) : (
           <View style={styles.stack}>
-            <Skeleton height={40} radius={11} />
-            <Skeleton height={220} radius={16} />
+            <Skeleton height={40} radius={20} />
+            <Skeleton height={300} radius={26} />
           </View>
         )}
       </SheetScreen>
@@ -106,31 +107,43 @@ function Chooser({ detail, subtitle }: { detail: LessonDetail; subtitle?: string
   return (
     <SheetScreen
       title={t.calendar.lesson.addChildren}
-      subtitle={subtitle}
+      // The lesson, and under it who is in it already: they are not offered again
+      subtitle={
+        <View style={styles.head}>
+          {subtitle && (
+            <Text variant="sub" tone="ink2" align="center" numberOfLines={2}>
+              {subtitle}
+            </Text>
+          )}
+          {inLesson.size > 0 && (
+            <Text variant="sub" tone="ink3" align="center">
+              {plural(t.mobile.alreadyIn, inLesson.size)}
+            </Text>
+          )}
+        </View>
+      }
       dirty={chosen.length > 0}
       busy={busy}
       footer={
-        <SheetActions error={error}>
-          <WithSheet>
-            {(sheet) => (
-              <Button variant="primary" size="lg" disabled={chosen.length === 0 || overLimit} busy={busy} onPress={() => void add(sheet.finish)}>
-                {chosen.length > 0 ? plural(t.mobile.addChildrenCount, chosen.length) : t.calendar.lesson.chooseChildren}
-              </Button>
-            )}
-          </WithSheet>
-        </SheetActions>
+        <View style={styles.foot}>
+          {/* Said over the button the moment a tick passes the limit, where the eye already is */}
+          {overLimit ? (
+            <GroupNote tone="negativeInk" style={styles.flush}>{fmt(t.calendar.lesson.tooManyNow, { limit: maxCapacity })}</GroupNote>
+          ) : holders > SEATS_SHOWN ? (
+            <GroupNote tone="actionInk" style={styles.flush}>{fmt(t.calendar.lesson.seats, { count: holders })}</GroupNote>
+          ) : null}
+          <SheetActions error={error}>
+            <WithSheet>
+              {(sheet) => (
+                <Button variant="primary" size="lg" disabled={chosen.length === 0 || overLimit} busy={busy} onPress={() => void add(sheet.finish)}>
+                  {chosen.length > 0 ? plural(t.mobile.addChildrenCount, chosen.length) : t.calendar.lesson.chooseChildren}
+                </Button>
+              )}
+            </WithSheet>
+          </SheetActions>
+        </View>
       }
     >
-      {inLesson.size > 0 && (
-        <Text variant="foot" tone="ink3" style={styles.note}>
-          {plural(t.mobile.alreadyIn, inLesson.size)}
-        </Text>
-      )}
-      {overLimit ? (
-        <Notice tone="negative">{fmt(t.calendar.lesson.tooManyNow, { limit: maxCapacity })}</Notice>
-      ) : holders > SEATS_SHOWN ? (
-        <Notice tone="action">{fmt(t.calendar.lesson.seats, { count: holders })}</Notice>
-      ) : null}
       <ChildChooser
         selected={selected}
         hidden={inLesson}
@@ -144,6 +157,10 @@ function Chooser({ detail, subtitle }: { detail: LessonDetail; subtitle?: string
 }
 
 const styles = StyleSheet.create({
-  stack: { gap: 14 },
-  note: { paddingHorizontal: 4, marginBottom: -8 }
+  stack: { gap: 16 },
+  // As close to the search field as SheetScreen's own one-line subtitle sits
+  head: { gap: 2, paddingHorizontal: 16, marginBottom: -8 },
+  foot: { gap: 10 },
+  // The foot has its own side margins already
+  flush: { paddingHorizontal: 0 }
 })

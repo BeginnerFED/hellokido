@@ -70,6 +70,8 @@ const tr = {
   lessonGone: 'Bu ders başka bir yerde değişmiş; liste yenilendi.',
   strip: {
     label: 'Bekleyen işler',
+    /** The word under the count on Today's tile for attendance nobody marked. */
+    unmarkedShort: 'Girilmemiş yoklama',
     payments: { one: '{count} ödeme bekliyor', other: '{count} ödeme bekliyor' },
     ending: { one: '{count} paket yenileme bekliyor', other: '{count} paket yenileme bekliyor' },
     unmarked: { one: '{count} yoklama girilmedi', other: '{count} yoklama girilmedi' }
@@ -104,6 +106,40 @@ const tr = {
     soon: 'Bitmek üzere',
     ended: 'Bitti',
     showMore: { one: '{count} paket daha göster', other: '{count} paket daha göster' }
+  },
+  /** Today as a felt board on the web panel: the day ribbon, the lesson card and "Seni bekleyenler". */
+  web: {
+    all: 'Hepsi',
+    childAndPackage: 'Çocuk ve paket',
+    openLesson: 'Dersi aç',
+    ribbon: 'Günün dersleri, saat şeridinde',
+    focusLesson: '{lesson} dersini karta getir',
+    notMarked: '{names} girilmedi',
+    soonGroup: 'Paketi bitiyor',
+    endedGroup: 'Paketi bitti',
+    withinWeek: '7 gün içinde',
+    tomorrowLine: '{day}: {lessons}, {parents}',
+    parents: { one: '{count} veli', other: '{count} veli' },
+    nextFamily: 'sıradaki {name}'
+  },
+  /** Today as a felt board (the iPhone): the lesson of the moment and one card of waiting jobs. */
+  board: {
+    summary: 'Bugün {lessons}, {children} var',
+    summaryPast: 'Bugün {lessons}, {children} vardı',
+    next: 'Sıradaki',
+    done: 'Bitti',
+    elapsed: '{count} dk geçti',
+    left: '{count} dk kaldı',
+    startsIn: '{count} dk sonra başlıyor',
+    missing: { one: '{count} çocuğun yoklaması eksik', other: '{count} çocuğun yoklaması eksik' },
+    waitingTitle: 'Seni bekleyenler',
+    jobs: { one: '{count} iş', other: '{count} iş' },
+    enter: 'Gir',
+    see: 'Gör',
+    send: 'Gönder',
+    tomorrowReminders: 'Yarın için hatırlatma',
+    toParents: { one: '{count} veliye WhatsApp’tan', other: '{count} veliye WhatsApp’tan' },
+    inLessons: { one: '{count} derste', other: '{count} derste' }
   }
 }
 
@@ -177,6 +213,7 @@ const en: Widen<typeof tr> = {
   lessonGone: 'This lesson changed elsewhere; the list was refreshed.',
   strip: {
     label: 'Waiting for you',
+    unmarkedShort: 'Unmarked attendance',
     payments: { one: '{count} payment due', other: '{count} payments due' },
     ending: { one: '{count} package to renew', other: '{count} packages to renew' },
     unmarked: { one: '{count} attendance not marked', other: '{count} attendances not marked' }
@@ -211,6 +248,38 @@ const en: Widen<typeof tr> = {
     soon: 'Ending soon',
     ended: 'Ended',
     showMore: { one: 'Show {count} more package', other: 'Show {count} more packages' }
+  },
+  web: {
+    all: 'All',
+    childAndPackage: 'Child and package',
+    openLesson: 'Open lesson',
+    ribbon: 'Today’s lessons on a time strip',
+    focusLesson: 'Show {lesson} on the card',
+    notMarked: 'Not marked: {names}',
+    soonGroup: 'Package ending',
+    endedGroup: 'Package ended',
+    withinWeek: 'Within 7 days',
+    tomorrowLine: '{day}: {lessons}, {parents}',
+    parents: { one: '{count} parent', other: '{count} parents' },
+    nextFamily: 'next: {name}'
+  },
+  board: {
+    summary: 'Today: {lessons}, {children}',
+    summaryPast: 'Today: {lessons}, {children}',
+    next: 'Up next',
+    done: 'Finished',
+    elapsed: '{count} min in',
+    left: '{count} min left',
+    startsIn: 'Starts in {count} min',
+    missing: { one: 'Attendance missing for {count} child', other: 'Attendance missing for {count} children' },
+    waitingTitle: 'Waiting for you',
+    jobs: { one: '{count} task', other: '{count} tasks' },
+    enter: 'Mark',
+    see: 'View',
+    send: 'Send',
+    tomorrowReminders: 'Reminders for tomorrow',
+    toParents: { one: 'To {count} parent on WhatsApp', other: 'To {count} parents on WhatsApp' },
+    inLessons: { one: 'In {count} lesson', other: 'In {count} lessons' }
   }
 }
 
@@ -284,6 +353,7 @@ const uk: Widen<typeof tr> = {
   lessonGone: 'Це заняття змінили в іншому місці; список оновлено.',
   strip: {
     label: 'Чекає на вас',
+    unmarkedShort: 'Невідмічене відвідування',
     payments: {
       one: '{count} оплата очікується',
       few: '{count} оплати очікуються',
@@ -343,6 +413,48 @@ const uk: Widen<typeof tr> = {
       many: 'Показати ще {count} пакетів',
       other: 'Показати ще {count} пакета'
     }
+  },
+  web: {
+    all: 'Усі',
+    childAndPackage: 'Дитина і пакет',
+    openLesson: 'Відкрити заняття',
+    ribbon: 'Сьогоднішні заняття на шкалі часу',
+    focusLesson: 'Показати {lesson} у картці',
+    notMarked: 'Не відмічено: {names}',
+    soonGroup: 'Пакет закінчується',
+    endedGroup: 'Пакет закінчився',
+    withinWeek: 'Протягом 7 днів',
+    tomorrowLine: '{day}: {lessons}, {parents}',
+    parents: { one: '{count} родина', few: '{count} родини', many: '{count} родин', other: '{count} родини' },
+    nextFamily: 'наступні: {name}'
+  },
+  board: {
+    summary: 'Сьогодні {lessons}, {children}',
+    summaryPast: 'Сьогодні було {lessons}, {children}',
+    next: 'Наступне',
+    done: 'Завершено',
+    elapsed: 'Минуло {count} хв',
+    left: 'Залишилось {count} хв',
+    startsIn: 'Почнеться через {count} хв',
+    missing: {
+      one: 'Немає відмітки для {count} дитини',
+      few: 'Немає відмітки для {count} дітей',
+      many: 'Немає відмітки для {count} дітей',
+      other: 'Немає відмітки для {count} дитини'
+    },
+    waitingTitle: 'Чекає на вас',
+    jobs: { one: '{count} справа', few: '{count} справи', many: '{count} справ', other: '{count} справи' },
+    enter: 'Відмітити',
+    see: 'Переглянути',
+    send: 'Надіслати',
+    tomorrowReminders: 'Нагадування на завтра',
+    toParents: {
+      one: '{count} родині у WhatsApp',
+      few: '{count} родинам у WhatsApp',
+      many: '{count} родинам у WhatsApp',
+      other: '{count} родини у WhatsApp'
+    },
+    inLessons: { one: 'У {count} занятті', few: 'У {count} заняттях', many: 'У {count} заняттях', other: 'У {count} заняття' }
   }
 }
 

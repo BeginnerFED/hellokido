@@ -1,3 +1,4 @@
+import { Platform } from 'react-native'
 import { NativeTabs } from 'expo-router/native-tabs'
 import { useI18n } from '../../providers/I18n'
 import { useColors } from '../../theme/colors'
@@ -5,17 +6,23 @@ import { useColors } from '../../theme/colors'
 // The app opens on Today; without this the router picks the group with the shortest name (More)
 export const unstable_settings = { anchor: '(today)' }
 
-/** The phone's own tab bar: the five places of the panel, each with its own stack of pages. */
+const android = Platform.OS === 'android'
+
+/**
+ * The phone's own tab bar: the five places of the panel, each with its own stack of pages. On the
+ * iPhone it is the system's floating glass bar, only tinted; Android's bar is drawn close to it:
+ * the page's paper, ink words and a soft pill behind the chosen tab.
+ */
 export default function TabsLayout() {
   const c = useColors()
   const { t } = useI18n()
   return (
     <NativeTabs
-      tintColor={c.accentInk}
-      iconColor={{ default: c.ink3, selected: c.accentInk }}
-      labelStyle={{ default: { color: c.ink3 }, selected: { color: c.accentInk } }}
-      backgroundColor={c.surface}
-      indicatorColor={c.accentWash}
+      tintColor={c.tabTint}
+      iconColor={android ? { default: c.ink2, selected: c.tabTint } : undefined}
+      labelStyle={android ? { default: { color: c.ink2 }, selected: { color: c.tabTint } } : undefined}
+      backgroundColor={android ? c.page : undefined}
+      indicatorColor={android ? c.felt : undefined}
       // Every tab keeps its name on Android too; the iPhone always shows them
       labelVisibilityMode="labeled"
       minimizeBehavior="never"

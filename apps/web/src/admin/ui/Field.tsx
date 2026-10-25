@@ -14,15 +14,16 @@ import { MagnifyingGlassIcon, XIcon } from '@phosphor-icons/react'
 import { formatMoney, parseAmount, sanitizeAmountInput } from '@hellokido/core/rules/money.js'
 import { cx } from './cx'
 
-export const fieldLabelClass = 'text-[0.8125rem] font-medium text-ink-2'
+export const fieldLabelClass = 'text-[0.84375rem] font-semibold text-ink-2'
 
+/** A felt field: felt on the page and in sheets, raised on a felt card (the --field colour). */
 export const inputClass = cx(
-  'w-full min-w-0 rounded-control border border-line bg-surface px-3 text-sm text-ink shadow-[0_1px_2px_rgb(0_0_0/0.04)]',
+  'w-full min-w-0 rounded-control border-[1.5px] border-transparent bg-field px-3.5 text-[0.96875rem] text-ink',
   'placeholder:text-ink-3 outline-none transition-[border-color,box-shadow] duration-150',
   'data-hovered:border-line-strong',
   'data-focused:border-accent data-focused:ring-3 data-focused:ring-accent/20',
   'data-invalid:border-negative data-invalid:data-focused:ring-negative/20',
-  'data-disabled:bg-surface-2 data-disabled:text-ink-3 data-disabled:shadow-none'
+  'data-disabled:text-ink-3 data-disabled:opacity-70'
 )
 
 type Common = {
@@ -56,11 +57,11 @@ export const TextField = forwardRef<HTMLInputElement, TextFieldProps>(function T
           placeholder={placeholder}
           inputMode={inputMode}
           autoComplete={autoComplete}
-          className={cx(inputClass, 'h-10 max-lg:h-11', suffix ? 'pr-24' : '', endSlot ? 'pr-12' : '', inputClassName)}
+          className={cx(inputClass, 'h-[2.875rem]', suffix ? 'pr-24' : '', endSlot ? 'pr-12' : '', inputClassName)}
         />
         {endSlot && <div className="absolute inset-y-0 right-1.5 flex items-center">{endSlot}</div>}
         {suffix && (
-          <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-ink-3 tabular">
+          <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-ink-3 tabular dark:text-ink-2">
             {suffix}
           </span>
         )}
@@ -84,7 +85,7 @@ export const TextArea = forwardRef<HTMLTextAreaElement, TextAreaProps>(function 
   return (
     <AriaTextField {...props} isInvalid={Boolean(errorMessage)} className={cx('flex flex-col gap-1.5', className)}>
       {label && <Label className={fieldLabelClass}>{label}</Label>}
-      <AriaTextArea ref={ref} placeholder={placeholder} rows={rows} className={cx(inputClass, 'resize-y py-2.5 leading-normal')} />
+      <AriaTextArea ref={ref} placeholder={placeholder} rows={rows} className={cx(inputClass, 'resize-y py-3 leading-normal')} />
       {description && !errorMessage && (
         <Text slot="description" className="text-[0.8125rem] text-ink-3">
           {description}
@@ -150,10 +151,10 @@ export function SearchField({ value, onChange, placeholder, label, className, au
     >
       <MagnifyingGlassIcon
         aria-hidden
-        className={cx('pointer-events-none absolute left-3.5 size-4 transition-colors', focused ? 'text-accent' : 'text-ink-3')}
+        className={cx('pointer-events-none absolute left-4 size-[1.125rem] transition-colors', focused ? 'text-accent' : 'text-ink-3')}
       />
-      <Input placeholder={placeholder} className={cx(inputClass, 'h-10 rounded-full bg-surface-2 pl-9 pr-9 shadow-none max-lg:h-11 [&::-webkit-search-cancel-button]:hidden data-focused:bg-surface')} />
-      <AriaButton className="absolute right-1.5 grid size-7 place-items-center rounded-full text-ink-3 data-hovered:bg-well data-hovered:text-ink group-data-empty:hidden">
+      <Input placeholder={placeholder} className={cx(inputClass, 'h-[2.625rem] rounded-full pr-10 pl-11 text-[0.90625rem] max-lg:h-11 [&::-webkit-search-cancel-button]:hidden')} />
+      <AriaButton className="absolute right-1.5 grid size-8 place-items-center rounded-full text-ink-3 outline-none data-hovered:bg-hover data-hovered:text-ink data-focus-visible:ring-2 data-focus-visible:ring-focus group-data-empty:hidden">
         <XIcon aria-hidden className="size-4" />
       </AriaButton>
     </AriaSearchField>

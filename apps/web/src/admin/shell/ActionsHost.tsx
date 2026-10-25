@@ -158,7 +158,7 @@ function CommandPalette({ isOpen, onOpenChange, onTask }: { isOpen: boolean; onO
       isDismissable
       className="fixed inset-0 z-[55] bg-scrim px-3 pt-[max(0.75rem,env(safe-area-inset-top))] data-entering:animate-fade-in data-exiting:animate-fade-out sm:px-6 sm:pt-[12vh]"
     >
-      <Modal className="mx-auto w-full max-w-xl overflow-hidden rounded-sheet bg-surface text-ink shadow-lift outline-none data-entering:animate-pop-in data-exiting:animate-pop-out">
+      <Modal className="mx-auto w-full max-w-xl overflow-hidden rounded-sheet bg-sheet text-ink shadow-float outline-none data-entering:animate-pop-in data-exiting:animate-pop-out">
         <Dialog aria-label={t.shell.palette.open} className="outline-none">
           <Autocomplete filter={(text, input) => matchesSearch(text, input)} inputValue={query} onInputChange={setQuery}>
             <SearchField aria-label={t.shell.palette.open} autoFocus className="flex items-center gap-2 border-b border-line px-4">

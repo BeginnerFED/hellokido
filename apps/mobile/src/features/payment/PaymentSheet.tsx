@@ -4,16 +4,14 @@ import * as Haptics from 'expo-haptics'
 import { byName, isFree, matchesChild } from '@hellokido/core/view'
 import { useActiveUsage, useChildEntries, useLabels, useRegistrations } from '../../data/queries'
 import { useI18n } from '../../providers/I18n'
-import { useColors } from '../../theme/colors'
-import { ListSkeleton, Notice, Skeleton } from '../../ui/Bits'
-import { FieldLabel, SearchField } from '../../ui/Fields'
-import { Icon, type IconName } from '../../ui/Icon'
-import { Card, Row } from '../../ui/Screen'
-import { SheetScreen } from '../../ui/Sheet'
-import { Peg } from '../../ui/signature'
+import type { TileTone } from '../../theme/colors'
+import { Avatar, AVATAR_INSET, EmptyState, ListSkeleton, Skeleton } from '../../ui/Bits'
+import { SearchField } from '../../ui/Fields'
+import type { IconName } from '../../ui/Icon'
+import { Card, FormGroup, IconTile, Row, TILE_INSET } from '../../ui/Screen'
+import { formAction, SheetScreen, type FormState } from '../../ui/Sheet'
 import { DOT, Text } from '../../ui/Text'
 import { UsageLine } from '../../ui/UsageLine'
-import type { FormState } from './fields'
 import { CollectForm, ExtendForm, IncomeForm } from './forms'
 
 const IDLE: FormState = { dirty: false, busy: false }
@@ -21,14 +19,14 @@ const IDLE: FormState = { dirty: false, busy: false }
 export type PaymentChoice = 'renew' | 'instalment' | 'collect' | 'fee'
 export type PaymentParams = { registrationId?: string; choice?: PaymentChoice; entryId?: string }
 
-type Choice = { id: string; title: string; hint: string; icon: IconName; action?: boolean }
+// Each kind of payment keeps its colour, as Settings keeps one per kind of row; amber asks for action
+type Choice = { id: string; title: string; hint: string; icon: IconName; tone: TileTone }
 
 /**
  * "Take a payment": pick the child, say what the money is for, fill in one short form. All four
  * paths live in one sheet, so going back to change the choice never closes it.
  */
 export function PaymentSheet({ params }: { params: PaymentParams }) {
-  const c = useColors()
   const { t, fmt, money, date } = useI18n()
   const labels = useLabels()
   const registrations = useRegistrations().data
@@ -86,7 +84,7 @@ export function PaymentSheet({ params }: { params: PaymentParams }) {
   const choices: Choice[] = []
   if (row) {
     if (periodDue) {
-      choices.push({ id: 'collect', title: t.children.payment.collect, hint: `${labels.packageName(row.package_type)}${DOT}${t.children.payment.collectHint}`, icon: 'money', action: true })
+      choices.push({ id: 'collect', title: t.children.payment.collect, hint: `${labels.packageName(row.package_type)}${DOT}${t.children.payment.collectHint}`, icon: 'lira', tone: 'orange' })
     }
     for (const item of pendingEntries) {
       const due = item.due_date ? `${DOT}${fmt(t.children.detail.dueOn, { date: date(`${item.due_date}T00:00:00`, { day: 'numeric', month: 'long' }) })}` : ''
@@ -94,17 +92,17 @@ export function PaymentSheet({ params }: { params: PaymentParams }) {
         id: `entry:${item.id}`,
         title: item.description || t.children.detail.fee,
         hint: fmt(t.children.payment.collectEntryHint, { amount: money(item.amount) }) + due,
-        icon: 'money',
-        action: true
+        icon: 'lira',
+        tone: 'orange'
       })
     }
     if (!free && !periodDue) {
       choices.push(
-        { id: 'renew', title: t.children.payment.renew, hint: t.children.payment.renewHint, icon: 'refresh' },
-        { id: 'instalment', title: t.children.payment.instalment, hint: t.children.payment.instalmentHint, icon: 'wallet' }
+        { id: 'renew', title: t.children.payment.renew, hint: t.children.payment.renewHint, icon: 'renew', tone: 'blue' },
+        { id: 'instalment', title: t.children.payment.instalment, hint: t.children.payment.instalmentHint, icon: 'wallet', tone: 'green' }
       )
     }
-    choices.push({ id: 'fee', title: t.children.payment.fee, hint: t.children.payment.feeHint, icon: 'receipt' })
+    choices.push({ id: 'fee', title: t.children.payment.fee, hint: t.children.payment.feeHint, icon: 'receipt', tone: 'gray' })
   }
 
   const choose = (id: string) => {
@@ -120,31 +118,39 @@ export function PaymentSheet({ params }: { params: PaymentParams }) {
   }
 
   return (
-    <SheetScreen title={title} subtitle={row?.student_name} dirty={state.dirty} busy={state.busy} onBack={back} backLabel={step === 'form' ? t.children.payment.change : undefined}>
+    <SheetScreen
+      title={title}
+      subtitle={row?.student_name}
+      dirty={state.dirty}
+      busy={state.busy}
+      onBack={back}
+      backLabel={step === 'form' ? t.children.payment.change : undefined}
+      // Only the form step has something to save; a stale report of a form left behind never shows
+      action={step === 'form' ? formAction(state, t.common.save) : undefined}
+    >
       {step === 'wait' && (
         <View style={styles.stack}>
-          <Skeleton height={64} radius={18} />
-          <Skeleton height={132} radius={18} style={styles.later} />
+          <Skeleton height={60} radius={26} />
+          <Skeleton height={240} radius={26} />
         </View>
       )}
 
       {step === 'child' && (
-        <View style={styles.stack}>
+        <View style={styles.list}>
           <SearchField value={query} onChange={setQuery} placeholder={t.children.payment.searchChild} label={t.children.payment.who} />
           {!registrations ? (
             <ListSkeleton rows={5} />
           ) : active.length === 0 ? (
-            <Text variant="sub" tone="ink2" align="center" style={styles.empty}>
-              {t.children.payment.noChildren}
-            </Text>
+            <EmptyState icon="search" title={t.children.payment.noChildren} />
           ) : (
-            <Card inset={60}>
+            <Card inset={AVATAR_INSET}>
               {active.map((item) => (
                 <Row
                   key={item.id}
-                  leading={<Peg seat={{ id: item.id, name: item.student_name, status: 'scheduled' }} size="md" />}
+                  leading={<Avatar name={item.student_name} />}
                   title={item.student_name}
                   subtitle={`${labels.packageName(item.package_type)}${DOT}${item.parent_name}`}
+                  chevron
                   onPress={() => {
                     void Haptics.selectionAsync()
                     setChildId(item.id)
@@ -157,53 +163,36 @@ export function PaymentSheet({ params }: { params: PaymentParams }) {
       )}
 
       {step === 'choice' && row && (
-        <View style={styles.stack}>
-          <Card>
+        <>
+          {/* Where the package stands decides between a new period and an instalment */}
+          <FormGroup footer={free ? t.children.payment.freeOnly : undefined}>
             <Row
-              leading={<Peg seat={{ id: row.id, name: row.student_name, status: 'scheduled' }} size="md" />}
-              title={
-                <Text variant="sub" tone="ink2" numberOfLines={1}>
-                  {labels.packageName(row.package_type)}
-                </Text>
-              }
+              leading={<Avatar name={row.student_name} />}
+              title={labels.packageName(row.package_type)}
               subtitle={<UsageLine usage={usage?.[row.id]} />}
             />
-          </Card>
-          {free && <Notice>{t.children.payment.freeOnly}</Notice>}
-          {/* The child above, the question here: what the money is for */}
-          <View style={styles.choices}>
-            <FieldLabel>{t.children.payment.whatFor}</FieldLabel>
-            <Card inset={60}>
-              {choices.map((item) => (
-                <Row
-                  key={item.id}
-                  leading={
-                    <View style={[styles.choiceIcon, { backgroundColor: item.action ? c.actionWash : c.accentWash2 }]}>
-                      <Icon name={item.icon} size={18} color={item.action ? c.actionInk : c.accentInk} />
-                    </View>
-                  }
-                  title={
-                    <Text variant="body" weight="600" numberOfLines={2}>
-                      {item.title}
-                    </Text>
-                  }
-                  subtitle={
-                    <Text variant="foot" tone="ink3">
-                      {item.hint}
-                    </Text>
-                  }
-                  onPress={() => choose(item.id)}
-                  chevron
-                />
-              ))}
-            </Card>
-          </View>
-          {periodDue && (
-            <Text variant="foot" tone="ink3" style={styles.footnote}>
-              {t.children.extend.pendingBlocked}
-            </Text>
-          )}
-        </View>
+          </FormGroup>
+          <FormGroup title={t.children.payment.whatFor} footer={periodDue ? t.children.extend.pendingBlocked : undefined} inset={TILE_INSET}>
+            {choices.map((item) => (
+              <Row
+                key={item.id}
+                leading={<IconTile icon={item.icon} tone={item.tone} size={36} />}
+                title={
+                  <Text weight="500" numberOfLines={2}>
+                    {item.title}
+                  </Text>
+                }
+                subtitle={
+                  <Text variant="sub" tone="ink3">
+                    {item.hint}
+                  </Text>
+                }
+                onPress={() => choose(item.id)}
+                chevron
+              />
+            ))}
+          </FormGroup>
+        </>
       )}
 
       {step === 'form' && row && (choice === 'renew' || choice === 'instalment') && (
@@ -216,10 +205,6 @@ export function PaymentSheet({ params }: { params: PaymentParams }) {
 }
 
 const styles = StyleSheet.create({
-  stack: { gap: 12 },
-  later: { marginTop: 18 },
-  choices: { marginTop: 8 },
-  empty: { paddingVertical: 28 },
-  choiceIcon: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  footnote: { paddingHorizontal: 4 }
+  stack: { gap: 24 },
+  list: { gap: 16 }
 })

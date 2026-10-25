@@ -340,7 +340,7 @@ export function ExtendForm({ registration, mode, extension, onDone, onStateChang
       />
       <SheetFooter>
         <SheetActions>
-          <Button variant="primary" isDisabled={!valid} isPending={busy} onPress={save} className="max-md:flex-1">
+          <Button variant="primary" isDisabled={!valid || (mode === 'edit' && !dirty)} isPending={busy} onPress={save} className="max-md:flex-1">
             {mode === 'edit' ? t.common.save : t.children.extend.save}
           </Button>
         </SheetActions>

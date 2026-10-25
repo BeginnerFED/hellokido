@@ -5,12 +5,14 @@ import { useLabels } from '../../data/queries'
 import { Menu, MenuItem } from '../../ui/Menu'
 import { cx } from '../../ui/cx'
 
+/** Attended green, a make-up pink, an absence grey, still to come a ring; overdue is amber (it waits for the admin). */
 export function statusTone(status: string, overdue: boolean) {
-  if (overdue) return 'bg-action-wash text-action-ink'
-  if (status === 'attended') return 'bg-accent-wash text-accent-ink'
-  if (status === 'no_show') return 'bg-ink-3/15 text-ink'
-  if (status === 'makeup') return 'bg-pink-wash text-pink-ink'
-  return 'bg-well text-ink-2'
+  if (overdue) return 'bg-action-wash text-amber-ink'
+  if (status === 'attended') return 'bg-positive-wash text-green-ink'
+  if (status === 'no_show') return 'bg-track text-ink'
+  if (status === 'makeup') return 'bg-pink-felt text-pink-ink'
+  if (status === 'scheduled') return 'text-ink-2 shadow-[inset_0_0_0_1.5px_var(--line-strong)]'
+  return 'bg-track text-ink-2'
 }
 
 /**
@@ -48,9 +50,9 @@ export function StatusMenu({
           aria-label={`${label}: ${shown}`}
           isDisabled={isDisabled}
           className={cx(
-            'relative inline-flex h-7 shrink-0 items-center gap-1 rounded-full pr-2 pl-2.5 text-[0.75rem] font-medium whitespace-nowrap outline-none',
+            'relative inline-flex h-7 shrink-0 items-center gap-1 rounded-full pr-2 pl-2.5 text-[0.8125rem] font-medium whitespace-nowrap outline-none',
             'pointer-coarse:after:absolute pointer-coarse:after:-inset-x-1 pointer-coarse:after:-inset-y-1.5',
-            'transition-[background-color,color,opacity] duration-150 data-focus-visible:ring-2 data-focus-visible:ring-focus data-disabled:opacity-60 max-lg:h-8',
+            'transition-[background-color,color,opacity,box-shadow] duration-150 data-focus-visible:ring-2 data-focus-visible:ring-focus data-disabled:opacity-60 max-lg:h-8',
             statusTone(status, overdue)
           )}
         >

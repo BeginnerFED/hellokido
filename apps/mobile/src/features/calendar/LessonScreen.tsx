@@ -3,7 +3,7 @@ import { Alert, StyleSheet, View } from 'react-native'
 import { router, Stack } from 'expo-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as Haptics from 'expo-haptics'
-import { addMinutes, startOfDay } from 'date-fns'
+import { addMinutes, differenceInMinutes, startOfDay } from 'date-fns'
 import {
   deleteLesson,
   loadLesson,
@@ -17,24 +17,27 @@ import {
   type LessonType
 } from '@hellokido/core/api'
 import { holdsSeat, isRecordedAttendance } from '@hellokido/core/rules/attendance.js'
-import { isPaymentDue, LESSON_MINUTES } from '@hellokido/core/view'
+import { isPaymentDue, LESSON_MINUTES, remainingText } from '@hellokido/core/view'
 import { keys, useLabels, useRefresh, useUsageOf } from '../../data/queries'
 import { useClock } from '../../lib/clock'
-import { headerMenu, tasks } from '../../lib/navigation'
+import { headerButton, tasks } from '../../lib/navigation'
 import { useI18n } from '../../providers/I18n'
-import { useColors } from '../../theme/colors'
-import { useActionMenu } from '../../ui/ActionMenu'
+import { typeTone, useColors } from '../../theme/colors'
 import { AttendancePicker } from '../../ui/AttendancePicker'
-import { EmptyState, LoadError, Mark, Notice, Skeleton } from '../../ui/Bits'
+import { EmptyState, LiveMark, LoadError, Mark, Skeleton } from '../../ui/Bits'
 import { Button, IconButton } from '../../ui/Button'
-import { Card, Screen, Section } from '../../ui/Screen'
-import { AgeTablet, LessonShape, Peg } from '../../ui/signature'
+import { ActionRow, Card, GroupFooter, Screen, Section } from '../../ui/Screen'
+import { LessonShape, Peg, PEG, ProgressTrack } from '../../ui/signature'
 import { DOT, Text } from '../../ui/Text'
 import { useToast } from '../../ui/Toast'
-import { UsageLine, useLessonTitle } from '../../ui/UsageLine'
+import { useLessonTitle } from '../../ui/UsageLine'
 import { ChildName } from '../today/sections'
+import { dayTitle, GroupNote } from './parts'
 
 type Seat = LessonDetail['seats'][number]
+
+// How far the page scrolls before its bar takes the lesson's name: past the head card's first lines
+const TITLE_AFTER = 110
 
 /** One lesson: who is in it with their attendance, children to add or take out, and the lesson's own changes. */
 export function LessonScreen({ id }: { id: string }) {
@@ -49,15 +52,17 @@ export function LessonScreen({ id }: { id: string }) {
       <Screen>
         <Stack.Screen options={{ title: '' }} />
         {detail.error instanceof LessonError ? (
-          <EmptyState
-            icon="calendar"
-            title={t.calendar.lesson.notFound}
-            action={
-              <Button size="sm" onPress={() => router.back()}>
-                {t.common.back}
-              </Button>
-            }
-          />
+          <Card padded>
+            <EmptyState
+              icon="calendar"
+              title={t.calendar.lesson.notFound}
+              action={
+                <Button size="sm" onPress={() => router.back()}>
+                  {t.common.back}
+                </Button>
+              }
+            />
+          </Card>
         ) : (
           <LoadError message={t.calendar.lesson.loadFailed} retryLabel={t.common.retry} onRetry={() => void detail.refetch()} />
         )}
@@ -69,9 +74,9 @@ export function LessonScreen({ id }: { id: string }) {
       <Screen>
         <Stack.Screen options={{ title: '' }} />
         <View style={styles.waiting}>
-          <Skeleton height={28} width="55%" />
-          <Skeleton height={16} width="70%" />
-          <Skeleton height={220} radius={18} />
+          <Skeleton height={168} radius={26} />
+          <Skeleton height={20} width="40%" style={styles.waitingHead} />
+          <Skeleton height={240} radius={26} />
         </View>
       </Screen>
     )
@@ -81,30 +86,35 @@ export function LessonScreen({ id }: { id: string }) {
 
 function LessonPage({ detail, onRefresh, onGone }: { detail: LessonDetail; onRefresh: () => Promise<unknown>; onGone: () => void }) {
   const c = useColors()
-  const { t, fmt, plural, date } = useI18n()
+  const i18n = useI18n()
+  const { t, fmt, plural, date } = i18n
   const labels = useLabels()
   const title = useLessonTitle()
   const toast = useToast()
   const refresh = useRefresh()
   const client = useQueryClient()
-  const menu = useActionMenu()
   const { now } = useClock()
   const [saving, setSaving] = useState<Set<string>>(() => new Set())
   // Answers on their way, read at once: a second tap before the next render never sends twice
   const inFlight = useRef(new Set<string>())
   const [removing, setRemoving] = useState<string | null>(null)
+  // The bar takes the lesson's name once its card has scrolled away, as the phone's own detail pages
+  const [named, setNamed] = useState(false)
 
   const lesson = detail.lesson
   const key = keys.lesson(lesson.id)
+  const tone = typeTone(c, lesson.event_type)
   const start = new Date(lesson.event_date)
   const end = addMinutes(start, LESSON_MINUTES)
   const dayPassed = start < startOfDay(now)
   const running = now >= start && now < end
+  const ended = now >= end
   const seats = useMemo(() => [...detail.seats].sort((a, b) => a.child.student_name.localeCompare(b.child.student_name, 'tr')), [detail.seats])
   const usage = useUsageOf(useMemo(() => seats.map((seat) => seat.child), [seats]))
   const holders = seats.filter((seat) => holdsSeat(seat.status)).length
   const unmarked = dayPassed ? seats.filter((seat) => seat.status === 'scheduled').length : 0
   const recorded = seats.filter((seat) => isRecordedAttendance(seat.status)).length
+  const passed = Math.max(0, differenceInMinutes(now, start))
 
   const patch = (seatId: string, status: AttendanceStatus) =>
     client.setQueryData<LessonDetail>(key, (current) => current && { ...current, seats: current.seats.map((seat) => (seat.id === seatId ? { ...seat, status } : seat)) })
@@ -205,105 +215,133 @@ function LessonPage({ detail, onRefresh, onGone }: { detail: LessonDetail; onRef
       ]
     )
 
-  const actions = [
-    { label: t.mobile.editLesson, icon: 'edit' as const, onPress: () => tasks.lesson({ id: lesson.id }) },
-    { label: t.mobile.copyLesson, icon: 'copy' as const, onPress: () => tasks.lesson({ id: lesson.id, copy: true }) },
-    { label: t.calendar.lesson.delete, icon: 'delete' as const, destructive: true, onPress: askDelete }
-  ]
   const time = `${date(start, { hour: '2-digit', minute: '2-digit' })}–${date(end, { hour: '2-digit', minute: '2-digit' })}`
+  const meta = [labels.ageGroup(lesson.age_group), fmt(t.today.lessonsCard.seatsShort, { count: holders, capacity: SEATS_SHOWN })].filter(Boolean).join(', ')
 
   return (
     <>
-      <Stack.Screen
-        options={{
-          title: title(lesson),
-          ...headerMenu(c, t.mobile.lessonActions, actions, (items) => menu.open(t.mobile.lessonActions, items), 'more')
+      <Stack.Screen options={{ title: named ? title(lesson) : '', ...headerButton(c, t.mobile.editLesson, 'edit', () => tasks.lesson({ id: lesson.id })) }} />
+      <Screen
+        onRefresh={onRefresh}
+        gap={0}
+        onScroll={(event) => {
+          const past = event.nativeEvent.contentOffset.y > TITLE_AFTER
+          if (past !== named) setNamed(past)
         }}
-      />
-      {menu.element}
-      <Screen onRefresh={onRefresh} gap={24}>
-        <View style={styles.head}>
-          <View style={styles.line}>
-            <LessonShape type={lesson.event_type} size={13} />
-            <Text variant="callout" tone="ink2" tabular style={styles.flex}>
-              {date(start, { weekday: 'long', day: 'numeric', month: 'long' })}{DOT}{time}
+      >
+        {/* The lesson in its type's felt, as on Today: the day, the hours, what and for whom */}
+        <View style={[styles.hero, { backgroundColor: tone.felt }]}>
+          <Text variant="sub" weight="500" numberOfLines={1} style={[styles.heroDay, { color: tone.ink }]}>
+            {dayTitle(i18n, start, now)}
+          </Text>
+          <View style={styles.heroTop}>
+            <Text variant="hero" tabular numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75} accessibilityRole="header" style={[styles.shrink, { color: tone.ink }]}>
+              {time}
+            </Text>
+            {(running || ended) && (
+              <LiveMark live={running} type={lesson.event_type}>
+                {running ? t.today.now : t.today.board.done}
+              </LiveMark>
+            )}
+          </View>
+          <View style={styles.heroType}>
+            <LessonShape type={lesson.event_type} />
+            <Text variant="headline" numberOfLines={2} style={[styles.typeName, { color: tone.ink }]}>
+              {title(lesson)}
             </Text>
           </View>
-          <View style={styles.marks}>
-            <AgeTablet group={lesson.age_group} label={labels.ageGroup(lesson.age_group)} variant="sub" />
-            {running && <Mark tone="accent">{t.calendar.now}</Mark>}
-          </View>
+          <Text tabular numberOfLines={2} style={[styles.typeMeta, { color: holders > SEATS_SHOWN ? c.negativeInk : tone.ink }]}>
+            {meta}
+          </Text>
+          {running && (
+            <View style={styles.progress}>
+              <ProgressTrack share={passed / LESSON_MINUTES} type={lesson.event_type} />
+              <View style={styles.progressWords}>
+                <Text tabular style={[styles.progressText, { color: tone.ink }]}>
+                  {fmt(t.today.board.elapsed, { count: passed })}
+                </Text>
+                <Text tabular style={[styles.progressText, { color: tone.ink }]}>
+                  {fmt(t.today.board.left, { count: Math.max(0, LESSON_MINUTES - passed) })}
+                </Text>
+              </View>
+            </View>
+          )}
         </View>
 
-        <Section
-          title={t.calendar.lesson.children}
-          aside={
-            seats.length > 0 ? (
-              // A child past the planned six turns the count red, as on the seat board
-              <Text variant="sub" weight={holders > SEATS_SHOWN ? '600' : undefined} tone={holders > SEATS_SHOWN ? 'negativeInk' : 'ink3'} tabular>
-                {holders}/{SEATS_SHOWN}
-              </Text>
-            ) : undefined
-          }
-        >
-          <View style={styles.stack}>
-            {unmarked > 0 && <Notice tone="action">{plural(t.calendar.unmarked, unmarked)}</Notice>}
-            {holders > SEATS_SHOWN && <Notice tone="action">{fmt(t.calendar.lesson.seats, { count: holders })}</Notice>}
-            {seats.length === 0 ? (
-              <Text variant="sub" tone="ink2" style={styles.quiet}>
-                {t.calendar.lesson.noChildren}
-              </Text>
-            ) : (
-              <Card inset={60}>
-                {seats.map((seat) => {
-                  const child = seat.child
-                  const overdue = dayPassed && seat.status === 'scheduled'
-                  const busy = removing === seat.registration_id
-                  return (
-                    <View key={seat.id} style={[styles.seat, busy && styles.busy]}>
-                      <View style={styles.seatHead}>
-                        <Peg seat={{ id: seat.id, name: child.student_name, status: seat.status, overdue }} />
-                        <View style={styles.flex}>
-                          <ChildName id={child.id} name={child.student_name}>
-                            {child.is_active !== true && <Mark tone="neutral">{t.today.archived}</Mark>}
-                            {isPaymentDue(child) && <Mark tone="action">{t.children.pendingPayment}</Mark>}
-                          </ChildName>
-                          <View style={styles.usage}>
-                            {child.student_age ? (
-                              <Text variant="foot" tone="ink3" numberOfLines={1}>
-                                {child.student_age}
-                              </Text>
-                            ) : null}
-                            <UsageLine usage={usage?.[child.id]} />
-                          </View>
-                        </View>
-                        <IconButton
-                          icon="close"
-                          label={fmt(t.calendar.lesson.remove, { name: child.student_name })}
-                          variant="plain"
-                          size={32}
-                          color={c.ink3}
-                          disabled={busy}
-                          onPress={() => askTakeOut(seat)}
-                          style={styles.takeOut}
-                        />
-                      </View>
-                      <AttendancePicker
-                        status={seat.status}
-                        onChange={(status) => void mark(seat, status)}
-                        disabled={saving.has(seat.id) || busy}
-                        label={fmt(t.children.detail.lessonStatus, { name: child.student_name })}
-                      />
-                    </View>
-                  )
-                })}
-              </Card>
-            )}
-            <Button icon="personAdd" onPress={() => tasks.lessonChildren(lesson.id)} style={styles.add}>
-              {t.calendar.lesson.addChildren}
-            </Button>
+        {(unmarked > 0 || holders > SEATS_SHOWN) && (
+          <View style={styles.notes}>
+            {unmarked > 0 && <GroupNote tone="actionInk">{plural(t.calendar.unmarked, unmarked)}</GroupNote>}
+            {holders > SEATS_SHOWN && <GroupNote tone="actionInk">{fmt(t.calendar.lesson.seats, { count: holders })}</GroupNote>}
           </View>
+        )}
+
+        <Section title={t.calendar.lesson.children} aside={seats.length > 0 ? `${holders}/${SEATS_SHOWN}` : undefined} style={styles.section}>
+          <Card>
+            {seats.map((seat) => {
+              const child = seat.child
+              const overdue = dayPassed && seat.status === 'scheduled'
+              const busy = removing === seat.registration_id
+              const left = usage?.[child.id]
+              const low = Boolean(left && !left.isFree && (left.remaining ?? 0) <= 2)
+              return (
+                <View key={seat.id} style={[styles.seat, busy && styles.busy]}>
+                  <View style={styles.seatHead}>
+                    <Peg seat={{ id: seat.id, name: child.student_name, status: seat.status, overdue }} />
+                    <View style={styles.flex}>
+                      <ChildName id={child.id} name={child.student_name}>
+                        {child.is_active !== true ? (
+                          <Mark tone="neutral">{t.today.archived}</Mark>
+                        ) : isPaymentDue(child) ? (
+                          <Mark tone="action">{t.children.pendingPayment}</Mark>
+                        ) : null}
+                      </ChildName>
+                      {/* Age, then the lessons left; amber when two or fewer are left, as on Today */}
+                      {Boolean(child.student_age || left) && (
+                        <Text variant="sub" tone="ink3" numberOfLines={2}>
+                          {child.student_age ?? ''}
+                          {child.student_age && left ? DOT : ''}
+                          {left ? (
+                            <Text variant="sub" weight={low ? '500' : '400'} tone={low ? 'amberInk' : 'ink3'}>
+                              {remainingText(i18n, left)}
+                            </Text>
+                          ) : null}
+                        </Text>
+                      )}
+                    </View>
+                    <IconButton
+                      icon="close"
+                      label={fmt(t.calendar.lesson.remove, { name: child.student_name })}
+                      variant="plain"
+                      size={30}
+                      color={c.ink3}
+                      disabled={busy}
+                      onPress={() => askTakeOut(seat)}
+                      style={styles.takeOut}
+                    />
+                  </View>
+                  <AttendancePicker
+                    status={seat.status}
+                    onChange={(status) => void mark(seat, status)}
+                    disabled={saving.has(seat.id) || busy}
+                    label={fmt(t.children.detail.lessonStatus, { name: child.student_name })}
+                  />
+                </View>
+              )
+            })}
+            <ActionRow icon="personAdd" label={t.calendar.lesson.addChildren} lead={seats.length > 0 ? PEG : undefined} onPress={() => tasks.lessonChildren(lesson.id)} />
+          </Card>
+          {seats.length === 0 && <GroupFooter>{t.calendar.lesson.noChildren}</GroupFooter>}
         </Section>
+
+        <View style={styles.tail}>
+          <Card>
+            <ActionRow icon="copy" label={t.mobile.copyLesson} onPress={() => tasks.lesson({ id: lesson.id, copy: true })} />
+          </Card>
+          {/* Last and on its own, as the phone's own "Delete Event" */}
+          <Card>
+            <ActionRow icon="delete" label={t.calendar.lesson.delete} destructive onPress={askDelete} />
+          </Card>
+        </View>
       </Screen>
     </>
   )
@@ -311,17 +349,24 @@ function LessonPage({ detail, onRefresh, onGone }: { detail: LessonDetail; onRef
 
 const styles = StyleSheet.create({
   flex: { flex: 1, minWidth: 0 },
-  waiting: { gap: 12, paddingTop: 8 },
-  head: { gap: 8, paddingHorizontal: 4 },
-  line: { flexDirection: 'row', alignItems: 'center', gap: 9 },
-  marks: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 10 },
-  stack: { gap: 12 },
-  quiet: { paddingHorizontal: 4 },
+  shrink: { flexShrink: 1 },
+  waiting: { gap: 0 },
+  waitingHead: { marginTop: 26, marginBottom: 12, marginLeft: 4 },
+  hero: { borderRadius: 26, padding: 18, paddingBottom: 18 },
+  heroDay: { opacity: 0.85, marginBottom: 2 },
+  heroTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  heroType: { flexDirection: 'row', alignItems: 'center', gap: 8, minWidth: 0, marginTop: 6 },
+  typeName: { flexShrink: 1 },
+  typeMeta: { fontSize: 15, lineHeight: 20, opacity: 0.85, marginTop: 2 },
+  progress: { marginTop: 16, gap: 6 },
+  progressWords: { flexDirection: 'row', justifyContent: 'space-between', gap: 10 },
+  progressText: { fontSize: 13, lineHeight: 17, opacity: 0.9 },
+  notes: { gap: 6, marginTop: 14 },
+  section: { marginTop: 24 },
   // The attendance track keeps the same 16 points on both sides; the round close button leans out instead
   seat: { paddingHorizontal: 16, paddingVertical: 12, gap: 10 },
   seatHead: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  usage: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 10, rowGap: 3, marginTop: 3 },
-  takeOut: { marginRight: -8 },
+  takeOut: { marginRight: -6 },
   busy: { opacity: 0.5 },
-  add: { alignSelf: 'flex-start' }
+  tail: { marginTop: 22, gap: 12 }
 })

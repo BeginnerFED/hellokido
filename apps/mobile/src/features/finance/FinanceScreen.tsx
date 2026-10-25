@@ -10,59 +10,64 @@ import {
   type LayoutChangeEvent,
   type ScrollViewInstance
 } from 'react-native'
-import { Stack } from 'expo-router'
 import * as Haptics from 'expo-haptics'
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import { expensesBetween, incomeBetween, type Expense, type IncomeLine } from '@hellokido/core/api'
-import { boundsOf, cycleOf, isMonthLong, samePeriod, stepPeriod, totalsOf, type Period, type Totals } from '@hellokido/core/view'
+import { formatMoney } from '@hellokido/core/rules/money.js'
+import { upperFirst } from '@hellokido/core/rules/text.js'
+import { arrivalOf, boundsOf, cycleOf, isCycle, isOpen, leftByPlace, PARTNERS, samePeriod, stepPeriod, totalsOf, type Period, type Totals } from '@hellokido/core/view'
 import { keys, useCatalog, useLabels } from '../../data/queries'
 import { useClock } from '../../lib/clock'
-import { headerMenu, tasks } from '../../lib/navigation'
+import { tasks } from '../../lib/navigation'
 import { useI18n } from '../../providers/I18n'
 import { useColors } from '../../theme/colors'
 import { useActionMenu } from '../../ui/ActionMenu'
-import { LoadError, Skeleton } from '../../ui/Bits'
+import { LoadError, Skeleton, StatTile } from '../../ui/Bits'
 import { IconButton } from '../../ui/Button'
 import { Icon } from '../../ui/Icon'
-import { Card, Screen } from '../../ui/Screen'
-import { DOT, dots, Text } from '../../ui/Text'
+import { Card, RoundButton, Screen } from '../../ui/Screen'
+import { DotLine, dots, Text } from '../../ui/Text'
 import { METHODS } from '../payment/fields'
-import { methodName, sumOf, together } from './bits'
+import { MINUS, methodName, sumOf, together } from './bits'
 import { MovesSection, NO_FILTER, type MoveFilter } from './Moves'
 import { choosePeriod, matchPreset, periodName, presetName, presetPeriod, useChosenPeriod } from './period'
 import { PeriodsChart, useMoneySeries } from './PeriodsChart'
+import { usePeriodRule } from './rule'
 import { CategoriesSection, ExpectedSection, MonthlySection, OnTheWaySection, useCardsOnTheWay } from './sections'
 
 /**
- * A money period (the one that holds today unless another is chosen): what came in and went out
- * against the period before, the period's fixed expenses, the list behind the figures, what is
- * still to come, and the last six periods side by side.
+ * A money period (the one since the last salaries unless another is chosen) as a felt board: what
+ * there is to share and where that money is (bank, on its way to the bank, cash), money in and out
+ * as two tiles, then the period's fixed expenses, the list behind the figures, what is still to
+ * come, and the last six periods side by side.
  */
 export function FinanceScreen() {
   const c = useColors()
   const i18n = useI18n()
-  const { t, fmt } = i18n
+  const { t, fmt, date } = i18n
   const client = useQueryClient()
   const menu = useActionMenu()
   const { dayKey } = useClock()
   const today = useMemo(() => new Date(`${dayKey}T00:00:00`), [dayKey])
-  const catalog = useCatalog()
-  // Nothing is read until the start day is known, so the screen never shows the calendar month first
-  const startDay = catalog.data?.settings.moneyPeriodStartDay ?? (catalog.isError ? 1 : undefined)
-  const current = useMemo(() => cycleOf(today, startDay ?? 1), [today, startDay])
+  // Nothing is read until the periods are known, so the screen never shows a wrong period first
+  const { rule, payouts } = usePeriodRule(today)
+  const current = useMemo(() => cycleOf(today, rule ?? 1), [today, rule])
   const period = useChosenPeriod() ?? current
   const bounds = useMemo(() => boundsOf(period), [period])
   const from = bounds.from.toISOString()
   const to = bounds.to.toISOString()
-  const ready = startDay !== undefined
+  const ready = rule !== undefined
+  const cycle = rule !== undefined && isCycle(period, rule)
   const [filter, setFilter] = useState<MoveFilter>(NO_FILTER)
   const scroll = useRef<ScrollViewInstance>(null)
   const offsets = useRef<Record<string, number>>({})
 
   const income = useQuery({ queryKey: keys.finance('income', from, to), queryFn: () => incomeBetween(bounds.from, bounds.to), enabled: ready, placeholderData: keepPreviousData })
   const expenses = useQuery({ queryKey: keys.finance('expenses', from, to), queryFn: () => expensesBetween(bounds.from, bounds.to), enabled: ready, placeholderData: keepPreviousData })
-  const series = useMoneySeries(today, startDay)
+  const series = useMoneySeries(today, rule)
   const cards = useCardsOnTheWay(today)
+  // How long card money takes to reach the bank lives in Settings; until it is read the split waits
+  const catalog = useCatalog()
   // The period before stays on screen, dimmed, until the new one is read
   const waiting = income.isPlaceholderData || expenses.isPlaceholderData
   const failed = income.isError || expenses.isError
@@ -70,7 +75,10 @@ export function FinanceScreen() {
     void income.refetch()
     void expenses.refetch()
   }
-  const before = useMemo(() => totalsOf(series.data, series.first, stepPeriod(period, -1)), [series.data, series.first, period])
+  const before = useMemo(
+    () => totalsOf(series.data, series.first, stepPeriod(period, -1, rule), cycle ? payouts : undefined),
+    [series.data, series.first, period, rule, cycle, payouts]
+  )
 
   // The current period is never pinned, so a phone left open into the next one moves along with it
   const go = (next: Period) => {
@@ -80,7 +88,7 @@ export function FinanceScreen() {
   }
   const step = (direction: 1 | -1) => {
     void Haptics.selectionAsync()
-    go(stepPeriod(period, direction))
+    go(stepPeriod(period, direction, rule))
   }
 
   const remember = (id: string) => (event: LayoutChangeEvent) => {
@@ -102,7 +110,7 @@ export function FinanceScreen() {
     void jump(what === 'bank' ? 'cards' : 'moves')
   }
 
-  // The period start day and the card days live in Settings, so a pull reads them again too
+  // The card days live in Settings, so a pull reads them again too
   const refresh = () =>
     Promise.all([
       client.invalidateQueries({ queryKey: ['finance'] }),
@@ -117,66 +125,91 @@ export function FinanceScreen() {
     { label: t.finance.monthly.add, icon: 'calendar' as const, onPress: () => tasks.recurring() }
   ]
 
-  const preset = matchPreset(period, today, startDay ?? 1)
-  const otherPeriods = () =>
+  const otherPeriods = () => {
+    if (!rule) return
+    const preset = matchPreset(period, today, rule)
     menu.open(undefined, [
-      ...(preset === 'thisPeriod' ? [] : [{ label: presetName(t, 'thisPeriod', startDay ?? 1), onPress: () => go(current) }]),
+      ...(preset === 'thisPeriod' ? [] : [{ label: presetName(t, 'thisPeriod', rule), onPress: () => go(current) }]),
       ...(['lastPeriod', 'last14', 'today'] as const)
         .filter((id) => id !== preset)
-        .map((id) => ({ label: presetName(t, id, startDay ?? 1), onPress: () => go(presetPeriod(id, today, startDay ?? 1)) })),
-      { label: t.finance.period.custom, onPress: tasks.financePeriod },
-      { label: t.finance.period.changeStart, onPress: tasks.moneyPeriod }
+        .map((id) => ({ label: presetName(t, id, rule), onPress: () => go(presetPeriod(id, today, rule)) })),
+      { label: t.finance.period.custom, onPress: tasks.financePeriod }
     ])
+  }
 
   const shownIncome = failed || !ready ? undefined : income.data
+  const settle = catalog.isPending ? null : cards.days
+  // The part of the card money on its way that this period's split counts; the list further down holds all of it
+  const wayOfPeriod =
+    settle === null || !shownIncome
+      ? null
+      : sumOf(shownIncome.filter((line) => line.method === 'kart' && line.paymentDate && arrivalOf(line.paymentDate, settle) >= today))
   const shownExpenses = failed || !ready ? undefined : expenses.data
   const isCurrent = samePeriod(period, current)
+  const lastPayday = rule?.paydays.at(-1)
 
   return (
     <>
-      <Stack.Screen options={headerMenu(c, t.common.add, add, (items) => menu.open(undefined, items))} />
       {menu.element}
-      <Screen scrollRef={scroll} onRefresh={refresh}>
-        {/* The period and its figures read as one block; the sections below keep the usual 30px apart */}
+      <Screen
+        scrollRef={scroll}
+        onRefresh={refresh}
+        title={t.shell.nav.finance}
+        actions={<RoundButton icon="add" label={t.common.add} onPress={() => menu.open(undefined, add)} />}
+      >
+        {/* The period and its figures read as one block; the sections below keep the usual room apart */}
         <View style={styles.head}>
           <View style={styles.bar}>
-            <IconButton icon="chevronLeft" label={t.finance.period.previous} size={38} onPress={() => step(-1)} />
-            <View style={styles.middle}>
-              <Pressable
-                onPress={otherPeriods}
-                accessibilityRole="button"
-                accessibilityLabel={`${periodName(i18n, period)}. ${t.finance.period.otherPeriod}`}
-                accessibilityLiveRegion="polite"
-                hitSlop={8}
-                style={({ pressed }) => [styles.pick, pressed && styles.pressed]}
-              >
-                {/* A long custom range ("10 Eki 2025 – 9 Kas 2026") shrinks a little before it is cut */}
-                <Text variant="headline" tabular numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={styles.shrink}>
-                  {periodName(i18n, period)}
-                </Text>
-                <Icon name="chevronDown" size={12} color={c.ink3} weight="semibold" />
-              </Pressable>
-              {isCurrent ? (
-                <Text variant="foot" tone="ink3" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85}>
-                  {startDay === undefined || startDay === 1 ? presetName(t, 'thisPeriod', 1) : fmt(t.finance.period.startsOn, { day: startDay })}
-                </Text>
-              ) : (
+            <IconButton icon="chevronLeft" label={t.finance.period.previous} variant="felt" size={40} disabled={!ready} onPress={() => step(-1)} />
+            {ready ? (
+              <View style={styles.middle}>
                 <Pressable
-                  onPress={() => {
-                    void Haptics.selectionAsync()
-                    go(current)
-                  }}
+                  onPress={otherPeriods}
                   accessibilityRole="button"
-                  hitSlop={{ top: 8, bottom: 12, left: 16, right: 16 }}
-                  style={({ pressed }) => pressed && styles.pressed}
+                  accessibilityLabel={`${periodName(i18n, period)}. ${t.finance.period.otherPeriod}`}
+                  accessibilityLiveRegion="polite"
+                  hitSlop={8}
+                  style={({ pressed }) => [styles.pick, pressed && styles.pressed]}
                 >
-                  <Text variant="foot" weight="600" tone="accentInk" numberOfLines={1}>
-                    {t.finance.period.backToCurrent}
+                  {/* A long custom range ("10 Eki 2025 – 9 Kas 2026") shrinks a little before it is cut */}
+                  <Text variant="headline" tabular numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={[styles.periodName, styles.shrink]}>
+                    {periodName(i18n, period)}
                   </Text>
+                  <Icon name="chevronDown" size={14} color={c.ink2} weight="semibold" />
                 </Pressable>
-              )}
-            </View>
-            <IconButton icon="chevronRight" label={t.finance.period.next} size={38} onPress={() => step(1)} />
+                {isCurrent ? (
+                  <Text variant="sub" tone="ink3" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85}>
+                    {lastPayday
+                      ? fmt(t.finance.period.lastPaid, { date: date(lastPayday, { day: 'numeric', month: 'long' }) })
+                      : rule.startDay !== 1
+                        ? fmt(t.finance.period.startsOn, { day: rule.startDay })
+                        : t.finance.period.thisMonth}
+                  </Text>
+                ) : (
+                  <Pressable
+                    onPress={() => {
+                      void Haptics.selectionAsync()
+                      go(current)
+                    }}
+                    accessibilityRole="button"
+                    hitSlop={{ top: 8, bottom: 12, left: 16, right: 16 }}
+                    style={({ pressed }) => pressed && styles.pressed}
+                  >
+                    <Text variant="sub" weight="600" tone="accentInk" numberOfLines={1}>
+                      {t.finance.period.backToCurrent}
+                    </Text>
+                  </Pressable>
+                )}
+              </View>
+            ) : (
+              // Periods follow the salary pay-outs: until those are read no period is named, so a
+              // wrong month never shows first and then jumps
+              <View accessible accessibilityLabel={t.common.loading} style={styles.middle}>
+                <Line line={24} height={16} width={150} />
+                <Line line={18} height={11} width={104} />
+              </View>
+            )}
+            <IconButton icon="chevronRight" label={t.finance.period.next} variant="felt" size={40} disabled={!ready} onPress={() => step(1)} />
           </View>
 
           <Overview
@@ -186,12 +219,14 @@ export function FinanceScreen() {
             waiting={waiting}
             onRetry={retry}
             before={waiting ? null : before}
-            onTheWay={cards.cards.isError ? undefined : cards.groups ? { amount: cards.total, count: cards.count } : null}
+            today={today}
+            settle={settle}
+            share={rule && cycle ? { open: isOpen(period, rule), payouts } : null}
             onShow={show}
           />
         </View>
 
-        {!failed && ready && isMonthLong(period) && <MonthlySection period={period} today={today} expenses={shownExpenses} waiting={waiting} />}
+        {!failed && cycle && <MonthlySection period={period} today={today} expenses={shownExpenses} waiting={waiting} />}
         {/* A failed read is told once, in the overview with its retry; the list waits for it */}
         {!failed && (
           <MovesSection
@@ -207,9 +242,9 @@ export function FinanceScreen() {
           />
         )}
         <ExpectedSection todayKey={dayKey} />
-        <OnTheWaySection today={today} onLayout={remember('cards')} />
+        <OnTheWaySection today={today} ofPeriod={wayOfPeriod} onLayout={remember('cards')} />
         {!failed && <CategoriesSection expenses={shownExpenses} waiting={waiting} onPick={pickCategory} />}
-        {startDay !== undefined && <PeriodsChart today={today} startDay={startDay} period={period} series={series} onPick={go} />}
+        {rule && <PeriodsChart today={today} rule={rule} payouts={payouts} period={period} series={series} onPick={go} />}
       </Screen>
     </>
   )
@@ -223,43 +258,51 @@ type OverviewProps = {
   onRetry: () => void
   /** The period just before, of the same length; null when it is not known. */
   before: Totals | null
+  /** Today's midnight: card money due at the bank from today on is still on its way. */
+  today: Date
+  /** The days card money takes to reach the bank (Settings); null while Settings are read. */
+  settle: number | null
   /**
-   * Card money the bank has not credited yet, whatever the period (listed further down): null while
-   * it loads, undefined when it could not be read (the list further down says so, with a retry).
+   * A whole money period: whether its money is still to be shared (open) and the salary rows of the
+   * pay-outs, kept apart from the other expenses. Null for any other range.
    */
-  onTheWay: { amount: number; count: number } | null | undefined
+  share: { open: boolean; payouts: Set<string> | undefined } | null
   onShow: (what: 'in' | 'out' | 'bank') => void
 }
 
-// Figures (and ₺) are about 0.6em wide in the system font; dots, commas and spaces about half that
+// A share is below zero when more went out of the bank (or the till) than came into it
+const signed = (money: (value: number) => string, value: number) => `${value < 0 ? MINUS : ''}${money(Math.abs(value))}`
+
+// Figures and ₺ are about 0.6em wide in Geologica; dots, commas and spaces about half that
 const ems = (text: string) => [...text].reduce((sum, char) => sum + (/[\d₺+−]/.test(char) ? 0.6 : 0.3), 0)
 
 /**
- * One size for both halves: the largest at which the longer amount fits half of the card on this
- * phone, so "188.714,45 ₺" beside "9.850 ₺" never sets the two in different sizes.
+ * One size for both tiles: the largest at which the longer amount fits a tile on this phone, so
+ * "188.714,45 ₺" beside "9.850 ₺" never sets the two in different sizes.
  */
-function halfSize(screenWidth: number, amounts: string[]) {
-  // The screen's padding, the card's edges and middle rule, the half's own padding
-  const room = (screenWidth - 32 - 2 - 1) / 2 - 32
+function tileSize(screenWidth: number, amounts: string[]) {
+  // The screen's gutters and the gap between the tiles, then a tile's own padding
+  const room = (screenWidth - 32 - 10) / 2 - 32
   const widest = Math.max(...amounts.map(ems))
-  return [21, 19, 17].find((size) => widest * size <= room) ?? 15
+  return [24, 22, 20, 18].find((size) => widest * size <= room) ?? 16
 }
 
 /** A resting line as tall as the text it stands for, so the card keeps its height when the figures come. */
 function Line({ line, height, width }: { line: number; height: number; width: DimensionValue }) {
   return (
     <View style={[styles.line, { height: line }]}>
-      <Skeleton height={height} width={width} />
+      <Skeleton height={height} width={width} radius={height / 2} />
     </View>
   )
 }
 
 /**
- * What is left of the period first, then money in and money out side by side, each against the
- * period before, then the card money that is not in the bank yet and how the money came in, so
- * the figures can be matched against the till and the bank account.
+ * The period's summary: a felt card with what is left of it (in the period still running, what
+ * the partners will share, with where that money is now and each partner's part; in a closed one,
+ * the salaries paid out of it), then money in and money out as two tiles, each against the period
+ * before. Pressing a tile shows its moves.
  */
-function Overview({ income, expenses, isError, waiting, onRetry, before, onTheWay, onShow }: OverviewProps) {
+function Overview({ income, expenses, isError, waiting, onRetry, before, today, settle, share, onShow }: OverviewProps) {
   const c = useColors()
   const { t, fmt, plural, money } = useI18n()
   const labels = useLabels()
@@ -267,198 +310,248 @@ function Overview({ income, expenses, isError, waiting, onRetry, before, onTheWa
 
   if (isError) return <LoadError message={t.common.loadFailed} retryLabel={t.common.retry} onRetry={onRetry} />
   if (!income || !expenses) {
-    const half = (
-      <View style={styles.cell}>
-        <Line line={20} height={14} width="45%" />
-        <Line line={26} height={20} width="75%" />
-        <Line line={18} height={12} width="40%" />
-        <Line line={18} height={12} width="55%" />
-        <Line line={18} height={12} width="50%" />
+    const tile = (
+      <View style={[styles.tileSkeleton, { backgroundColor: c.felt }]}>
+        <Line line={20} height={12} width="45%" />
+        <Line line={34} height={22} width="75%" />
+        <Line line={18} height={11} width="50%" />
       </View>
     )
     return (
-      <Card>
-        <View style={styles.net}>
-          <Line line={20} height={14} width="22%" />
-          <Line line={38} height={30} width="52%" />
-          <Line line={18} height={12} width="44%" />
-        </View>
-        <View style={styles.pair}>
-          {half}
-          <View style={[styles.divider, { backgroundColor: c.line2 }]} />
-          {half}
-        </View>
-        <View style={styles.bank}>
-          <View style={styles.flex}>
-            <Line line={21} height={15} width="55%" />
-            <Line line={18} height={12} width="40%" />
+      <>
+        <Card padded>
+          <Line line={20} height={13} width="34%" />
+          <Line line={54} height={38} width="62%" />
+          <View style={styles.moneyBar}>
+            <Skeleton height={12} radius={4} />
           </View>
-          <Skeleton height={18} width={80} />
+          <View style={styles.legend}>
+            {[0, 1, 2].map((index) => (
+              <View key={index} style={styles.legendCell}>
+                <Line line={16} height={10} width="70%" />
+                <Line line={21} height={14} width="80%" />
+              </View>
+            ))}
+          </View>
+        </Card>
+        <View style={styles.tiles}>
+          {tile}
+          {tile}
         </View>
-      </Card>
+      </>
     )
   }
 
+  const payouts = share?.payouts
+  const salaries = payouts ? expenses.filter((row) => payouts.has(row.id)) : []
+  const paid = sumOf(salaries)
   const totalIn = sumOf(income)
-  const totalOut = sumOf(expenses)
+  const totalOut = sumOf(expenses) - paid
   const net = totalIn - totalOut
+  const leftover = net - paid
+  const open = share?.open === true
   const beforeNet = before ? before.in - before.out : 0
   const byMethod = METHODS.map((method) => ({ method, amount: sumOf(income.filter((line) => line.method === method)) })).filter((row) => row.amount > 0)
-  const netLabel = net < 0 ? t.finance.balance.short : t.finance.balance.left
-  const netHint = before
-    ? fmt(beforeNet < 0 ? t.finance.balance.beforeShort : t.finance.balance.before, { amount: together(money(Math.abs(beforeNet))) })
-    : t.finance.balance.leftHint
+  // What each partner gets from the bank and from the till
+  const place = leftByPlace(income, expenses, payouts)
+  const each = [
+    `${t.finance.methodShort.banka} ${signed(money, place.bank / PARTNERS)}`,
+    `${t.finance.methodShort.nakit} ${signed(money, place.cash / PARTNERS)}`
+  ]
+  const headAmount = paid > 0 ? paid : Math.abs(net)
+  const netLabel = paid > 0 ? t.finance.balance.paid : net < 0 ? t.finance.balance.short : open ? t.finance.balance.toShare : t.finance.balance.left
+  const sharing = open && net > 0
+  // Under the figure, unless the per-partner line at the foot of the card says it already
+  const netHint =
+    paid > 0
+      ? Math.abs(leftover) < 1
+        ? upperFirst(t.finance.balance.paidAll)
+        : upperFirst(fmt(leftover > 0 ? t.finance.balance.paidLeft : t.finance.balance.paidOver, { amount: together(money(Math.abs(leftover))) }))
+      : sharing
+        ? null
+        : before
+          ? upperFirst(fmt(beforeNet < 0 ? t.finance.balance.beforeShort : t.finance.balance.before, { amount: together(money(Math.abs(beforeNet))) }))
+          : t.finance.balance.leftHint
+  const empty = totalIn === 0 && totalOut === 0 && paid === 0
+  const negative = paid === 0 && net < 0
+
+  // Where the money to share is now: card money of this period the bank has not credited yet is on
+  // its way; the rest of the bank part is in the bank. The three parts add up to the figure above.
+  const onTheWay =
+    settle === null ? null : sumOf(income.filter((line) => line.method === 'kart' && line.paymentDate && arrivalOf(line.paymentDate, settle) >= today))
+  const parts =
+    onTheWay === null
+      ? null
+      : [
+          { id: 'bank', label: t.finance.balance.inBank, amount: place.bank - onTheWay, color: c.sky },
+          { id: 'way', label: t.finance.balance.bank, amount: onTheWay, color: c.skyTrack },
+          { id: 'cash', label: t.finance.methodShort.nakit, amount: place.cash, color: c.cash }
+        ]
+  // A part below zero cannot be drawn as a length; the words below still say it
+  const drawn = parts !== null && parts.every((part) => part.amount >= 0)
+
   const amountIn = money(totalIn)
   const amountOut = money(totalOut)
-  const size = halfSize(width, [amountIn, amountOut])
-  const bank = Boolean(onTheWay && onTheWay.amount > 0)
-
-  const bankBody = (
-    <>
-      <View style={styles.flex}>
-        <Text variant="callout" weight="500" numberOfLines={1}>
-          {t.finance.balance.bank}
-        </Text>
-        {onTheWay && (
-          <Text variant="foot" tone="ink3" numberOfLines={2}>
-            {bank ? dots(plural(t.finance.card.payments, onTheWay.count), t.finance.balance.bankHint) : t.finance.balance.bankNone}
-          </Text>
-        )}
-      </View>
-      {onTheWay ? (
-        <Text variant="callout" weight="600" tabular numberOfLines={1}>
-          {money(onTheWay.amount)}
-        </Text>
-      ) : (
-        <Skeleton height={18} width={80} />
-      )}
-      {bank && <Icon name="chevronRight" size={13} color={c.ink3} weight="semibold" />}
-    </>
-  )
+  const size = tileSize(width, [amountIn, amountOut])
+  const outNote = [paid > 0 ? upperFirst(t.finance.balance.noSalaries) : '', before ? fmt(t.finance.balance.before, { amount: together(money(before.out)) }) : ''].filter(Boolean).join(', ')
 
   return (
-    <Card style={waiting && styles.dim}>
-      <View accessible accessibilityLabel={`${netLabel} ${money(Math.abs(net))}. ${netHint}`} style={styles.net}>
-        <Text variant="sub" tone="ink2">
-          {netLabel}
-        </Text>
-        <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={[styles.figure, { color: net < 0 ? c.negativeInk : c.ink }]}>
-          {money(Math.abs(net))}
-        </Text>
-        <Text variant="foot" tone="ink3">
-          {netHint}
-        </Text>
-      </View>
+    <>
+      <Card padded style={waiting && styles.dim}>
+        <View accessible accessibilityLabel={[`${netLabel} ${money(headAmount)}`, netHint].filter(Boolean).join('. ')}>
+          <Text weight="500" tone="ink2" style={styles.heroLabel}>
+            {netLabel}
+          </Text>
+          {/* The figure as large as the page allows; ₺ steps down beside it. A shortfall says so in its label and its red */}
+          <Text variant="money" tabular numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={[styles.money, { color: negative ? c.negativeInk : c.ink }]}>
+            {formatMoney(headAmount)}
+            <Text weight="500" style={[styles.lira, { color: negative ? c.negativeInk : c.ink }]}>
+              {' ₺'}
+            </Text>
+          </Text>
+          {netHint ? (
+            <Text variant="sub" tone="ink3" style={styles.heroHint}>
+              {netHint}
+            </Text>
+          ) : null}
+        </View>
 
-      <View style={styles.pair}>
-        <Half
+        {sharing && (
+          <>
+            {parts === null ? (
+              <>
+                <View style={styles.moneyBar}>
+                  <Skeleton height={12} radius={4} />
+                </View>
+                <View style={styles.legend}>
+                  {[0, 1, 2].map((index) => (
+                    <View key={index} style={styles.legendCell}>
+                      <Line line={16} height={10} width="70%" />
+                      <Line line={21} height={14} width="80%" />
+                    </View>
+                  ))}
+                </View>
+              </>
+            ) : (
+              <>
+                {drawn && (
+                  <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={styles.moneyBar}>
+                    {parts
+                      .filter((part) => part.amount > 0)
+                      .map((part) => (
+                        <View key={part.id} style={[styles.moneyPart, { flexGrow: part.amount, backgroundColor: part.color }]} />
+                      ))}
+                  </View>
+                )}
+                <View style={styles.legend}>
+                  {parts.map((part) => {
+                    const amount = signed(money, part.amount)
+                    const body = (
+                      <>
+                        <View style={styles.legendHead}>
+                          <View style={[styles.legendKey, { backgroundColor: part.color }]} />
+                          <Text variant="foot" tone="ink3" numberOfLines={2} style={styles.shrink}>
+                            {part.label}
+                          </Text>
+                        </View>
+                        <Text weight="600" tabular numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75} style={styles.legendAmount}>
+                          {amount}
+                        </Text>
+                      </>
+                    )
+                    // The money on its way is listed further down, by the day it should arrive
+                    return part.id === 'way' && part.amount > 0 ? (
+                      <Pressable
+                        key={part.id}
+                        onPress={() => onShow('bank')}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${part.label} ${amount}`}
+                        accessibilityHint={t.finance.balance.showBank}
+                        hitSlop={6}
+                        style={({ pressed }) => [styles.legendCell, pressed && styles.pressed]}
+                      >
+                        {body}
+                      </Pressable>
+                    ) : (
+                      <View key={part.id} accessible accessibilityLabel={`${part.label} ${amount}`} style={styles.legendCell}>
+                        {body}
+                      </View>
+                    )
+                  })}
+                </View>
+              </>
+            )}
+            <View
+              accessible
+              accessibilityLabel={`${t.finance.balance.each} ${money(net / PARTNERS)}. ${each.join(', ')}`}
+              style={[styles.foot, styles.footRow, { borderTopColor: c.line }]}
+            >
+              <View style={styles.flex}>
+                <Text weight="500" tone="ink2" style={styles.heroLabel}>
+                  {t.finance.balance.each}
+                </Text>
+                <DotLine variant="sub" tone="ink3" tabular numberOfLines={2} parts={each.map(together)} />
+              </View>
+              <Text tabular weight="600" numberOfLines={1} style={styles.eachAmount}>
+                {money(net / PARTNERS)}
+              </Text>
+            </View>
+          </>
+        )}
+
+        {!sharing &&
+          (empty ? (
+            <View style={[styles.foot, { borderTopColor: c.line }]}>
+              <Text variant="sub" tone="ink2">
+                {t.finance.balance.empty}
+              </Text>
+            </View>
+          ) : byMethod.length > 0 ? (
+            <View
+              accessible
+              accessibilityLabel={`${t.finance.balance.byMethod}: ${byMethod.map((row) => `${methodName(t, labels, row.method)} ${money(row.amount)}`).join(', ')}`}
+              style={[styles.foot, styles.footRow, styles.footSplit, { borderTopColor: c.line }]}
+            >
+              <Text weight="500" tone="ink2" numberOfLines={1} style={[styles.heroLabel, styles.splitLabel]}>
+                {t.finance.balance.byMethod}
+              </Text>
+              <DotLine
+                variant="sub"
+                weight="500"
+                tabular
+                align="right"
+                parts={byMethod.map((row) => together(`${methodName(t, labels, row.method)} ${money(row.amount)}`))}
+                style={styles.flex}
+              />
+            </View>
+          ) : null)}
+      </Card>
+
+      <View style={[styles.tiles, waiting && styles.dim]}>
+        <StatTile
           label={t.finance.balance.in}
-          amount={amountIn}
-          size={size}
-          count={plural(t.finance.balance.payments, income.length)}
-          before={before ? money(before.in) : null}
-          a11y={t.finance.balance.showIn}
+          dot={c.sky}
+          value={amountIn}
+          valueSize={size}
+          sub={plural(t.finance.balance.payments, income.length)}
+          note={before ? fmt(t.finance.balance.before, { amount: together(money(before.in)) }) : undefined}
+          accessibilityLabel={dots(`${t.finance.balance.in} ${amountIn}`, plural(t.finance.balance.payments, income.length), before && fmt(t.finance.balance.before, { amount: money(before.in) }))}
+          accessibilityHint={t.finance.balance.showIn}
           onPress={() => onShow('in')}
         />
-        <View style={[styles.divider, { backgroundColor: c.line2 }]} />
-        <Half
+        <StatTile
           label={t.finance.balance.out}
-          amount={amountOut}
-          size={size}
-          count={plural(t.finance.balance.expenses, expenses.length)}
-          before={before ? money(before.out) : null}
-          a11y={t.finance.balance.showOut}
+          dot={c.out}
+          value={amountOut}
+          valueSize={size}
+          sub={plural(t.finance.balance.expenses, expenses.length - salaries.length)}
+          note={outNote || undefined}
+          accessibilityLabel={dots(`${t.finance.balance.out} ${amountOut}`, plural(t.finance.balance.expenses, expenses.length - salaries.length), outNote)}
+          accessibilityHint={t.finance.balance.showOut}
           onPress={() => onShow('out')}
         />
       </View>
-
-      {/* Hidden when the card payments could not be read: their own list below says so and retries */}
-      {onTheWay !== undefined &&
-        (bank ? (
-          <Pressable
-            onPress={() => onShow('bank')}
-            accessibilityRole="button"
-            accessibilityHint={t.finance.balance.showBank}
-            style={({ pressed }) => [styles.bank, pressed && { backgroundColor: c.well }]}
-          >
-            {bankBody}
-          </Pressable>
-        ) : (
-          <View accessible style={styles.bank}>
-            {bankBody}
-          </View>
-        ))}
-
-      {totalIn === 0 && totalOut === 0 ? (
-        <View style={styles.methods}>
-          <Text variant="foot" tone="ink2">
-            {t.finance.balance.empty}
-          </Text>
-        </View>
-      ) : byMethod.length > 0 ? (
-        <View style={styles.methods}>
-          <Text variant="foot" tone="ink2">
-            <Text variant="foot" tone="ink3">
-              {t.finance.balance.byMethod}:{' '}
-            </Text>
-            {byMethod.map((row) => together(`${methodName(t, labels, row.method)} ${money(row.amount)}`)).join(DOT)}
-          </Text>
-        </View>
-      ) : null}
-    </Card>
-  )
-}
-
-type HalfProps = {
-  label: string
-  amount: string
-  /** The font size both halves share. */
-  size: number
-  count: string
-  /** The same amount in the period before; null when it is not known. */
-  before: string | null
-  a11y: string
-  onPress: () => void
-}
-
-/**
- * Money in or money out: the figure, how many payments made it, and the period before on two lines
- * of its own, so a long amount never wraps one half and leaves the halves uneven.
- */
-function Half({ label, amount, size, count, before, a11y, onPress }: HalfProps) {
-  const c = useColors()
-  const { t, fmt } = useI18n()
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={[`${label} ${amount}`, count, before && fmt(t.finance.balance.before, { amount: before })].filter(Boolean).join('. ')}
-      accessibilityHint={a11y}
-      style={({ pressed }) => [styles.cell, pressed && { backgroundColor: c.well }]}
-    >
-      <View style={styles.cellHead}>
-        <Text variant="sub" tone="ink2" numberOfLines={1} style={styles.flex}>
-          {label}
-        </Text>
-        <Icon name="chevronRight" size={12} color={c.ink3} weight="semibold" />
-      </View>
-      <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} tabular style={[styles.half, { fontSize: size }]}>
-        {amount}
-      </Text>
-      <Text variant="foot" tone="ink3" numberOfLines={1}>
-        {count}
-      </Text>
-      {before ? (
-        <>
-          <Text variant="foot" tone="ink3" numberOfLines={1}>
-            {t.finance.balance.beforeLabel}
-          </Text>
-          <Text variant="foot" tone="ink3" tabular numberOfLines={1}>
-            {before}
-          </Text>
-        </>
-      ) : null}
-    </Pressable>
+    </>
   )
 }
 
@@ -467,21 +560,30 @@ const styles = StyleSheet.create({
   shrink: { flexShrink: 1 },
   dim: { opacity: 0.6 },
   pressed: { opacity: 0.6 },
-  head: { gap: 14 },
-  bar: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4 },
-  middle: { flex: 1, minWidth: 0, alignItems: 'center', gap: 1 },
-  pick: { flexDirection: 'row', alignItems: 'center', gap: 6, maxWidth: '100%' },
+  head: { gap: 10 },
+  bar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 4, minHeight: 44 },
+  middle: { flex: 1, minWidth: 0, alignItems: 'center' },
+  pick: { flexDirection: 'row', alignItems: 'center', gap: 5, maxWidth: '100%' },
+  periodName: { fontSize: 18, lineHeight: 24, letterSpacing: -0.2 },
   line: { justifyContent: 'center' },
-  net: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 14, gap: 3 },
-  // A figure on its own keeps proportional digits
-  figure: { fontSize: 32, lineHeight: 38, fontWeight: '600', letterSpacing: -0.6 },
-  pair: { flexDirection: 'row' },
-  // As thick as the card's own rules between its parts
-  divider: { width: 1 },
-  cell: { flex: 1, minWidth: 0, paddingHorizontal: 16, paddingVertical: 13, gap: 2 },
-  cellHead: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  // The line height stays when the size steps down, so both halves keep one rhythm
-  half: { lineHeight: 26, fontWeight: '600', letterSpacing: -0.3 },
-  bank: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingLeft: 16, paddingRight: 14, paddingVertical: 12, minHeight: 56 },
-  methods: { paddingHorizontal: 16, paddingVertical: 12 }
+  heroLabel: { fontSize: 15, lineHeight: 20 },
+  money: { marginTop: 4 },
+  lira: { fontSize: 30, lineHeight: 50, letterSpacing: 0 },
+  heroHint: { marginTop: 2 },
+  // One row of parts, each as long as its amount
+  moneyBar: { flexDirection: 'row', gap: 3, height: 12, marginTop: 16 },
+  moneyPart: { flexBasis: 0, borderRadius: 4 },
+  legend: { flexDirection: 'row', gap: 8, marginTop: 12 },
+  legendCell: { flex: 1, minWidth: 0 },
+  legendHead: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  legendKey: { width: 9, height: 9, borderRadius: 3 },
+  legendAmount: { fontSize: 16, lineHeight: 21, marginTop: 3 },
+  // The foot of the card under a rule: each partner's part, or how the money came in
+  foot: { marginTop: 14, paddingTop: 14, borderTopWidth: 1 },
+  footRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  footSplit: { alignItems: 'flex-start' },
+  splitLabel: { flexShrink: 0, maxWidth: '45%' },
+  eachAmount: { fontSize: 20, lineHeight: 26, letterSpacing: -0.3 },
+  tiles: { flexDirection: 'row', gap: 10 },
+  tileSkeleton: { flex: 1, borderRadius: 22, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 15, gap: 2 }
 })

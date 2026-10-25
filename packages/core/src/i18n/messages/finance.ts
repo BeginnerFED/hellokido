@@ -22,8 +22,9 @@ const tr = {
     previous: 'Önceki dönem',
     next: 'Sonraki dönem',
     startsOn: 'Dönem her ayın {day}. günü başlar',
+    paidOn: 'Dönem maaşlar ödenince kapanır · son maaşlar {date}',
+    lastPaid: 'Son maaşlar {date}',
     calendarMonths: 'Dönem takvim ayı',
-    changeStart: 'Dönem başlangıcı…',
     firstDay: 'İlk gün',
     lastDay: 'Son gün',
     backToCurrent: 'Bu döneme dön'
@@ -44,12 +45,23 @@ const tr = {
     beforeLabel: 'önceki dönem',
     beforeShort: 'önceki dönem {amount} açık',
     leftHint: 'Gelen eksi giden',
+    toShare: 'Bölüşülecek',
+    perPartner: 'kişi başı {amount}',
+    each: 'Kişi başı',
+    paid: 'Maaşlar',
+    paidLeft: 'kalan {amount}',
+    paidOver: '{amount} fazla ödendi',
+    paidAll: 'hepsi bölüşüldü',
+    noSalaries: 'maaşlar hariç',
     bank: 'Bankaya yolda',
     bankHint: 'henüz hesapta değil',
     bankNone: 'Hepsi hesaba geçti',
     showIn: 'Gelen hareketleri göster',
     showOut: 'Giden hareketleri göster',
-    showBank: 'Bankaya yoldaki parayı göster'
+    showBank: 'Bankaya yoldaki parayı göster',
+    inBank: 'Bankada',
+    // Beside all card money on its way: the part of it the viewed period's split counts
+    bankOfPeriod: '{amount} bu dönemden'
   },
   moves: {
     title: 'Hareketler',
@@ -183,7 +195,7 @@ const tr = {
     editTitle: 'Geliri düzenle',
     collectTitle: 'Ödemeyi al',
     description: 'Ne için?',
-    descriptionChild: 'Örn. malzeme ya da etkinlik ücreti',
+    descriptionChild: 'Örn. malzeme ücreti',
     descriptionOther: 'Örn. 12 Kasım doğum günü partisi',
     category: 'Tür',
     categoryPlaceholder: 'Tür seç',
@@ -209,6 +221,16 @@ const tr = {
     deleteConfirm: 'Sil',
     deleted: 'Gelir silindi',
     deleteFailed: 'Silinemedi.'
+  },
+  /** The web panel's finance board (period strip, tiles, chart range). */
+  web: {
+    dayOf: 'Bugün dönemin {day}. günü',
+    payday: '{date} maaş günü',
+    overdue: { one: '{count} tanesinin son günü geçti', other: '{count} tanesinin son günü geçti' },
+    nextDue: 'Sıradaki son gün {date}',
+    six: '6 dönem',
+    twelve: '12 dönem',
+    rangeLabel: 'Kaç dönem'
   }
 }
 
@@ -234,8 +256,9 @@ const en: Widen<typeof tr> = {
     previous: 'Previous period',
     next: 'Next period',
     startsOn: 'Periods start on day {day} of each month',
+    paidOn: 'A period closes when salaries are paid · last paid {date}',
+    lastPaid: 'Salaries last paid {date}',
     calendarMonths: 'Periods are calendar months',
-    changeStart: 'Period start…',
     firstDay: 'First day',
     lastDay: 'Last day',
     backToCurrent: 'Back to this period'
@@ -256,12 +279,22 @@ const en: Widen<typeof tr> = {
     beforeLabel: 'period before',
     beforeShort: 'period before: {amount} short',
     leftHint: 'Money in minus money out',
+    toShare: 'To share',
+    perPartner: '{amount} each',
+    each: 'Each',
+    paid: 'Salaries',
+    paidLeft: '{amount} left',
+    paidOver: '{amount} overpaid',
+    paidAll: 'all shared out',
+    noSalaries: 'salaries apart',
     bank: 'On the way to the bank',
     bankHint: 'not in the account yet',
     bankNone: 'All of it is in the account',
     showIn: 'Show money in',
     showOut: 'Show money out',
-    showBank: 'Show the money on its way'
+    showBank: 'Show the money on its way',
+    inBank: 'In the bank',
+    bankOfPeriod: '{amount} from this period'
   },
   moves: {
     title: 'Transactions',
@@ -421,6 +454,15 @@ const en: Widen<typeof tr> = {
     deleteConfirm: 'Delete',
     deleted: 'Income deleted',
     deleteFailed: 'Could not delete.'
+  },
+  web: {
+    dayOf: 'Today is day {day} of the period',
+    payday: 'Payday {date}',
+    overdue: { one: '{count} is past its due day', other: '{count} are past their due day' },
+    nextDue: 'Next due {date}',
+    six: '6 periods',
+    twelve: '12 periods',
+    rangeLabel: 'How many periods'
   }
 }
 
@@ -446,8 +488,9 @@ const uk: Widen<typeof tr> = {
     previous: 'Попередній період',
     next: 'Наступний період',
     startsOn: 'Період починається {day}-го числа щомісяця',
+    paidOn: 'Період закривається виплатою зарплат · востаннє {date}',
+    lastPaid: 'Зарплати востаннє {date}',
     calendarMonths: 'Періоди — календарні місяці',
-    changeStart: 'Початок періоду…',
     firstDay: 'Перший день',
     lastDay: 'Останній день',
     backToCurrent: 'До поточного періоду'
@@ -468,12 +511,22 @@ const uk: Widen<typeof tr> = {
     beforeLabel: 'попередній період',
     beforeShort: 'попередній період: нестача {amount}',
     leftHint: 'Надійшло мінус витрачено',
+    toShare: 'До розподілу',
+    perPartner: 'по {amount} кожному',
+    each: 'Кожному',
+    paid: 'Зарплати',
+    paidLeft: 'залишок {amount}',
+    paidOver: 'переплачено {amount}',
+    paidAll: 'усе розподілено',
+    noSalaries: 'без зарплат',
     bank: 'На шляху до рахунку',
     bankHint: 'ще не на рахунку',
     bankNone: 'Усе вже на рахунку',
     showIn: 'Показати надходження',
     showOut: 'Показати витрати',
-    showBank: 'Показати гроші в дорозі'
+    showBank: 'Показати гроші в дорозі',
+    inBank: 'На рахунку',
+    bankOfPeriod: '{amount} з цього періоду'
   },
   moves: {
     title: 'Операції',
@@ -643,6 +696,15 @@ const uk: Widen<typeof tr> = {
     deleteConfirm: 'Видалити',
     deleted: 'Дохід видалено',
     deleteFailed: 'Не вдалося видалити.'
+  },
+  web: {
+    dayOf: 'Сьогодні {day}-й день періоду',
+    payday: '{date} — виплата зарплат',
+    overdue: { one: '{count} прострочена', few: '{count} прострочені', many: '{count} прострочено', other: '{count} прострочено' },
+    nextDue: 'Найближчий термін {date}',
+    six: '6 періодів',
+    twelve: '12 періодів',
+    rangeLabel: 'Скільки періодів'
   }
 }
 

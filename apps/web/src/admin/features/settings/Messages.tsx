@@ -36,8 +36,7 @@ import { Band } from '../../ui/Page'
 import { Sheet, SheetActions, SheetFooter } from '../../ui/Sheet'
 import { useSheet } from '../../ui/useSheet'
 import { cx } from '../../ui/cx'
-import { ListSkeleton } from '../finance/bits'
-import { SettingList, SettingRow } from './bits'
+import { SettingAddRow, SettingBody, SettingList, SettingRow, SettingSkeleton } from './bits'
 
 const BODY_LIMIT = 4000
 
@@ -53,17 +52,22 @@ export function MessageList() {
   const workshopSheet = useSheet<WorkshopInfo>()
   const eveningSheet = useSheet<EveningReminder>()
 
-  if (templates.isError) return <LoadError message={t.common.loadFailed} retryLabel={t.common.retry} onRetry={() => void templates.refetch()} />
-  if (!templates.data || !catalog.data) return <ListSkeleton rows={4} />
+  if (templates.isError)
+    return (
+      <SettingBody>
+        <LoadError message={t.common.loadFailed} retryLabel={t.common.retry} onRetry={() => void templates.refetch()} />
+      </SettingBody>
+    )
+  if (!templates.data || !catalog.data) return <SettingSkeleton rows={4} />
 
   const workshop = catalog.data.settings.workshop
   const evening = catalog.data.settings.eveningReminder
   const byKind = MESSAGE_KINDS.map((kind) => ({ kind, rows: templates.data.filter((row) => row.kind === kind) }))
 
   return (
-    // Edge to edge in its card: each kind is a group under a grey band, as in the panel's lists
-    <div className="-mx-4 -my-4 sm:-mx-6">
-      <SettingList className="mx-4 my-2! sm:mx-6">
+    // Each kind is a group with its own head on the felt, as in the panel's lists
+    <div>
+      <SettingList>
         <SettingRow
           title={t.messages.workshop.title}
           meta={fmt(t.messages.workshop.meta, { place: workshop.place, duration: workshop.duration })}
@@ -77,11 +81,11 @@ export function MessageList() {
       </SettingList>
       {byKind.map(({ kind, rows }) => (
         <div key={kind}>
-          <Band className="justify-between border-t">
-            <h3 className="font-semibold text-ink-2">{t.messages.kinds[kind]}</h3>
-            <span className="min-w-0 truncate">{t.messages.kindHints[kind]}</span>
+          <Band className="flex-nowrap! justify-between gap-x-4! border-t border-line pt-3.5!">
+            <h3 className="shrink-0">{t.messages.kinds[kind]}</h3>
+            <span className="min-w-0 truncate font-normal text-ink-3">{t.messages.kindHints[kind]}</span>
           </Band>
-          <SettingList className="mx-4 my-2! sm:mx-6">
+          <SettingList>
             {rows.map((row) => (
               <SettingRow
                 key={row.id}
@@ -91,15 +95,7 @@ export function MessageList() {
                 onPress={() => sheet.open(row)}
               />
             ))}
-            <li>
-              <AriaButton
-                onPress={() => sheet.open({ kind })}
-                className="-mx-3 flex w-[calc(100%+1.5rem)] items-center gap-2 rounded-control px-3 py-2.5 text-left text-sm font-medium text-accent-ink outline-none transition-colors duration-150 data-hovered:bg-accent-wash data-focus-visible:ring-2 data-focus-visible:ring-focus"
-              >
-                <PlusIcon aria-hidden weight="bold" className="size-4" />
-                {t.messages.add}
-              </AriaButton>
-            </li>
+            <SettingAddRow onPress={() => sheet.open({ kind })}>{t.messages.add}</SettingAddRow>
           </SettingList>
         </div>
       ))}
@@ -174,7 +170,7 @@ function EveningSheet({ isOpen, onOpenChange, saved }: { isOpen: boolean; onOpen
         />
         <SheetFooter>
           <SheetActions>
-            <Button variant="primary" isDisabled={time === null} isPending={busy} onPress={() => void save()} className="max-md:flex-1">
+            <Button variant="primary" isDisabled={time === null || !dirty} isPending={busy} onPress={() => void save()} className="max-md:flex-1">
               {t.common.save}
             </Button>
           </SheetActions>
@@ -225,7 +221,7 @@ function WorkshopSheet({ isOpen, onOpenChange, info }: { isOpen: boolean; onOpen
         <TextField label={t.messages.workshop.duration} value={value.duration} onChange={(duration) => setValue({ ...value, duration })} />
         <SheetFooter>
           <SheetActions>
-            <Button variant="primary" isPending={busy} onPress={() => void save()} className="max-md:flex-1">
+            <Button variant="primary" isDisabled={!dirty} isPending={busy} onPress={() => void save()} className="max-md:flex-1">
               {t.common.save}
             </Button>
           </SheetActions>
@@ -363,12 +359,12 @@ function TemplateForm({ target, onDone, onStateChange }: { target: Target; onDon
               key={name}
               onPress={() => insert(name)}
               className={cx(
-                'relative inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[0.8125rem] font-medium outline-none transition-colors duration-150',
+                'relative inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-[0.8125rem] font-medium outline-none transition-[background-color,color,box-shadow] duration-150',
                 'pointer-coarse:after:absolute pointer-coarse:after:inset-x-0 pointer-coarse:after:-inset-y-1.5',
                 'data-focus-visible:ring-2 data-focus-visible:ring-focus',
                 index < suggested.length
-                  ? 'border-accent-line bg-accent-wash text-accent-ink data-hovered:bg-accent-wash-2'
-                  : 'border-line bg-surface text-ink-2 data-hovered:border-line-strong data-hovered:text-ink'
+                  ? 'bg-sky-felt text-sky-ink data-hovered:bg-sky-track'
+                  : 'text-ink-2 shadow-[inset_0_0_0_1.5px_var(--line)] data-hovered:text-ink data-hovered:shadow-[inset_0_0_0_1.5px_var(--line-strong)]'
               )}
             >
               <PlusIcon aria-hidden weight="bold" className="size-3" />
@@ -411,7 +407,7 @@ function TemplateForm({ target, onDone, onStateChange }: { target: Target; onDon
               {t.messages.form.useThis}
             </Button>
           )}
-          <Button variant="primary" isDisabled={!valid} isPending={busy} onPress={save} className="max-md:flex-1">
+          <Button variant="primary" isDisabled={!valid || (saved !== null && !dirty)} isPending={busy} onPress={save} className="max-md:flex-1">
             {t.common.save}
           </Button>
         </SheetActions>
@@ -475,8 +471,8 @@ function Preview({ kind, body }: { kind: MessageKind; body: string }) {
           options={children.map((row) => ({ id: row.id, label: row.student_name }))}
         />
       </div>
-      <div className="rounded-panel border border-line bg-surface-2 p-4">
-        <p className="max-w-[60ch] text-sm leading-relaxed whitespace-pre-wrap text-ink">{text}</p>
+      <div className="rounded-tile bg-felt px-4 py-3.5">
+        <p className="max-w-[60ch] text-[0.90625rem] leading-relaxed whitespace-pre-wrap text-ink">{text}</p>
       </div>
       {kind === 'lesson' && <p className="text-[0.8125rem] text-ink-3">{t.messages.form.previewNote}</p>}
     </div>

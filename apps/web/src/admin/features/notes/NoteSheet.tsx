@@ -144,18 +144,18 @@ function NoteForm({ note, onDone, onStateChange }: { note?: Note; onDone: () => 
             >
               <span
                 aria-hidden
-                style={{ backgroundColor: hex === PLAIN ? 'var(--surface)' : hex }}
+                style={{ backgroundColor: hex === PLAIN ? 'var(--sheet)' : hex }}
                 className={cx(
-                  'grid size-8 place-items-center rounded-full transition-[box-shadow] duration-150',
-                  hex === PLAIN && 'border border-line-strong',
-                  'group-data-selected:shadow-[0_0_0_2px_var(--surface),0_0_0_4px_var(--ink)]'
+                  'grid size-8 place-items-center rounded-full transition-[box-shadow,scale] duration-150',
+                  hex === PLAIN && 'border-[1.5px] border-line-strong',
+                  'group-data-hovered:scale-105 group-data-selected:shadow-[0_0_0_2px_var(--sheet),0_0_0_4px_var(--accent)]'
                 )}
               >
                 <CheckIcon weight="bold" className={cx('size-4 opacity-0 group-data-selected:opacity-100', hex === PLAIN ? 'text-ink' : 'text-[#1c2430]')} />
               </span>
             </Radio>
           ))}
-          <span className="ml-1 text-sm text-ink-2">{t.notes.colors[color] ?? ''}</span>
+          <span className="ml-1.5 text-sm text-ink-2">{t.notes.colors[color] ?? ''}</span>
         </div>
       </RadioGroup>
       <Switch isSelected={favorite} onChange={setFavorite}>
@@ -177,7 +177,7 @@ function NoteForm({ note, onDone, onStateChange }: { note?: Note; onDone: () => 
               {t.notes.copy}
             </Button>
           )}
-          <Button variant="primary" isDisabled={!valid} isPending={busy} onPress={() => void save()} className="max-md:flex-1">
+          <Button variant="primary" isDisabled={!valid || (Boolean(note) && !dirty)} isPending={busy} onPress={() => void save()} className="max-md:flex-1">
             {t.notes.form.save}
           </Button>
         </SheetActions>

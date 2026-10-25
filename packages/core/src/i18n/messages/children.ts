@@ -215,7 +215,36 @@ const tr = {
     done: 'Son ödeme geri alındı',
     failed: 'Geri alınamadı.'
   },
-  whatsappFailed: 'Bu numarayla WhatsApp bağlantısı kurulamıyor.'
+  whatsappFailed: 'Bu numarayla WhatsApp bağlantısı kurulamıyor.',
+  // The iPhone's felt board: short words for narrow places
+  phone: {
+    lessonsUnit: { one: 'ders', other: 'ders' },
+    leftUnit: { one: 'ders kaldı', other: 'ders kaldı' },
+    parentOf: 'veli {name}',
+    endsIn: { one: 'Paketi {count} gün sonra bitiyor', other: 'Paketi {count} gün sonra bitiyor' },
+    endsToday: 'Paketi bugün bitiyor',
+    ended: { one: 'Paketi {count} gün önce bitti', other: 'Paketi {count} gün önce bitti' },
+    unpaid: 'Bu dönemin ödemesi alınmadı',
+    unbooked: { one: '{count} planlanmadı', other: '{count} planlanmadı' },
+    usageFailed: 'Ders sayısı yüklenemedi.',
+    upcomingTitle: 'Sıradaki dersler',
+    pastTitle: 'Geçmiş dersler',
+    call: 'Ara',
+    pay: 'Ödeme al',
+    unarchive: 'Aktif et',
+    feePlaceholder: 'Örn. malzeme',
+    otherPlaceholder: 'Örn. doğum günü'
+  },
+  // The web panel's felt board: the child's period as a calendar
+  web: {
+    lessonsView: 'Dersleri göster',
+    calendar: 'Takvim',
+    list: 'Liste',
+    periodLessons: { one: 'Bu dönem {count} ders', other: 'Bu dönem {count} ders' },
+    outside: { one: '{count} ders bu dönemin dışında.', other: '{count} ders bu dönemin dışında.' },
+    showList: 'Listede gör',
+    payments: { one: '{count} ödeme', other: '{count} ödeme' }
+  }
 }
 
 const en: Widen<typeof tr> = {
@@ -432,7 +461,34 @@ const en: Widen<typeof tr> = {
     done: 'The last payment was undone',
     failed: 'Could not undo.'
   },
-  whatsappFailed: 'WhatsApp cannot open with this number.'
+  whatsappFailed: 'WhatsApp cannot open with this number.',
+  phone: {
+    lessonsUnit: { one: 'lesson', other: 'lessons' },
+    leftUnit: { one: 'lesson left', other: 'lessons left' },
+    parentOf: 'parent {name}',
+    endsIn: { one: 'Package ends in {count} day', other: 'Package ends in {count} days' },
+    endsToday: 'Package ends today',
+    ended: { one: 'Package ended {count} day ago', other: 'Package ended {count} days ago' },
+    unpaid: 'This period is not paid',
+    unbooked: { one: '{count} not booked', other: '{count} not booked' },
+    usageFailed: 'Could not load the lesson count.',
+    upcomingTitle: 'Coming up',
+    pastTitle: 'Past lessons',
+    call: 'Call',
+    pay: 'Payment',
+    unarchive: 'Restore',
+    feePlaceholder: 'e.g. materials',
+    otherPlaceholder: 'e.g. a party'
+  },
+  web: {
+    lessonsView: 'Show lessons as',
+    calendar: 'Calendar',
+    list: 'List',
+    periodLessons: { one: '{count} lesson this period', other: '{count} lessons this period' },
+    outside: { one: '{count} lesson is outside this period.', other: '{count} lessons are outside this period.' },
+    showList: 'See in list',
+    payments: { one: '{count} payment', other: '{count} payments' }
+  }
 }
 
 const uk: Widen<typeof tr> = {
@@ -651,7 +707,44 @@ const uk: Widen<typeof tr> = {
     done: 'Останню оплату скасовано',
     failed: 'Не вдалося скасувати.'
   },
-  whatsappFailed: 'Не вдається відкрити WhatsApp із цим номером.'
+  whatsappFailed: 'Не вдається відкрити WhatsApp із цим номером.',
+  phone: {
+    lessonsUnit: { one: 'заняття', few: 'заняття', many: 'занять', other: 'заняття' },
+    leftUnit: { one: 'заняття залишилось', few: 'заняття залишилось', many: 'занять залишилось', other: 'заняття залишилось' },
+    parentOf: 'батьки: {name}',
+    endsIn: { one: 'Пакет закінчується через {count} день', few: 'Пакет закінчується через {count} дні', many: 'Пакет закінчується через {count} днів', other: 'Пакет закінчується через {count} дня' },
+    endsToday: 'Пакет закінчується сьогодні',
+    ended: { one: 'Пакет закінчився {count} день тому', few: 'Пакет закінчився {count} дні тому', many: 'Пакет закінчився {count} днів тому', other: 'Пакет закінчився {count} дня тому' },
+    unpaid: 'Цей період не оплачено',
+    unbooked: { one: '{count} не заплановано', few: '{count} не заплановано', many: '{count} не заплановано', other: '{count} не заплановано' },
+    usageFailed: 'Не вдалося завантажити кількість занять.',
+    upcomingTitle: 'Найближчі заняття',
+    pastTitle: 'Минулі заняття',
+    call: 'Дзвінок',
+    pay: 'Оплата',
+    unarchive: 'Відновити',
+    feePlaceholder: 'Напр. матеріали',
+    otherPlaceholder: 'Напр. свято'
+  },
+  web: {
+    lessonsView: 'Показати заняття як',
+    calendar: 'Календар',
+    list: 'Список',
+    periodLessons: {
+      one: 'У цьому періоді {count} заняття',
+      few: 'У цьому періоді {count} заняття',
+      many: 'У цьому періоді {count} занять',
+      other: 'У цьому періоді {count} заняття'
+    },
+    outside: {
+      one: '{count} заняття поза цим періодом.',
+      few: '{count} заняття поза цим періодом.',
+      many: '{count} занять поза цим періодом.',
+      other: '{count} заняття поза цим періодом.'
+    },
+    showList: 'Переглянути у списку',
+    payments: { one: '{count} оплата', few: '{count} оплати', many: '{count} оплат', other: '{count} оплати' }
+  }
 }
 
 export const children = { tr, en, uk }

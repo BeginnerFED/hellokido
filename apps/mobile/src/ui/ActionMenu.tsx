@@ -3,11 +3,12 @@ import { ActionSheetIOS, Modal, Platform, Pressable, StyleSheet, View } from 're
 import Animated, { Easing, SlideInDown, useReducedMotion } from 'react-native-reanimated'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useI18n } from '../providers/I18n'
-import { useColors } from '../theme/colors'
+import { tint, useColors } from '../theme/colors'
 import { Icon, type IconName } from './Icon'
 import { Text } from './Text'
 
-export type MenuItem = { label: string; icon?: IconName; onPress: () => void; destructive?: boolean }
+/** `selected` marks the current choice when the menu picks a value (SelectField). */
+export type MenuItem = { label: string; icon?: IconName; onPress: () => void; destructive?: boolean; selected?: boolean }
 
 type Menu = { title?: string; message?: string; items: MenuItem[] }
 
@@ -32,7 +33,8 @@ export function useActionMenu() {
           {
             title,
             message,
-            options: [...items.map((item) => item.label), t.common.cancel],
+            // The system sheet holds words only, so the current choice carries its tick in the words
+            options: [...items.map((item) => (item.selected ? `✓ ${item.label}` : item.label)), t.common.cancel],
             cancelButtonIndex: items.length,
             destructiveButtonIndex: destructive >= 0 ? destructive : undefined,
             // The app's blue instead of the system's
@@ -53,22 +55,22 @@ export function useActionMenu() {
   const element =
     Platform.OS === 'ios' ? null : (
       <Modal visible={shown} transparent animationType="fade" onRequestClose={close} statusBarTranslucent navigationBarTranslucent>
-        <View style={styles.backdrop}>
+        <View style={[styles.backdrop, { backgroundColor: tint(c.scrim, 0.4) }]}>
           {/* Behind the panel, so a tap on the panel's title never closes it */}
           <Pressable style={StyleSheet.absoluteFill} onPress={close} accessibilityRole="button" accessibilityLabel={t.common.close} />
           <Animated.View
             entering={still ? undefined : SlideInDown.duration(280).easing(Easing.out(Easing.exp))}
-            style={[styles.panel, { backgroundColor: c.surface, paddingBottom: insets.bottom + 8 }]}
+            style={[styles.panel, { backgroundColor: c.sheet, paddingBottom: insets.bottom + 8 }]}
           >
             {(menu?.title || menu?.message) && (
-              <View style={[styles.title, { borderBottomColor: c.line2 }]}>
+              <View style={[styles.title, { borderBottomColor: c.line }]}>
                 {menu.title && (
-                  <Text variant="foot" weight={menu.message ? '600' : undefined} tone={menu.message ? 'ink2' : 'ink3'} align="center">
+                  <Text variant="sub" weight={menu.message ? '600' : undefined} tone={menu.message ? 'ink2' : 'ink3'} align="center">
                     {menu.title}
                   </Text>
                 )}
                 {menu.message && (
-                  <Text variant="foot" tone="ink3" align="center">
+                  <Text variant="sub" tone="ink3" align="center">
                     {menu.message}
                   </Text>
                 )}
@@ -79,6 +81,7 @@ export function useActionMenu() {
                 // Two saved messages may share a name
                 key={`${index}:${item.label}`}
                 accessibilityRole="button"
+                accessibilityState={{ selected: Boolean(item.selected) }}
                 onPress={() => {
                   close()
                   item.onPress()
@@ -89,6 +92,7 @@ export function useActionMenu() {
                 <Text variant="body" style={[styles.label, { color: item.destructive ? c.negativeInk : c.ink }]}>
                   {item.label}
                 </Text>
+                {item.selected && <Icon name="check" size={18} color={c.accentInk} weight="semibold" />}
               </Pressable>
             ))}
           </Animated.View>
@@ -100,9 +104,9 @@ export function useActionMenu() {
 }
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(8,14,20,0.4)' },
-  panel: { borderTopLeftRadius: 22, borderTopRightRadius: 22, paddingTop: 10 },
-  title: { paddingHorizontal: 20, paddingTop: 6, paddingBottom: 12, marginBottom: 4, gap: 2, borderBottomWidth: StyleSheet.hairlineWidth },
+  backdrop: { flex: 1, justifyContent: 'flex-end' },
+  panel: { borderTopLeftRadius: 26, borderTopRightRadius: 26, paddingTop: 10 },
+  title: { paddingHorizontal: 20, paddingTop: 6, paddingBottom: 12, marginBottom: 4, gap: 2, borderBottomWidth: 1 },
   item: { minHeight: 54, paddingHorizontal: 22, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 14 },
   label: { flex: 1, minWidth: 0 }
 })

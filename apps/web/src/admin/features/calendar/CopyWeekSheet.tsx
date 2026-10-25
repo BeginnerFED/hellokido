@@ -11,7 +11,7 @@ import { Button } from '../../ui/Button'
 import { RadioList } from '../../ui/Choice'
 import { DateField } from '../../ui/DateField'
 import { fieldLabelClass } from '../../ui/Field'
-import { FormRule, Notice } from '../../ui/Notice'
+import { Notice } from '../../ui/Notice'
 import { Sheet, SheetActions } from '../../ui/Sheet'
 import { cx } from '../../ui/cx'
 import { shortDate } from '../children/ChildBits'
@@ -148,17 +148,20 @@ export function CopyWeekSheet({
       title={t.calendar.copy.title}
       description={`${t.calendar.copy.source}: ${weekRange(source)}`}
       footer={
-        <SheetActions>
-          <Button variant="secondary" onPress={() => onOpenChange(false)} isDisabled={copying} className="max-md:flex-1">
-            {t.common.cancel}
-          </Button>
+        <SheetActions
+          start={
+            <Button variant="quiet" onPress={() => onOpenChange(false)} isDisabled={copying}>
+              {t.common.cancel}
+            </Button>
+          }
+        >
           <Button variant="primary" onPress={() => void copy()} isPending={copying} isDisabled={!valid || nothingToCopy || checking} className="max-md:flex-1">
             {t.calendar.copy.action}
           </Button>
         </SheetActions>
       }
     >
-      <div className="flex flex-col gap-5">
+      <div className="flex flex-col gap-6 pt-1">
         <div className="flex flex-col gap-3">
           <RadioList<Target>
             label={t.calendar.copy.target}
@@ -196,9 +199,7 @@ export function CopyWeekSheet({
           </Notice>
         )}
 
-        <FormRule />
-
-        <section aria-labelledby="copy-check" className="flex flex-col gap-3">
+        <section aria-labelledby="copy-check" className="flex flex-col gap-2.5">
           <h3 id="copy-check" className={fieldLabelClass}>
             {checking || children.isError || exhausted.length === 0 ? t.calendar.lesson.children : plural(t.calendar.copy.exhausted, exhausted.length)}
           </h3>
@@ -217,11 +218,11 @@ export function CopyWeekSheet({
             <p className="text-sm text-ink-2">{t.calendar.copy.includedSummary}</p>
           ) : (
             <>
-              <ul className="divide-y divide-line rounded-control border border-line">
+              <ul className="on-felt rounded-[1.25rem] bg-felt">
                 {shownRows.map((row) => {
                   const out = excluded.has(row.id)
                   return (
-                    <li key={row.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2.5">
+                    <li key={row.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-line px-3.5 py-3 first:border-t-0">
                       {/* The buttons drop under the name before the text gets squeezed */}
                       <div className="min-w-0 flex-1 basis-56">
                         <p className={cx('truncate text-[0.9375rem] font-medium', out && 'text-ink-3 line-through')}>{row.student_name}</p>
@@ -265,7 +266,7 @@ export function CopyWeekSheet({
           )}
         </section>
 
-        <p className="text-[0.8125rem] text-ink-3">{t.calendar.copy.themesNote}</p>
+        <p className="text-[0.84375rem] text-ink-3">{t.calendar.copy.themesNote}</p>
       </div>
     </Sheet>
   )

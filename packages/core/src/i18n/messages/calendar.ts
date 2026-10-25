@@ -95,7 +95,12 @@ const tr = {
     pickerFailed: 'Çocuk listesi yüklenemedi.',
     selected: { one: '{count} çocuk seçildi', other: '{count} çocuk seçildi' },
     pickerDone: 'Tamam',
-    notMarked: 'Girilmedi'
+    notMarked: 'Girilmedi',
+    seatsLeft: { one: '6 kişilik derste {count} yer boş', other: '6 kişilik derste {count} yer boş' },
+    seatsFull: '6 kişilik derste yer kalmadı',
+    /** Under "Yeni ders" when it was opened from an empty spot on the calendar. */
+    fromSlot: '{date}, {time} boşluğundan açıldı',
+    fromDay: '{date} gününden açıldı'
   },
   copy: {
     title: 'Haftayı kopyala',
@@ -235,7 +240,11 @@ const en: Widen<typeof tr> = {
     pickerFailed: 'The list of children could not be loaded.',
     selected: { one: '{count} child chosen', other: '{count} children chosen' },
     pickerDone: 'Done',
-    notMarked: 'Not marked'
+    notMarked: 'Not marked',
+    seatsLeft: { one: '{count} place left in a lesson for six', other: '{count} places left in a lesson for six' },
+    seatsFull: 'No places left in this lesson for six',
+    fromSlot: 'Opened from the free slot on {date} at {time}',
+    fromDay: 'Opened from {date}'
   },
   copy: {
     title: 'Copy week',
@@ -387,7 +396,11 @@ const uk: Widen<typeof tr> = {
     pickerFailed: 'Не вдалося завантажити список дітей.',
     selected: { one: 'Вибрано {count} дитину', few: 'Вибрано {count} дитини', many: 'Вибрано {count} дітей', other: 'Вибрано {count} дитини' },
     pickerDone: 'Готово',
-    notMarked: 'Не відмічено'
+    notMarked: 'Не відмічено',
+    seatsLeft: { one: 'Вільне {count} місце з 6', few: 'Вільні {count} місця з 6', many: 'Вільних {count} місць з 6', other: 'Вільних {count} місця з 6' },
+    seatsFull: 'Усі 6 місць зайнято',
+    fromSlot: 'Відкрито з вільного часу: {date}, {time}',
+    fromDay: 'Відкрито з дня: {date}'
   },
   copy: {
     title: 'Копіювати тиждень',

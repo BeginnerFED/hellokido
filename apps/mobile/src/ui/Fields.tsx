@@ -1,24 +1,29 @@
-import { forwardRef, useImperativeHandle, useRef, useState, type ReactNode } from 'react'
-import { Platform, Pressable, StyleSheet, Switch, TextInput, View, type TextInputInstance, type TextInputProps } from 'react-native'
-import Animated, { FadeIn, useReducedMotion } from 'react-native-reanimated'
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type ReactNode } from 'react'
+import { Platform, Pressable, StyleSheet, Switch, TextInput, View, type StyleProp, type TextInputInstance, type TextInputProps, type ViewStyle } from 'react-native'
+import Animated, { Easing, FadeIn, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated'
 import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker'
 import * as Haptics from 'expo-haptics'
-import { addDays, isSameDay, startOfDay } from 'date-fns'
+import { addHours, startOfDay, startOfHour } from 'date-fns'
 import { sanitizeAmountInput } from '@hellokido/core/rules/money.js'
 import { useI18n } from '../providers/I18n'
-import { useColors } from '../theme/colors'
-import { IconButton } from './Button'
+import { tint, useColors } from '../theme/colors'
+import { useScheme } from '../providers/Theme'
+import { fontOf } from '../theme/fonts'
+import { useActionMenu } from './ActionMenu'
+import { Button, IconButton } from './Button'
 import { Icon } from './Icon'
-import { MAX_FONT_SCALE, Text } from './Text'
+import { Card, GroupFooter, GroupTitle, useInCard } from './Screen'
+import { DOT, MAX_FONT_SCALE, Text } from './Text'
 
+/** The heading over a field or a group of choices that stands on its own (not a row of a card). */
 export function FieldLabel({ children, hint }: { children: ReactNode; hint?: string }) {
   return (
     <View style={styles.labelRow}>
-      <Text variant="foot" weight="600" tone="ink2">
+      <Text variant="sub" weight="600" tone="ink2">
         {children}
       </Text>
       {hint && (
-        <Text variant="foot" tone="ink3">
+        <Text variant="sub" tone="ink3">
           {hint}
         </Text>
       )}
@@ -30,79 +35,118 @@ export function FieldError({ children }: { children?: string }) {
   const c = useColors()
   if (!children) return null
   return (
-    <Text variant="foot" accessibilityRole="alert" style={{ color: c.negativeInk, marginTop: 6 }}>
+    <Text variant="sub" accessibilityRole="alert" style={{ color: c.negativeInk }}>
       {children}
     </Text>
   )
 }
 
+/**
+ * The frame every row field shares: inside a Card it is one of the card's rows, with its note under
+ * the line; on its own it is a card of one row, with the note under the card, as Settings does.
+ */
+function Field({ title, hint, error, children }: { title?: string; hint?: string; error?: string; children: ReactNode }) {
+  const inCard = useInCard()
+  const notes =
+    hint || error ? (
+      <View style={inCard ? styles.notesInRow : styles.notesUnder}>
+        <FieldError>{error}</FieldError>
+        {hint && (
+          <Text variant="sub" tone="ink3">
+            {hint}
+          </Text>
+        )}
+      </View>
+    ) : null
+  if (inCard) {
+    return (
+      <View>
+        {children}
+        {notes}
+      </View>
+    )
+  }
+  return (
+    <View>
+      {title && <GroupTitle>{title}</GroupTitle>}
+      <Card>{children}</Card>
+      {notes}
+    </View>
+  )
+}
+
 type TextFieldProps = Omit<TextInputProps, 'style'> & {
+  /** At the left of the row, the input after it. Without one the input takes the row (a placeholder says what goes in). */
   label?: string
   hint?: string
   error?: string
-  /** Something at the end of the box, such as the ₺ sign. */
+  /** Something at the end of the row, such as the ₺ sign. */
   suffix?: string
   trailing?: ReactNode
   /** A box for longer text (a note) starts taller than the usual few lines. */
   minHeight?: number
+  /** Bigger figures, for an amount that is the point of the form. */
+  large?: boolean
 }
 
-export const TextField = forwardRef<TextInputInstance, TextFieldProps>(function TextField({ label, hint, error, suffix, trailing, multiline, minHeight, ...props }, ref) {
+/**
+ * A row to type in: the label at the left and the words at the right, as in the phone's own forms.
+ * A note (multiline) takes a row of its own under its label.
+ */
+export const TextField = forwardRef<TextInputInstance, TextFieldProps>(function TextField({ label, hint, error, suffix, trailing, multiline, minHeight, large, ...props }, ref) {
   const c = useColors()
-  const [focused, setFocused] = useState(false)
+  const inCard = useInCard()
   const input = useRef<TextInputInstance | null>(null)
   useImperativeHandle(ref, () => input.current as TextInputInstance, [])
+  const inline = Boolean(label) && !multiline
   return (
-    <View>
-      {label && <FieldLabel hint={hint}>{label}</FieldLabel>}
-      {/* The whole box is the field: a tap beside the words or on the ₺ still starts typing */}
-      <Pressable
-        onPress={() => props.editable !== false && input.current?.focus()}
-        accessible={false}
-        style={[
-          styles.box,
-          multiline && styles.boxMultiline,
-          { backgroundColor: c.surface, borderColor: error ? c.negative : focused ? c.focus : c.line }
-        ]}
-      >
+    // A note on its own is headed by its label; inside a group the placeholder says what it is
+    <Field title={multiline ? label : undefined} hint={hint} error={error}>
+      {/* The whole row is the field: a tap on the label or on the ₺ still starts typing */}
+      <Pressable onPress={() => props.editable !== false && input.current?.focus()} accessible={false} style={[styles.inputRow, multiline && styles.inputRowMultiline]}>
+        {inline && (
+          <Text variant="body" numberOfLines={2} style={[styles.inputLabel, error ? { color: c.negativeInk } : null]}>
+            {label}
+          </Text>
+        )}
         <TextInput
           ref={input}
           underlineColorAndroid="transparent"
           maxFontSizeMultiplier={MAX_FONT_SCALE}
           {...props}
+          placeholder={props.placeholder ?? (multiline && inCard ? label : undefined)}
           multiline={multiline}
           accessibilityLabel={props.accessibilityLabel ?? label}
           placeholderTextColor={c.ink3}
           selectionColor={c.accent}
-          onFocus={(event) => {
-            setFocused(true)
-            props.onFocus?.(event)
-          }}
-          onBlur={(event) => {
-            setFocused(false)
-            props.onBlur?.(event)
-          }}
-          style={[styles.input, multiline && styles.inputMultiline, minHeight !== undefined && { minHeight }, { color: c.ink }]}
+          style={[
+            styles.input,
+            fontOf(large ? '600' : '400'),
+            inline && styles.inputEnd,
+            large && styles.inputLarge,
+            multiline && styles.inputMultiline,
+            minHeight !== undefined && { minHeight },
+            { color: c.ink }
+          ]}
         />
         {suffix && (
-          <Text variant="body" tone="ink3">
+          <Text variant="body" tone="ink2" weight={large ? '500' : undefined} style={large && styles.suffixLarge}>
             {suffix}
           </Text>
         )}
         {trailing}
       </Pressable>
-      <FieldError>{error}</FieldError>
-    </View>
+    </Field>
   )
 })
 
-/** The search pill: a light well with a magnifier and a way to clear it. */
+/** The search capsule: a grey fill with a magnifier and a way to clear it. */
 export function SearchField({ value, onChange, placeholder, label, autoFocus }: { value: string; onChange: (text: string) => void; placeholder: string; label: string; autoFocus?: boolean }) {
   const c = useColors()
   const { t } = useI18n()
   return (
-    <View style={[styles.search, { backgroundColor: c.surface2, borderColor: c.line }]}>
-      <Icon name="search" size={17} color={c.ink3} />
+    <View style={[styles.search, { backgroundColor: c.felt }]}>
+      <Icon name="search" size={19} color={c.ink3} />
       <TextInput
         value={value}
         onChangeText={onChange}
@@ -117,7 +161,7 @@ export function SearchField({ value, onChange, placeholder, label, autoFocus }: 
         clearButtonMode="while-editing"
         underlineColorAndroid="transparent"
         maxFontSizeMultiplier={MAX_FONT_SCALE}
-        style={[styles.searchInput, { color: c.ink }]}
+        style={[styles.searchInput, fontOf('400'), { color: c.ink }]}
       />
       {Platform.OS !== 'ios' && value !== '' && <IconButton icon="close" label={t.mobile.clearSearch} variant="plain" size={30} color={c.ink3} onPress={() => onChange('')} />}
     </View>
@@ -135,6 +179,7 @@ export function AmountField({ label, value, onChange, error, disabled }: { label
       inputMode="decimal"
       placeholder="0"
       suffix="₺"
+      large
       error={error}
       editable={!disabled}
     />
@@ -143,38 +188,93 @@ export function AmountField({ label, value, onChange, error, disabled }: { label
 
 export type Option<T extends string> = { id: T; label: string; description?: string; leading?: ReactNode }
 
-/** Two to four choices side by side, like the phone's own segmented control. */
-export function Segmented<T extends string>({ label, options, value, onChange, disabled }: { label?: string; options: Option<T>[]; value: T | null; onChange: (value: T) => void; disabled?: boolean }) {
+const TRACK_PAD = 3
+
+/**
+ * Two to four choices side by side: a pill track and a raised thumb with a soft lift that slides to
+ * the choice. Inside a card it is a row under its label. `compact` is the small control of an
+ * in-content header ([Gün | Ay]): felt, a little lower, as wide as it is given.
+ */
+export function Segmented<T extends string>({
+  label,
+  options,
+  value,
+  onChange,
+  disabled,
+  compact,
+  style
+}: {
+  label?: string
+  options: Option<T>[]
+  value: T | null
+  onChange: (value: T) => void
+  disabled?: boolean
+  compact?: boolean
+  style?: StyleProp<ViewStyle>
+}) {
   const c = useColors()
+  const inCard = useInCard() && !compact
+  const still = useReducedMotion()
+  const [width, setWidth] = useState(0)
+  const index = options.findIndex((option) => option.id === value)
+  const segment = width > 0 ? (width - TRACK_PAD * 2) / options.length : 0
+  const x = useSharedValue(0)
+  // The piece is put in place without sliding the first time, then slides to each new choice
+  const placed = useRef(false)
+  useEffect(() => {
+    if (index < 0 || segment === 0) return
+    const target = index * segment
+    x.set(still || !placed.current ? target : withTiming(target, { duration: 200, easing: Easing.out(Easing.cubic) }))
+    placed.current = true
+  }, [index, segment, still, x])
+  const slide = useAnimatedStyle(() => ({ transform: [{ translateX: x.get() }] }))
+
+  const control = (
+    <View
+      accessibilityRole="radiogroup"
+      accessibilityLabel={label}
+      onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
+      style={[styles.segmented, compact && styles.segmentedCompact, { backgroundColor: compact ? c.felt : c.track }, disabled && { opacity: 0.5 }, style]}
+    >
+      {index >= 0 && segment > 0 && <Animated.View style={[styles.thumb, { width: segment, backgroundColor: c.raised, boxShadow: c.liftShadow }, slide]} />}
+      {options.map((option) => {
+        const on = option.id === value
+        return (
+          <Pressable
+            key={option.id}
+            disabled={disabled}
+            onPress={() => {
+              if (on) return
+              void Haptics.selectionAsync()
+              onChange(option.id)
+            }}
+            accessibilityRole="radio"
+            accessibilityState={{ checked: on, disabled: Boolean(disabled) }}
+            // The track is drawn thin; a segment still answers to a whole fingertip
+            hitSlop={{ top: 8, bottom: 8 }}
+            style={({ pressed }) => [styles.segment, compact && styles.segmentCompact, pressed && !on && { opacity: 0.55 }]}
+          >
+            {option.leading}
+            <Text variant="label" tone={on ? 'ink' : 'ink2'} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={styles.shrink}>
+              {option.label}
+            </Text>
+          </Pressable>
+        )
+      })}
+    </View>
+  )
+  if (inCard) {
+    return (
+      <View style={styles.segmentRow}>
+        {label && <Text variant="body">{label}</Text>}
+        {control}
+      </View>
+    )
+  }
   return (
     <View>
       {label && <FieldLabel>{label}</FieldLabel>}
-      <View accessibilityRole="radiogroup" accessibilityLabel={label} style={[styles.segmented, { backgroundColor: c.well, borderColor: c.line }]}>
-        {options.map((option) => {
-          const on = option.id === value
-          return (
-            <Pressable
-              key={option.id}
-              disabled={disabled}
-              onPress={() => {
-                if (on) return
-                void Haptics.selectionAsync()
-                onChange(option.id)
-              }}
-              accessibilityRole="radio"
-              accessibilityState={{ checked: on, disabled: Boolean(disabled) }}
-              // The track's own edge counts too, so a segment takes a whole fingertip
-              hitSlop={{ top: 4, bottom: 4 }}
-              style={({ pressed }) => [styles.segment, on && [styles.segmentOn, { backgroundColor: c.raised, borderColor: c.line }], pressed && !on && { opacity: 0.6 }]}
-            >
-              {option.leading}
-              <Text variant="sub" weight={on ? '600' : '500'} tone={on ? 'ink' : 'ink2'} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={styles.shrink}>
-                {option.label}
-              </Text>
-            </Pressable>
-          )
-        })}
-      </View>
+      {control}
     </View>
   )
 }
@@ -192,13 +292,16 @@ type ChipProps = {
   menu?: boolean
   /** A filter that is on: pressing it takes it off. */
   removable?: boolean
+  /** A 7pt status dot before the words (c.amber for what waits). */
+  dot?: string
   accessibilityLabel?: string
 }
 
-/** Small round choices that wrap: shortcuts and filters. */
-export function Chip({ label, selected, onPress, icon, leading, count, menu, removable, accessibilityLabel }: ChipProps) {
+/** Felt pills for the filters over a list (34 high), with a count; a chosen chip is sky felt with sky ink. */
+export function Chip({ label, selected, onPress, icon, leading, count, menu, removable, dot, accessibilityLabel }: ChipProps) {
   const c = useColors()
-  const ink = selected ? c.accentInk : c.ink
+  const ink = selected ? c.skyInk : c.ink
+  const soft = selected ? c.skyInk : c.ink2
   return (
     <Pressable
       onPress={() => {
@@ -209,66 +312,156 @@ export function Chip({ label, selected, onPress, icon, leading, count, menu, rem
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? (count !== undefined ? `${label}, ${count}` : undefined)}
       accessibilityState={{ selected: Boolean(selected) }}
-      hitSlop={{ top: 5, bottom: 5 }}
-      style={({ pressed }) => [
-        styles.chip,
-        { backgroundColor: selected ? c.accentWash : c.surface, borderColor: selected ? c.accentLine : c.line },
-        pressed && { opacity: 0.7 }
-      ]}
+      hitSlop={{ top: 6, bottom: 6 }}
+      style={({ pressed }) => [styles.chip, { backgroundColor: selected ? c.skyFelt : c.felt }, pressed && { opacity: 0.7 }]}
     >
-      {icon && <Icon name={icon} size={15} color={selected ? c.accentInk : c.ink2} />}
+      {dot && <View style={[styles.chipDot, { backgroundColor: dot }]} />}
+      {icon && <Icon name={icon} size={15} color={soft} />}
       {leading}
-      <Text variant="sub" weight="500" numberOfLines={1} style={[styles.shrink, { color: ink }]}>
+      <Text weight="500" numberOfLines={1} style={[styles.shrink, styles.chipText, { color: ink }]}>
         {label}
       </Text>
       {count !== undefined && (
-        <Text variant="foot" weight="600" tabular style={{ color: selected ? c.accentInk : c.ink3 }}>
+        <Text weight="600" tabular style={[styles.chipText, { color: soft }]}>
           {count}
         </Text>
       )}
-      {menu && <Icon name="chevronDown" size={11} color={selected ? c.accentInk : c.ink2} weight="bold" />}
-      {removable && <Icon name="close" size={11} color={selected ? c.accentInk : c.ink2} weight="bold" />}
+      {menu && <Icon name="chevronDown" size={13} color={soft} weight="medium" />}
+      {removable && <Icon name="close" size={12} color={soft} weight="medium" />}
     </Pressable>
   )
 }
 
-type DateFieldProps = {
+type MinuteInterval = 1 | 5 | 10 | 15 | 30
+
+type PickerRowProps = {
   label: string
+  mode: 'date' | 'time'
   value: Date | null
-  onChange: (value: Date | null) => void
-  /** "Today" and "Yesterday" first: most payments are entered the day they come in. */
-  shortcuts?: boolean
+  onPick: (value: Date) => void
+  /** Where an empty field opens: today, the first day allowed, or the usual time. */
+  start: Date
   minimumDate?: Date | null
   maximumDate?: Date | null
-  error?: string
-  hint?: string
+  minuteInterval?: MinuteInterval
+  /** An empty day offers today in one tap. */
+  today?: boolean
+  invalid?: boolean
 }
 
-type Limits = { minimumDate?: Date | null; maximumDate?: Date | null }
-
-/** Android's own date dialog; the iPhone shows InlineCalendar in place instead. */
-function openAndroidCalendar(value: Date | null, { minimumDate, maximumDate }: Limits, onPick: (day: Date) => void) {
-  DateTimePickerAndroid.open({
-    value: value ?? startOfDay(new Date()),
-    mode: 'date',
-    minimumDate: minimumDate ?? undefined,
-    maximumDate: maximumDate ?? undefined,
-    onChange: (event, picked) => {
-      if (event.type === 'set' && picked) onPick(startOfDay(picked))
-    }
-  })
-}
-
-function InlineCalendar({ value, minimumDate, maximumDate, onPick }: Limits & { value: Date | null; onPick: (day: Date) => void }) {
+/**
+ * A label and the phone's own picker at the right: on the iPhone the compact pill that opens the
+ * system calendar or clock, on Android a pill that opens Android's dialog. An empty field is never
+ * filled in by itself; it shows "Choose" until the person picks.
+ */
+function PickerRow({ label, mode, value, onPick, start, minimumDate, maximumDate, minuteInterval, today, invalid }: PickerRowProps) {
   const c = useColors()
+  const { t, tag, date } = useI18n()
+  const dark = useScheme() === 'dark'
+  const ios = Platform.OS === 'ios'
+  // The iPhone's calendar for an empty day, open under the row
+  const [open, setOpen] = useState(false)
+  const shown = value ? (mode === 'date' ? date(value, { day: 'numeric', month: 'short', year: 'numeric' }) : date(value, { hour: '2-digit', minute: '2-digit' })) : t.common.choose
+  const pick = (picked: Date) => onPick(mode === 'date' ? startOfDay(picked) : picked)
+  const now = new Date()
+  const todayFits = (!minimumDate || startOfDay(minimumDate) <= now) && (!maximumDate || maximumDate >= startOfDay(now))
+
+  const choose = () => {
+    if (!ios) {
+      DateTimePickerAndroid.open({
+        value: value ?? start,
+        mode,
+        // Every language of the app writes the time in 24 hours
+        is24Hour: true,
+        minuteInterval,
+        minimumDate: minimumDate ?? undefined,
+        maximumDate: maximumDate ?? undefined,
+        onChange: (event, picked) => {
+          if (event.type === 'set' && picked) pick(picked)
+        }
+      })
+      return
+    }
+    // An empty time takes the usual start at this tap; its pill then turns to the iPhone's own clock
+    if (mode === 'time') return pick(start)
+    setOpen((current) => !current)
+  }
+
+  const native = ios && value !== null
+  return (
+    <View>
+      <Pressable
+        onPress={choose}
+        disabled={native}
+        accessibilityRole={native ? undefined : 'button'}
+        accessibilityLabel={native ? undefined : `${label}: ${value ? shown : t.common.none}`}
+        accessibilityState={native ? undefined : { expanded: ios && mode === 'date' ? open : undefined }}
+        style={({ pressed }) => [styles.pickerRow, pressed && !native && { backgroundColor: c.pressed }]}
+      >
+        <Text variant="body" numberOfLines={2} style={[styles.flex, invalid ? { color: c.negativeInk } : null]}>
+          {label}
+        </Text>
+        {today && value === null && todayFits && (
+          <Button variant="plain" size="sm" onPress={() => pick(now)}>
+            {t.common.today}
+          </Button>
+        )}
+        {native ? (
+          <DateTimePicker
+            value={value}
+            mode={mode}
+            display="compact"
+            locale={tag}
+            accentColor={c.accent}
+            themeVariant={dark ? 'dark' : 'light'}
+            minuteInterval={minuteInterval}
+            minimumDate={minimumDate ?? undefined}
+            maximumDate={maximumDate ?? undefined}
+            onChange={(event, picked) => {
+              if (event.type === 'set' && picked) pick(picked)
+            }}
+            // The picker measures itself 10pt wider than its pill and draws the pill at its start;
+            // pulled back by that much it ends where the row's words would
+            style={styles.compact}
+          />
+        ) : (
+          <View style={[styles.pill, { backgroundColor: open ? tint(c.accent, 0.14) : c.track }]}>
+            <Text weight="500" tabular numberOfLines={1} style={{ color: open ? c.accentInk : value ? c.ink : c.ink3 }}>
+              {shown}
+            </Text>
+          </View>
+        )}
+      </Pressable>
+      {open && ios && mode === 'date' && (
+        <InlineCalendar
+          value={start}
+          minimumDate={minimumDate}
+          maximumDate={maximumDate}
+          onPick={(day) => {
+            pick(day)
+            setOpen(false)
+          }}
+        />
+      )}
+    </View>
+  )
+}
+
+function InlineCalendar({ value, minimumDate, maximumDate, onPick }: { value: Date; minimumDate?: Date | null; maximumDate?: Date | null; onPick: (day: Date) => void }) {
+  const c = useColors()
+  const { tag } = useI18n()
+  const dark = useScheme() === 'dark'
   const still = useReducedMotion()
   return (
-    <Animated.View entering={still ? undefined : FadeIn.duration(180)} style={[styles.calendar, { backgroundColor: c.surface, borderColor: c.line }]}>
+    // The calendar has a width of its own; centred, it leaves no gap at one side of the card
+    <Animated.View entering={still ? undefined : FadeIn.duration(180)} style={styles.calendar}>
       <DateTimePicker
-        value={value ?? startOfDay(new Date())}
+        value={value}
         mode="date"
         display="inline"
+        locale={tag}
         accentColor={c.accent}
+        themeVariant={dark ? 'dark' : 'light'}
         minimumDate={minimumDate ?? undefined}
         maximumDate={maximumDate ?? undefined}
         onChange={(event, picked) => {
@@ -279,67 +472,65 @@ function InlineCalendar({ value, minimumDate, maximumDate, onPick }: Limits & { 
   )
 }
 
-/**
- * A day, never filled in by itself. The iPhone shows its calendar inline under the field; Android
- * opens its own dialog.
- */
+type DateFieldProps = {
+  label: string
+  value: Date | null
+  onChange: (value: Date | null) => void
+  /** An empty day offers "Today" in one tap: most payments are entered the day they come in. */
+  shortcuts?: boolean
+  minimumDate?: Date | null
+  maximumDate?: Date | null
+  error?: string
+  hint?: string
+}
+
+/** A day as a row: "Date" at the left, the phone's date pill at the right. */
 export function DateField({ label, value, onChange, shortcuts, minimumDate, maximumDate, error, hint }: DateFieldProps) {
-  const c = useColors()
-  const { t, date } = useI18n()
-  const [open, setOpen] = useState(false)
   const today = startOfDay(new Date())
-  const yesterday = addDays(today, -1)
-  const isToday = Boolean(value && isSameDay(value, today))
-  const isYesterday = Boolean(value && isSameDay(value, yesterday))
-  const other = Boolean(value && !isToday && !isYesterday)
-
-  const pick = (next: Date | null) => {
-    onChange(next ? startOfDay(next) : null)
-  }
-
-  const openCalendar = () => {
-    if (Platform.OS === 'android') openAndroidCalendar(value, { minimumDate, maximumDate }, pick)
-    else setOpen((current) => !current)
-  }
-
-  const longDate = (day: Date) => date(day, { weekday: 'short', day: 'numeric', month: 'long', year: day.getFullYear() === today.getFullYear() ? undefined : 'numeric' })
-
   return (
-    <View>
-      <FieldLabel hint={hint}>{label}</FieldLabel>
-      {shortcuts ? (
-        <View style={styles.chips}>
-          <Chip label={t.common.today} selected={isToday} onPress={() => pick(today)} />
-          <Chip label={t.common.yesterday} selected={isYesterday} onPress={() => pick(yesterday)} />
-          <Chip label={other && value ? longDate(value) : t.common.date} icon="calendar" selected={other} onPress={openCalendar} />
-        </View>
-      ) : (
-        <Pressable
-          onPress={openCalendar}
-          accessibilityRole="button"
-          accessibilityLabel={`${label}: ${value ? longDate(value) : t.common.none}`}
-          style={({ pressed }) => [styles.box, { backgroundColor: c.surface, borderColor: error ? c.negative : open ? c.focus : c.line }, pressed && { opacity: 0.7 }]}
-        >
-          <Icon name="calendar" size={18} color={c.ink3} />
-          <Text variant="body" tone={value ? 'ink' : 'ink3'} style={styles.flex} numberOfLines={1}>
-            {value ? longDate(value) : t.common.date}
-          </Text>
-          <Icon name={open ? 'chevronDown' : 'chevronRight'} size={13} color={c.ink3} weight="semibold" />
-        </Pressable>
-      )}
-      {open && Platform.OS === 'ios' && (
-        <InlineCalendar
-          value={value}
-          minimumDate={minimumDate}
-          maximumDate={maximumDate}
-          onPick={(day) => {
-            pick(day)
-            setOpen(false)
-          }}
-        />
-      )}
-      <FieldError>{error}</FieldError>
-    </View>
+    <Field hint={hint} error={error}>
+      <PickerRow
+        label={label}
+        mode="date"
+        value={value}
+        onPick={onChange}
+        start={value ?? (minimumDate && minimumDate > today ? startOfDay(minimumDate) : today)}
+        minimumDate={minimumDate}
+        maximumDate={maximumDate}
+        today={shortcuts}
+        invalid={Boolean(error)}
+      />
+    </Field>
+  )
+}
+
+type TimeFieldProps = {
+  label: string
+  /** Only the hour and minute are read. */
+  value: Date | null
+  onChange: (value: Date) => void
+  /** Steps of the minute wheel (15 for lessons). */
+  minuteInterval?: MinuteInterval
+  /** The time an empty field takes at the first tap; the next full hour unless given. */
+  start?: Date
+  error?: string
+  hint?: string
+}
+
+/** A time of day as a row: "Time" at the left, the phone's clock pill at the right, 24 hours. */
+export function TimeField({ label, value, onChange, minuteInterval, start, error, hint }: TimeFieldProps) {
+  return (
+    <Field hint={hint} error={error}>
+      <PickerRow
+        label={label}
+        mode="time"
+        value={value}
+        onPick={onChange}
+        start={value ?? start ?? addHours(startOfHour(new Date()), 1)}
+        minuteInterval={minuteInterval}
+        invalid={Boolean(error)}
+      />
+    </Field>
   )
 }
 
@@ -357,135 +548,71 @@ type PeriodFieldProps = {
   footer?: ReactNode
 }
 
-/** A package period as the phone's calendar shows an event: first and last day in one card. */
+/** A package period as the phone's calendar shows an event: a group of its own with the first and last day. */
 export function PeriodField({ label, hint, startLabel, endLabel, start, end, onStart, onEnd, minimumDate, footer }: PeriodFieldProps) {
-  const c = useColors()
-  const { t, date } = useI18n()
-  const [open, setOpen] = useState<'start' | 'end' | null>(null)
-  const short = (day: Date) => date(day, { day: 'numeric', month: 'short', year: 'numeric' })
-
-  const row = (which: 'start' | 'end', rowLabel: string, value: Date | null, min: Date | null | undefined, onPick: (day: Date) => void) => {
-    const isOpen = open === which
-    // An empty day opens the calendar on today (or the first day allowed), never fills it in
-    const today = startOfDay(new Date())
-    const openAt = value ?? (min && min > today ? min : today)
-    const show = () => {
-      if (Platform.OS === 'android') openAndroidCalendar(openAt, { minimumDate: min }, onPick)
-      else setOpen(isOpen ? null : which)
-    }
-    return (
-      <View>
-        <View style={styles.periodRow}>
-          <Text variant="body" style={styles.flex} numberOfLines={1}>
-            {rowLabel}
-          </Text>
-          <Pressable
-            onPress={show}
-            accessibilityRole="button"
-            accessibilityLabel={`${rowLabel}: ${value ? short(value) : t.common.date}`}
-            accessibilityState={{ expanded: isOpen }}
-            hitSlop={6}
-            style={({ pressed }) => [styles.datePill, { backgroundColor: isOpen ? c.accentWash2 : c.well }, pressed && { opacity: 0.7 }]}
-          >
-            <Text variant="body" tabular style={{ color: isOpen ? c.accentInk : value ? c.ink : c.ink3 }}>
-              {value ? short(value) : t.common.date}
-            </Text>
-          </Pressable>
-        </View>
-        {isOpen && Platform.OS === 'ios' && (
-          <InlineCalendar
-            value={openAt}
-            minimumDate={min}
-            onPick={(day) => {
-              onPick(day)
-              setOpen(null)
-            }}
-          />
-        )}
-      </View>
-    )
-  }
-
+  const today = startOfDay(new Date())
+  // An empty day opens on today, or on the first day allowed
+  const from = (min: Date | null | undefined) => (min && min > today ? startOfDay(min) : today)
   return (
     <View>
-      <FieldLabel hint={hint}>{label}</FieldLabel>
-      <View style={[styles.periodCard, { backgroundColor: c.surface, borderColor: c.line }]}>
-        {row('start', startLabel, start, minimumDate, onStart)}
-        <View style={[styles.separator, { backgroundColor: c.line }]} />
-        {row('end', endLabel, end, start ?? minimumDate, onEnd)}
-      </View>
+      <GroupTitle>{label}</GroupTitle>
+      <Card>
+        <PickerRow label={startLabel} mode="date" value={start} onPick={onStart} start={start ?? from(minimumDate)} minimumDate={minimumDate} />
+        <PickerRow label={endLabel} mode="date" value={end} onPick={onEnd} start={end ?? from(start ?? minimumDate)} minimumDate={start ?? minimumDate} />
+      </Card>
+      {hint && <GroupFooter>{hint}</GroupFooter>}
       {footer && <View style={styles.periodFooter}>{footer}</View>}
     </View>
   )
 }
 
-/** A choice from a short list, opened in place: one row closed, the whole list open. */
+/**
+ * A choice from a list as a row: the label, the current choice in grey and the up-and-down arrows;
+ * a tap opens the phone's action sheet with the current choice ticked.
+ */
 export function SelectField<T extends string>({ label, placeholder, options, value, onChange }: { label: string; placeholder: string; options: Option<T>[]; value: T | null; onChange: (value: T) => void }) {
   const c = useColors()
-  const [open, setOpen] = useState(value === null)
+  const menu = useActionMenu()
   const current = options.find((option) => option.id === value)
+  const choose = () =>
+    menu.open(
+      label,
+      options.map((option) => ({
+        // The system sheet shows one line of words per choice, so the detail joins the name
+        label: option.description ? `${option.label}${DOT}${option.description}` : option.label,
+        selected: option.id === value,
+        onPress: () => {
+          if (option.id === value) return
+          void Haptics.selectionAsync()
+          onChange(option.id)
+        }
+      }))
+    )
   return (
-    <View>
-      <FieldLabel>{label}</FieldLabel>
-      <View style={[styles.select, { backgroundColor: c.surface, borderColor: c.line }]}>
-        {!open ? (
-          <Pressable
-            onPress={() => setOpen(true)}
-            accessibilityRole="button"
-            accessibilityLabel={`${label}: ${current?.label ?? placeholder}`}
-            accessibilityState={{ expanded: false }}
-            style={({ pressed }) => [styles.option, pressed && { backgroundColor: c.pressed }]}
-          >
-            <View style={styles.flex}>
-              <Text variant="body" tone={current ? 'ink' : 'ink3'} numberOfLines={1}>
-                {current?.label ?? placeholder}
-              </Text>
-              {current?.description && (
-                <Text variant="foot" tone="ink3">
-                  {current.description}
-                </Text>
-              )}
-            </View>
-            <Icon name="chevronDown" size={13} color={c.ink3} weight="semibold" />
-          </Pressable>
-        ) : (
-          options.map((option, index) => {
-            const on = option.id === value
-            return (
-              <View key={option.id}>
-                {index > 0 && <View style={[styles.separator, { backgroundColor: c.line }]} />}
-                <Pressable
-                  onPress={() => {
-                    void Haptics.selectionAsync()
-                    onChange(option.id)
-                    setOpen(false)
-                  }}
-                  accessibilityRole="radio"
-                  accessibilityState={{ checked: on }}
-                  style={({ pressed }) => [styles.option, pressed && { backgroundColor: c.pressed }]}
-                >
-                  <View style={styles.flex}>
-                    <Text variant="body" weight={on ? '600' : '400'} numberOfLines={1}>
-                      {option.label}
-                    </Text>
-                    {option.description && (
-                      <Text variant="foot" tone="ink3">
-                        {option.description}
-                      </Text>
-                    )}
-                  </View>
-                  {on && <Icon name="check" size={16} color={c.accentInk} weight="bold" />}
-                </Pressable>
-              </View>
-            )
-          })
-        )}
-      </View>
-    </View>
+    <Field hint={current?.description}>
+      <Pressable
+        onPress={choose}
+        accessibilityRole="button"
+        accessibilityLabel={`${label}: ${current?.label ?? placeholder}`}
+        style={({ pressed }) => [styles.pickerRow, pressed && { backgroundColor: c.pressed }]}
+      >
+        <Text variant="body" numberOfLines={2} style={styles.inputLabel}>
+          {label}
+        </Text>
+        <View style={styles.selectValue}>
+          {current?.leading}
+          <Text variant="body" tone={current ? 'ink2' : 'ink3'} numberOfLines={1} style={styles.shrink}>
+            {current?.label ?? placeholder}
+          </Text>
+          <Icon name="chevronUpDown" size={15} color={c.ink2} weight="regular" />
+        </View>
+      </Pressable>
+      {menu.element}
+    </Field>
   )
 }
 
-/** A count with minus and plus (extra lessons, the day of a monthly expense). */
+/** A count with minus and plus (extra lessons, the day of a monthly expense), as a row. */
 export function Stepper({
   label,
   value,
@@ -516,42 +643,44 @@ export function Stepper({
       disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel={a11y}
-      hitSlop={4}
-      style={({ pressed }) => [styles.stepButton, { opacity: disabled ? 0.35 : pressed ? 0.6 : 1 }]}
+      hitSlop={6}
+      style={({ pressed }) => [styles.stepButton, { opacity: disabled ? 0.3 : pressed ? 0.55 : 1 }]}
     >
-      <Icon name={icon} size={17} color={c.accentInk} weight="semibold" />
+      <Icon name={icon} size={16} color={c.ink} weight="semibold" />
     </Pressable>
   )
   return (
-    <View style={[styles.stepper, { backgroundColor: c.surface, borderColor: c.line }]}>
-      <Text variant="body" style={styles.flex}>
-        {label}
-      </Text>
-      <View
-        style={[styles.stepControl, { backgroundColor: c.well }]}
-        accessible
-        accessibilityRole="adjustable"
-        accessibilityLabel={label}
-        accessibilityValue={{ now: value, min, max }}
-        accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
-        onAccessibilityAction={(event) => step(event.nativeEvent.actionName === 'increment' ? 1 : -1)}
-      >
-        {button(-1, 'minus', decreaseLabel, value <= min)}
-        <Text variant="headline" tabular style={styles.stepValue}>
-          {value}
+    <Field>
+      <View style={styles.pickerRow}>
+        <Text variant="body" style={styles.flex}>
+          {label}
         </Text>
-        {button(1, 'add', increaseLabel, value >= max)}
+        <View
+          style={[styles.stepControl, { backgroundColor: c.track }]}
+          accessible
+          accessibilityRole="adjustable"
+          accessibilityLabel={label}
+          accessibilityValue={{ now: value, min, max }}
+          accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
+          onAccessibilityAction={(event) => step(event.nativeEvent.actionName === 'increment' ? 1 : -1)}
+        >
+          {button(-1, 'minus', decreaseLabel, value <= min)}
+          <Text variant="headline" tabular style={styles.stepValue}>
+            {value}
+          </Text>
+          {button(1, 'add', increaseLabel, value >= max)}
+        </View>
       </View>
-    </View>
+    </Field>
   )
 }
 
-/** An on/off setting with the phone's own switch, and what it means under it. */
+/** An on/off setting with the phone's own green switch, and what it means under it. */
 export function SwitchField({ label, hint, value, onChange, disabled }: { label: string; hint?: string; value: boolean; onChange: (value: boolean) => void; disabled?: boolean }) {
   const c = useColors()
   return (
-    <View style={[styles.switchBox, { backgroundColor: c.surface, borderColor: c.line }]}>
-      <View style={styles.switchRow}>
+    <Field hint={hint}>
+      <View style={styles.pickerRow}>
         <Text variant="body" style={styles.flex}>
           {label}
         </Text>
@@ -560,49 +689,52 @@ export function SwitchField({ label, hint, value, onChange, disabled }: { label:
           onValueChange={onChange}
           disabled={disabled}
           accessibilityLabel={label}
-          trackColor={{ false: c.lineStrong, true: c.accentSolid }}
+          // Android's white knob would vanish on the iPhone's pale track, so its off track is darker
+          trackColor={{ false: Platform.OS === 'android' ? c.lineStrong : c.track, true: c.toggle }}
           // The phone's own switches keep a white knob in both themes
           thumbColor="#ffffff"
-          ios_backgroundColor={c.lineStrong}
+          ios_backgroundColor={c.track}
         />
       </View>
-      {hint && (
-        <Text variant="foot" tone="ink3">
-          {hint}
-        </Text>
-      )}
-    </View>
+    </Field>
   )
 }
 
 const styles = StyleSheet.create({
-  labelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: 8, marginBottom: 7, paddingHorizontal: 2 },
-  box: { minHeight: 50, borderRadius: 14, borderWidth: 1, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  boxMultiline: { alignItems: 'flex-start', paddingVertical: 4 },
-  input: { flex: 1, fontSize: 17, minHeight: 48, paddingVertical: Platform.OS === 'android' ? 8 : 12 },
-  inputMultiline: { minHeight: 84, textAlignVertical: 'top', paddingTop: 10 },
-  search: { height: 46, borderRadius: 23, borderWidth: 1, paddingLeft: 15, paddingRight: 6, flexDirection: 'row', alignItems: 'center', gap: 9 },
-  searchInput: { flex: 1, fontSize: 16, height: 44, paddingVertical: 0 },
-  segmented: { flexDirection: 'row', borderRadius: 999, borderWidth: 1, padding: 3, gap: 2 },
-  segment: { flex: 1, height: 38, borderRadius: 999, borderWidth: 1, borderColor: 'transparent', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingHorizontal: 6 },
+  labelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: 8, marginBottom: 8, paddingHorizontal: 4 },
+  notesInRow: { paddingHorizontal: 16, paddingBottom: 12, marginTop: -4, gap: 2 },
+  notesUnder: { paddingHorizontal: 4, marginTop: 8, gap: 2 },
+  inputRow: { minHeight: 56, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  inputRowMultiline: { alignItems: 'flex-start' },
+  inputLabel: { flexShrink: 0, maxWidth: '50%' },
+  // No side padding: Android's own inset would start a placeholder-only row a few points right of the labels above it
+  input: { flex: 1, minWidth: 0, fontSize: 16, minHeight: 56, paddingHorizontal: 0, paddingVertical: Platform.OS === 'android' ? 8 : 17 },
+  inputEnd: { textAlign: 'right' },
+  inputLarge: { fontSize: 22, fontVariant: ['tabular-nums'], letterSpacing: -0.4 },
+  suffixLarge: { fontSize: 20, lineHeight: 25 },
+  inputMultiline: { minHeight: 96, textAlignVertical: 'top', paddingTop: 16 },
+  search: { height: 46, borderRadius: 23, paddingLeft: 16, paddingRight: 8, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  searchInput: { flex: 1, fontSize: 16, height: 46, paddingVertical: 0 },
+  segmented: { flexDirection: 'row', borderRadius: 999, padding: TRACK_PAD, minHeight: 36 },
+  segmentedCompact: { minHeight: 38 },
+  // The chosen piece, drawn under the words: raised, with the soft lift of what sits on felt
+  thumb: { position: 'absolute', top: TRACK_PAD, bottom: TRACK_PAD, left: TRACK_PAD, borderRadius: 999 },
+  segment: { flex: 1, minHeight: 30, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 8 },
+  segmentCompact: { minHeight: 32, paddingHorizontal: 12 },
+  segmentRow: { paddingHorizontal: 16, paddingVertical: 12, gap: 10 },
   shrink: { flexShrink: 1 },
-  segmentOn: { shadowColor: '#000000', shadowOpacity: 0.08, shadowRadius: 3, shadowOffset: { width: 0, height: 1 }, elevation: 1 },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  // A chip never grows wider than its row; a long label ends in an ellipsis inside the pill
-  chip: { height: 38, maxWidth: '100%', borderRadius: 19, borderWidth: 1, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 6 },
-  calendar: { marginTop: 10, borderRadius: 18, borderWidth: 1, paddingHorizontal: 6, paddingVertical: 4 },
-  periodCard: { borderRadius: 18, borderWidth: 1, overflow: 'hidden' },
-  periodRow: { minHeight: 52, paddingLeft: 16, paddingRight: 10, flexDirection: 'row', alignItems: 'center', gap: 12 },
-  datePill: { height: 34, borderRadius: 8, paddingHorizontal: 11, justifyContent: 'center' },
-  periodFooter: { flexDirection: 'row', marginTop: 10 },
+  // A chip never grows wider than its row; a long label ends in an ellipsis inside the capsule
+  chip: { height: 34, maxWidth: '100%', borderRadius: 17, paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center', gap: 7 },
+  chipText: { fontSize: 14, lineHeight: 18 },
+  chipDot: { width: 7, height: 7, borderRadius: 4 },
+  pickerRow: { minHeight: 56, paddingHorizontal: 16, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  pill: { minHeight: 36, borderRadius: 10, paddingHorizontal: 13, justifyContent: 'center' },
+  compact: { marginRight: -10 },
+  calendar: { alignItems: 'center', paddingHorizontal: 8, paddingBottom: 8 },
+  periodFooter: { flexDirection: 'row', marginTop: 10, paddingHorizontal: 16 },
   flex: { flex: 1, minWidth: 0 },
-  select: { borderRadius: 18, borderWidth: 1, overflow: 'hidden' },
-  option: { minHeight: 50, paddingHorizontal: 16, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  separator: { height: StyleSheet.hairlineWidth, marginLeft: 16 },
-  stepper: { borderRadius: 18, borderWidth: 1, paddingLeft: 16, paddingRight: 8, minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 12 },
-  switchBox: { borderRadius: 18, borderWidth: 1, paddingHorizontal: 16, paddingVertical: 10, gap: 6 },
-  switchRow: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 36 },
-  stepControl: { flexDirection: 'row', alignItems: 'center', borderRadius: 11, height: 40 },
-  stepButton: { width: 44, height: 40, alignItems: 'center', justifyContent: 'center' },
-  stepValue: { minWidth: 30, textAlign: 'center' }
+  selectValue: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 6 },
+  stepControl: { flexDirection: 'row', alignItems: 'center', borderRadius: 18, height: 36 },
+  stepButton: { width: 44, height: 36, alignItems: 'center', justifyContent: 'center' },
+  stepValue: { minWidth: 28, textAlign: 'center' }
 })

@@ -46,8 +46,6 @@ export const tasks = {
   /** An expense or income category to rename or hide (`code`), or a new one. */
   category: (kind: 'expense' | 'income', code?: string) => openSheet('/category', { kind, code }),
   cardSettings: () => openSheet('/card-settings'),
-  /** The day money periods start on (Settings › Money period). */
-  moneyPeriod: () => openSheet('/money-period'),
   /** Any first and last day for the Finance tab. */
   financePeriod: () => openSheet('/finance-period'),
   grantAccess: () => openSheet('/grant-access'),

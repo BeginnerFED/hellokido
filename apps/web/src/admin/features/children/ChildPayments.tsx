@@ -16,7 +16,7 @@ import { LoadError, Mark, Skeleton } from '../../ui/Bits'
 import { Button, IconButton } from '../../ui/Button'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { Menu, MenuItem, MenuSeparator } from '../../ui/Menu'
-import { Section } from '../../ui/Page'
+import { Card, CardLink } from '../../ui/Page'
 import { useSheet } from '../../ui/useSheet'
 import { cx } from '../../ui/cx'
 import { formatPeriod, shortDate } from './ChildBits'
@@ -45,7 +45,7 @@ type Line = {
  * payment (a new period or an instalment) and extra fees. Only the latest package payment can be
  * corrected or undone, which keeps the ledger and the lesson counts in step.
  */
-export function ChildPayments({ registration, level, className }: { registration: Registration; level: 2 | 3; className?: string }) {
+export function ChildPayments({ registration, level }: { registration: Registration; level: 2 | 3 }) {
   const i18n = useI18n()
   const { t, fmt, plural, money } = i18n
   const labels = useLabels()
@@ -63,7 +63,7 @@ export function ChildPayments({ registration, level, className }: { registration
   const paidLine = (method: string | null | undefined, date: string | null | undefined) =>
     [method && method !== 'belirlenmedi' ? (t.finance.methodShort[method] ?? labels.method(method)) : '', date ? shortDate(i18n, date) : '']
       .filter(Boolean)
-      .join(' · ')
+      .join(', ')
 
   const lines: Line[] = []
   const data = history.data
@@ -78,7 +78,7 @@ export function ChildPayments({ registration, level, className }: { registration
       title: t.children.detail.initial,
       meta: [labels.packageName(initialType), initialFree ? '' : formatPeriod(i18n, fresh.initial_start_date, fresh.initial_end_date)]
         .filter(Boolean)
-        .join(' · '),
+        .join(', '),
       amount: Number(initialPayment?.amount ?? fresh.initial_payment_amount ?? 0),
       state: initialFree ? 'free' : extensions.length === 0 && fresh.payment_status === 'beklemede' ? 'pending' : 'paid',
       paid: paidLine(initialPayment?.payment_method ?? fresh.initial_payment_method, initialPayment?.payment_date),
@@ -100,7 +100,7 @@ export function ChildPayments({ registration, level, className }: { registration
           formatPeriod(i18n, extension.new_start_date ?? extension.previous_end_date, extension.new_end_date)
         ]
           .filter(Boolean)
-          .join(' · '),
+          .join(', '),
         amount: Number(extension.payment_amount ?? 0),
         state: extension.payment_status === 'beklemede' ? 'pending' : 'paid',
         paid: paidLine(extension.payment_method, extension.payment_date),
@@ -125,7 +125,7 @@ export function ChildPayments({ registration, level, className }: { registration
     lines.push({
       key: entry.id,
       title: entry.description || t.children.detail.fee,
-      meta: [entry.description ? t.children.detail.fee : '', due].filter(Boolean).join(' · '),
+      meta: [entry.description ? t.children.detail.fee : '', due].filter(Boolean).join(', '),
       amount: Number(entry.amount) || 0,
       state: pending ? 'pending' : 'paid',
       paid: paidLine(entry.payment_method, entry.payment_date),
@@ -184,55 +184,61 @@ export function ChildPayments({ registration, level, className }: { registration
     }
   }
 
+  const ready = Boolean(data && entries.data)
+
   return (
-    <Section level={level} title={t.children.detail.historyTitle} className={className}>
+    <Card
+      level={level}
+      title={t.children.detail.historyTitle}
+      aside={ready && lines.length > 0 ? plural(t.children.web.payments, lines.length) : undefined}
+      footer={
+        ready && lines.length > shown ? (
+          <CardLink onPress={() => setShown((count) => count + STEP)}>
+            {plural(t.children.detail.showMorePayments, Math.min(STEP, lines.length - shown))}
+          </CardLink>
+        ) : undefined
+      }
+    >
       {history.isError || entries.isError ? (
-        <LoadError
-          message={t.children.detail.historyFailed}
-          retryLabel={t.common.retry}
-          onRetry={() => {
-            void history.refetch()
-            void entries.refetch()
-          }}
-        />
-      ) : !data || !entries.data ? (
-        <div className="flex flex-col gap-2">
+        <div className="px-4 pb-5 sm:px-[1.375rem]">
+          <LoadError
+            message={t.children.detail.historyFailed}
+            retryLabel={t.common.retry}
+            onRetry={() => {
+              void history.refetch()
+              void entries.refetch()
+            }}
+          />
+        </div>
+      ) : !ready ? (
+        <div aria-busy className="flex flex-col gap-2 px-4 pb-5 sm:px-[1.375rem]">
           <Skeleton className="h-12" />
           <Skeleton className="h-12" />
         </div>
       ) : (
-        <>
-        <ul className="divide-y divide-line">
+        <ul className="pb-1.5">
           {lines.slice(0, shown).map((line) => (
-            <li key={line.key} className="flex items-start gap-2 py-3">
+            <li key={line.key} className="flex items-center gap-3 border-t border-line px-4 py-3 first:border-t-0 sm:gap-3.5 sm:px-[1.375rem]">
               <div className="min-w-0 flex-1">
-                <div className="flex items-baseline gap-3">
-                  <p className="min-w-0 flex-1 truncate text-sm font-medium text-ink">{line.title}</p>
-                  <p className={cx('shrink-0 text-sm tabular', line.state === 'paid' ? 'font-semibold text-ink' : 'text-ink-3')}>
-                    {line.state === 'free' ? t.children.free : line.amount > 0 || line.state === 'paid' ? money(line.amount) : ''}
-                  </p>
-                </div>
-                <div className="mt-0.5 flex items-start gap-3 text-[0.8125rem] text-ink-3">
-                  <p className="min-w-0 flex-1 text-pretty">{line.meta}</p>
-                  {line.state === 'pending' ? (
-                    <Mark tone="action">{labels.paymentStatus('beklemede')}</Mark>
-                  ) : (
-                    line.state === 'paid' && line.paid && <p className="shrink-0 tabular">{line.paid}</p>
-                  )}
-                </div>
+                <p className="truncate text-[0.96875rem] leading-5 font-medium text-ink">{line.title}</p>
+                <p className="mt-0.5 text-[0.84375rem] leading-[1.125rem] text-ink-3 text-pretty">{line.meta}</p>
                 {line.action && <div className="mt-2">{line.action}</div>}
               </div>
+              <div className="flex shrink-0 flex-col items-end gap-0.5 self-start text-right">
+                <p className={cx('text-[0.96875rem] leading-5 whitespace-nowrap tabular', line.state === 'paid' ? 'font-semibold text-ink' : 'font-medium text-ink-2')}>
+                  {line.state === 'free' ? t.children.free : line.amount > 0 || line.state === 'paid' ? money(line.amount) : ''}
+                </p>
+                {line.state === 'pending' ? (
+                  <Mark tone="action">{labels.paymentStatus('beklemede')}</Mark>
+                ) : (
+                  line.state === 'paid' && line.paid && <p className="text-[0.84375rem] leading-[1.125rem] whitespace-nowrap text-ink-3 tabular">{line.paid}</p>
+                )}
+              </div>
               {/* Amounts stay in one column whether or not a row has a menu */}
-              {withMenus && <div className="-my-1 -mr-2 w-8 shrink-0 max-lg:w-10">{line.menu}</div>}
+              {withMenus && <div className="-mr-2 w-8 shrink-0 self-start max-lg:w-10">{line.menu}</div>}
             </li>
           ))}
         </ul>
-        {lines.length > shown && (
-          <Button variant="ghost" size="sm" className="mt-1 -ml-3" onPress={() => setShown((count) => count + STEP)}>
-            {plural(t.children.detail.showMorePayments, Math.min(STEP, lines.length - shown))}
-          </Button>
-        )}
-        </>
       )}
 
       {editSheet.payload && (
@@ -264,7 +270,7 @@ export function ChildPayments({ registration, level, className }: { registration
         isPending={busy}
         onConfirm={() => void remove()}
       />
-    </Section>
+    </Card>
   )
 }
 

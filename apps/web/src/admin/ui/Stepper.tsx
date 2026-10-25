@@ -21,7 +21,7 @@ type Props = {
 export function Stepper({ label, value, onChange, min = 0, max, decreaseLabel, increaseLabel, description, isDisabled, className }: Props) {
   const count = Math.min(Math.max(Math.trunc(Number(value)) || 0, min), max)
   const buttonClass =
-    'grid size-9 place-items-center rounded-[0.5rem] text-ink-2 outline-none transition-colors data-hovered:bg-well data-hovered:text-ink data-disabled:opacity-35 data-focus-visible:ring-2 data-focus-visible:ring-focus'
+    'grid size-9 place-items-center rounded-full text-ink-2 outline-none transition-colors data-hovered:bg-hover data-hovered:text-ink data-disabled:opacity-35 data-focus-visible:ring-2 data-focus-visible:ring-focus'
   return (
     <div className={cx('flex flex-col gap-1.5', className)}>
       <div className="flex items-center gap-3">
@@ -29,7 +29,7 @@ export function Stepper({ label, value, onChange, min = 0, max, decreaseLabel, i
         <Group
           aria-label={typeof label === 'string' ? label : undefined}
           isDisabled={isDisabled}
-          className="flex items-center gap-1 rounded-control border border-line-strong bg-surface p-0.5 data-disabled:opacity-50"
+          className="flex items-center gap-1 rounded-full bg-field p-[3px] data-disabled:opacity-50"
         >
           <AriaButton aria-label={decreaseLabel} isDisabled={isDisabled || count <= min} onPress={() => onChange(count - 1)} className={buttonClass}>
             <MinusIcon aria-hidden weight="bold" className="size-3.5" />

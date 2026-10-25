@@ -14,15 +14,18 @@ import type { TaskRequest } from './Actions'
 
 /** Children for the command palette: name first, parent and phone so either one finds them. */
 export function usePaletteChildren(enabled: boolean) {
+  const { t } = useI18n()
   const { data } = useRegistrations(enabled)
+  const archived = t.children.views.archived
   return useMemo(
     () =>
       (data ?? []).map((row) => ({
         id: row.id,
         name: row.student_name,
-        detail: [row.parent_name, row.parent_phone, row.is_active === false ? '·' : ''].filter(Boolean).join(' · ')
+        // An archived child says so in words (it used to end in a stray "· ·")
+        detail: [row.parent_name, row.parent_phone, row.is_active === false ? archived : ''].filter(Boolean).join(' · ')
       })),
-    [data]
+    [data, archived]
   )
 }
 

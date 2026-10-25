@@ -11,7 +11,7 @@ import { Button, ButtonLink } from '../../ui/Button'
 import { RadioList, type Option } from '../../ui/Choice'
 import { TextArea } from '../../ui/Field'
 import { Notice } from '../../ui/Notice'
-import { CardLink, Section } from '../../ui/Page'
+import { Card, CardLink } from '../../ui/Page'
 import { Sheet, SheetActions, SheetFooter } from '../../ui/Sheet'
 import { copyText } from '../notes/bits'
 import { isEnding, isFree, isPaymentDue } from './rules'
@@ -171,7 +171,7 @@ function SendMessageForm({ registration, usage, onDone }: { registration: Regist
       <SheetFooter>
         <SheetActions
           start={
-            <Button variant="secondary" icon={<CopyIcon aria-hidden className="size-4" />} onPress={() => void copy()} isDisabled={!text.trim()}>
+            <Button variant="quiet" icon={<CopyIcon aria-hidden className="size-4" />} onPress={() => void copy()} isDisabled={!text.trim()}>
               {t.messages.send.copy}
             </Button>
           }
@@ -196,7 +196,7 @@ function SendMessageForm({ registration, usage, onDone }: { registration: Regist
 const FIRST = 4
 
 /** What was sent to this family from the panel, newest first. */
-export function MessageHistory({ registration, level, className }: { registration: Registration; level: 2 | 3; className?: string }) {
+export function MessageHistory({ registration, level }: { registration: Registration; level: 2 | 3 }) {
   const { t, date } = useI18n()
   const history = useChildReminders(registration.id)
   const templates = useTemplates().data
@@ -205,40 +205,42 @@ export function MessageHistory({ registration, level, className }: { registratio
   const shown = all ? rows : rows.slice(0, FIRST)
 
   return (
-    <Section level={level} title={t.messages.send.history} aside={rows.length > 0 ? <span className="tabular">{rows.length}</span> : undefined} className={className}>
+    <Card
+      level={level}
+      title={t.messages.send.history}
+      aside={rows.length > 0 ? <span className="tabular">{rows.length}</span> : undefined}
+      footer={!all && rows.length > FIRST ? <CardLink onPress={() => setAll(true)}>{t.messages.send.showAll}</CardLink> : undefined}
+    >
       {history.isPending ? (
-        <Skeleton className="h-16" />
+        <div aria-busy className="px-4 pb-5 sm:px-[1.375rem]">
+          <Skeleton className="h-16" />
+        </div>
       ) : history.isError ? (
-        <LoadError message={t.messages.logFailed} retryLabel={t.common.retry} onRetry={() => void history.refetch()} />
+        <div className="px-4 pb-5 sm:px-[1.375rem]">
+          <LoadError message={t.messages.logFailed} retryLabel={t.common.retry} onRetry={() => void history.refetch()} />
+        </div>
       ) : rows.length === 0 ? (
-        <p className="text-sm text-ink-3">{t.messages.send.historyEmpty}</p>
+        <p className="px-4 pb-5 text-[0.9375rem] text-ink-3 sm:px-[1.375rem]">{t.messages.send.historyEmpty}</p>
       ) : (
-        <>
-          <ul className="divide-y divide-line">
-            {shown.map((entry) => {
-              const title = templates?.find((template) => template.id === entry.template_id)?.title
-              const kind = t.messages.kinds[entry.kind as MessageKind] ?? entry.kind
-              return (
-                <li key={entry.id} className="flex items-center gap-3 py-2.5">
-                  <WhatsappLogoIcon aria-hidden className="size-4 shrink-0 text-whatsapp" />
-                  <span className="min-w-0 flex-1 truncate text-sm text-ink">
-                    {title ?? kind}
-                    {title && title !== kind && <span className="text-ink-3"> · {kind}</span>}
-                  </span>
-                  <time dateTime={entry.sent_at} className="shrink-0 text-[0.8125rem] text-ink-3 tabular">
-                    {date(entry.sent_at, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                  </time>
-                </li>
-              )
-            })}
-          </ul>
-          {!all && rows.length > FIRST && (
-            <div className="mt-2">
-              <CardLink onPress={() => setAll(true)}>{t.messages.send.showAll}</CardLink>
-            </div>
-          )}
-        </>
+        <ul className="pb-1.5">
+          {shown.map((entry) => {
+            const title = templates?.find((template) => template.id === entry.template_id)?.title
+            const kind = t.messages.kinds[entry.kind as MessageKind] ?? entry.kind
+            return (
+              <li key={entry.id} className="flex items-center gap-3 border-t border-line px-4 py-3 first:border-t-0 sm:px-[1.375rem]">
+                <WhatsappLogoIcon aria-hidden className="size-[1.125rem] shrink-0 text-whatsapp" />
+                <span className="min-w-0 flex-1 truncate text-[0.9375rem] text-ink">
+                  {title ?? kind}
+                  {title && title !== kind && <span className="text-ink-3">, {kind}</span>}
+                </span>
+                <time dateTime={entry.sent_at} className="shrink-0 text-[0.84375rem] text-ink-3 tabular">
+                  {date(entry.sent_at, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                </time>
+              </li>
+            )
+          })}
+        </ul>
       )}
-    </Section>
+    </Card>
   )
 }

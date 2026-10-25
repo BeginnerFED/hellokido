@@ -107,7 +107,7 @@ const en: Widen<typeof tr> = {
     theme: 'Appearance',
     themeLight: 'Light',
     themeDark: 'Dark',
-    themeSystem: 'Match device',
+    themeSystem: 'System',
     language: 'Language',
     open: 'Account'
   },

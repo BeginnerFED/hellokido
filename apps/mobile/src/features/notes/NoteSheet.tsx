@@ -7,36 +7,31 @@ import { noteColor, PLAIN_NOTE } from '@hellokido/core/view'
 import { keys, useRefresh } from '../../data/queries'
 import { useI18n } from '../../providers/I18n'
 import { useColors } from '../../theme/colors'
-import { EmptyState, Skeleton } from '../../ui/Bits'
+import { EmptyState, ListSkeleton } from '../../ui/Bits'
 import { Button } from '../../ui/Button'
-import { FieldLabel, SwitchField, TextField } from '../../ui/Fields'
+import { SwitchField, TextField } from '../../ui/Fields'
 import { Icon } from '../../ui/Icon'
+import { CardButton, FormGroup } from '../../ui/Screen'
 import { SheetActions, SheetScreen, useSheet } from '../../ui/Sheet'
+import { Text } from '../../ui/Text'
 import { useToast } from '../../ui/Toast'
-import type { FormState } from '../payment/fields'
 import { useCopyNote } from './copy'
 
-const IDLE: FormState = { dirty: false, busy: false }
 // Dark ink on the coloured swatches: they stay light in both themes
-const SWATCH_INK = '#1c2430'
+const SWATCH_INK = '#1c1b18'
 
 /** A note to write or change; it can be copied from here too, before or after saving. */
 export function NoteSheet({ id }: { id?: string }) {
   const { t } = useI18n()
-  const [state, setState] = useState(IDLE)
   const list = useQuery({ queryKey: keys.notes, queryFn: listNotes, enabled: Boolean(id) })
   const note = id ? (list.data?.find((row) => row.id === id) ?? null) : null
-  const waiting = Boolean(id) && list.isPending
-  const missing = Boolean(id) && !waiting && !note
 
+  if (!id || note) return <NoteForm note={note} />
   return (
-    <SheetScreen title={id ? t.notes.form.editTitle : t.notes.form.newTitle} dirty={state.dirty} busy={state.busy}>
-      {waiting ? (
-        <View style={styles.stack}>
-          <Skeleton height={50} radius={13} />
-          <Skeleton height={180} radius={13} />
-        </View>
-      ) : missing ? (
+    <SheetScreen title={t.notes.form.editTitle}>
+      {list.isPending ? (
+        <ListSkeleton rows={2} />
+      ) : (
         <EmptyState
           icon="info"
           title={list.isError ? t.common.loadFailed : t.notes.form.notFound}
@@ -48,17 +43,16 @@ export function NoteSheet({ id }: { id?: string }) {
             ) : undefined
           }
         />
-      ) : (
-        <NoteForm note={note} onStateChange={setState} />
       )}
     </SheetScreen>
   )
 }
 
-function NoteForm({ note, onStateChange }: { note: Note | null; onStateChange: (state: FormState) => void }) {
+function NoteForm({ note }: { note: Note | null }) {
   const { t, fmt } = useI18n()
   const toast = useToast()
   const refresh = useRefresh()
+  // This form draws its own SheetScreen, so the bar's action closes the sheet it is in through this
   const sheet = useSheet()
   const copyNote = useCopyNote()
 
@@ -93,7 +87,6 @@ function NoteForm({ note, onStateChange }: { note: Note | null; onStateChange: (
 
   const valid = title.trim() !== ''
   const dirty = Object.keys(changes).length > 0
-  useEffect(() => onStateChange({ dirty, busy }), [dirty, busy, onStateChange])
 
   const save = async () => {
     if (!valid || busy) return
@@ -149,7 +142,7 @@ function NoteForm({ note, onStateChange }: { note: Note | null; onStateChange: (
     ])
   }
 
-  // A toast would be drawn under the sheet, so the button itself says it worked
+  // A toast would be drawn under the sheet, so the row itself says it worked
   const copy = async () => {
     const done = await copyNote({ title, content })
     if (!done) {
@@ -162,48 +155,48 @@ function NoteForm({ note, onStateChange }: { note: Note | null; onStateChange: (
     copiedTimer.current = setTimeout(() => setCopied(false), 2000)
   }
 
+  // Title and text in one card, as the phone's Reminders writes a task; the bar saves
   return (
-    <>
-      <TextField
-        label={t.notes.form.title}
-        placeholder={t.notes.form.titlePlaceholder}
-        value={title}
-        onChangeText={setTitle}
-        autoCapitalize="sentences"
-        autoComplete="off"
-        autoFocus={!note}
-        returnKeyType="next"
-        submitBehavior="submit"
-        onSubmitEditing={() => contentRef.current?.focus()}
-      />
-      <TextField
-        ref={contentRef}
-        label={t.notes.form.content}
-        placeholder={t.notes.form.contentPlaceholder}
-        value={content}
-        onChangeText={setContent}
-        autoCapitalize="sentences"
-        multiline
-        minHeight={180}
-      />
+    <SheetScreen
+      title={note ? t.notes.form.editTitle : t.notes.form.newTitle}
+      dirty={dirty}
+      busy={busy}
+      // A note being changed waits for a change; a new one for its title
+      action={{ label: t.notes.form.save, disabled: !valid || (note !== null && !dirty), onPress: () => void save() }}
+    >
+      <FormGroup>
+        <TextField
+          accessibilityLabel={t.notes.form.title}
+          placeholder={t.notes.form.title}
+          value={title}
+          onChangeText={setTitle}
+          autoCapitalize="sentences"
+          autoComplete="off"
+          autoFocus={!note}
+          returnKeyType="next"
+          submitBehavior="submit"
+          onSubmitEditing={() => contentRef.current?.focus()}
+        />
+        <TextField
+          ref={contentRef}
+          accessibilityLabel={t.notes.form.content}
+          placeholder={t.notes.form.contentPlaceholder}
+          value={content}
+          onChangeText={setContent}
+          autoCapitalize="sentences"
+          multiline
+          minHeight={180}
+        />
+      </FormGroup>
       <ColorPicker value={color} onChange={setColor} />
-      <SwitchField label={t.notes.form.favorite} value={favorite} onChange={setFavorite} />
+      <FormGroup>
+        <SwitchField label={t.notes.form.favorite} value={favorite} onChange={setFavorite} />
+      </FormGroup>
       <SheetActions error={error}>
-        <Button variant="primary" size="lg" disabled={!valid} busy={busy} onPress={() => void save()}>
-          {t.notes.form.save}
-        </Button>
-        {(content.trim() !== '' || title.trim() !== '') && (
-          <Button size="md" icon={copied ? 'check' : 'copy'} onPress={() => void copy()}>
-            {copied ? t.notes.copied : t.notes.copy}
-          </Button>
-        )}
-        {note && (
-          <Button variant="danger" size="md" icon="delete" disabled={busy} onPress={remove}>
-            {t.notes.form.delete}
-          </Button>
-        )}
+        {(content.trim() !== '' || title.trim() !== '') && <CardButton icon={copied ? 'check' : 'copy'} label={copied ? t.notes.copied : t.notes.copy} onPress={() => void copy()} />}
+        {note && <CardButton label={t.notes.form.delete} destructive disabled={busy} onPress={remove} />}
       </SheetActions>
-    </>
+    </SheetScreen>
   )
 }
 
@@ -211,8 +204,19 @@ function ColorPicker({ value, onChange }: { value: string; onChange: (value: str
   const c = useColors()
   const { t } = useI18n()
   return (
-    <View>
-      <FieldLabel hint={t.notes.colors[value]}>{t.notes.form.color}</FieldLabel>
+    <FormGroup
+      title={
+        // The chosen colour's name stands at the right of the heading
+        <View style={styles.colorTitle}>
+          <Text variant="sub" weight="600" tone="ink2">
+            {t.notes.form.color}
+          </Text>
+          <Text variant="sub" tone="ink3">
+            {t.notes.colors[value]}
+          </Text>
+        </View>
+      }
+    >
       <View accessibilityRole="radiogroup" accessibilityLabel={t.notes.form.color} style={styles.colors}>
         {NOTE_COLORS.map((hex) => {
           const on = hex === value
@@ -232,7 +236,8 @@ function ColorPicker({ value, onChange }: { value: string; onChange: (value: str
             >
               {/* The chosen colour gets a ring, with a little ground between ring and colour */}
               <View style={[styles.ring, { borderColor: on ? c.ink : 'transparent' }]}>
-                <View style={[styles.swatch, { backgroundColor: plain ? c.surface : hex }, plain && { borderWidth: 1, borderColor: c.lineStrong }]}>
+                {/* "No colour" is a plain piece lifted off the felt */}
+                <View style={[styles.swatch, { backgroundColor: plain ? c.raised : hex }, plain && { borderWidth: 1, borderColor: c.lineStrong }]}>
                   {on && <Icon name="check" size={15} color={plain ? c.ink : SWATCH_INK} weight="bold" />}
                 </View>
               </View>
@@ -240,13 +245,14 @@ function ColorPicker({ value, onChange }: { value: string; onChange: (value: str
           )
         })}
       </View>
-    </View>
+    </FormGroup>
   )
 }
 
 const styles = StyleSheet.create({
-  stack: { gap: 14 },
-  colors: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginLeft: -4 },
+  colorTitle: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 },
+  // The swatches spread over the row, as the colours of a list in Reminders
+  colors: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', paddingHorizontal: 10, paddingVertical: 6 },
   colorTarget: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
   ring: { width: 42, height: 42, borderRadius: 21, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   swatch: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' }

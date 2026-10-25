@@ -6,36 +6,23 @@ import { useI18n } from '../../providers/I18n'
 import { popoverClass } from '../../ui/Menu'
 import { cx } from '../../ui/cx'
 
-// The chosen answer is the white piece of the track, with the dot of what it means
-const SELECTED = 'bg-surface text-ink shadow-piece'
+// The answers behind "Other" keep a dot of what they mean
 const DOT: Partial<Record<AttendanceStatus, string>> = {
-  attended: 'bg-positive',
-  // An absence is counted, not a danger: grey, as on the tiles
-  no_show: 'bg-ink-3',
-  postponed: 'bg-ink-4',
+  postponed: 'bg-mute',
   makeup: 'bg-pink'
 }
 
-function Dot({ status }: { status: AttendanceStatus }) {
-  return <span aria-hidden className={cx('size-1.5 shrink-0 rounded-full', DOT[status])} />
-}
-
-// The two answers keep their whole label; only "Other" gives way when a language runs long
-const part = cx(
-  'flex h-[1.875rem] items-center justify-center gap-1.5 rounded-full px-2 text-[0.8125rem] font-medium whitespace-nowrap text-ink-3 outline-none max-lg:h-9',
-  'transition-[background-color,color,box-shadow] duration-150 data-hovered:text-ink',
-  'data-focus-visible:ring-2 data-focus-visible:ring-focus data-disabled:opacity-50'
-)
-
 /**
- * Attendance in one tap: the two common answers as buttons, postponed and make-up behind "Other".
- * "Scheduled" is never chosen here; a lesson can only move forward from it.
+ * Attendance in one tap: the two common answers as pieces of a felt track, postponed and make-up
+ * behind "Other". "Scheduled" is never chosen here; a lesson can only move forward from it.
+ * `onType` draws it on a lesson's card: that type's track and ink.
  */
 export function AttendancePicker({
   status,
   onChange,
   label,
   isDisabled,
+  onType,
   className
 }: {
   status: string
@@ -43,29 +30,51 @@ export function AttendancePicker({
   /** What a screen reader hears for the group, e.g. "Ada's attendance". */
   label: string
   isDisabled?: boolean
+  onType?: boolean
   className?: string
 }) {
   const { t } = useI18n()
   const labels = useLabels()
   const other = status === 'postponed' || status === 'makeup'
-  const toggle = (mark: AttendanceStatus) => (
-    <ToggleButton
-      isSelected={status === mark}
-      onChange={(selected) => selected && onChange(mark)}
-      isDisabled={isDisabled}
-      className={cx(part, status === mark && SELECTED)}
-    >
-      {status === mark && <Dot status={mark} />}
-      <span className="truncate">{labels.attendance(mark)}</span>
-    </ToggleButton>
-  )
+
+  const part = (on: boolean, attended = false) =>
+    cx(
+      'flex h-8 min-w-0 flex-[1_1_auto] items-center justify-center gap-1 rounded-full px-2 text-[0.84375rem] font-medium whitespace-nowrap outline-none max-lg:h-9',
+      'transition-[background-color,color,box-shadow] duration-180 ease-out',
+      'data-focus-visible:ring-2 data-focus-visible:ring-focus data-disabled:opacity-50',
+      // The chosen answer is a raised piece lifted off the track; "attended" carries a green check
+      on && 'bg-raised shadow-lift',
+      on && onType && 'dark:bg-[color-mix(in_srgb,var(--t-ink)_24%,var(--t-track))]',
+      !on && (onType ? 'text-(--t-ink)' : 'text-ink-2 data-hovered:text-ink'),
+      on && attended && (onType ? 'text-green-ink dark:text-[#bff0d3]' : 'text-green-ink'),
+      on && !attended && (onType ? 'text-ink dark:text-white' : 'text-ink')
+    )
+
+  const toggle = (mark: AttendanceStatus) => {
+    const on = status === mark
+    return (
+      <ToggleButton
+        isSelected={on}
+        onChange={(next) => next && onChange(mark)}
+        isDisabled={isDisabled}
+        className={part(on, mark === 'attended')}
+      >
+        {on && mark === 'attended' && <CheckIcon aria-hidden weight="bold" className="size-3.5 shrink-0" />}
+        <span className="truncate">{labels.attendance(mark)}</span>
+      </ToggleButton>
+    )
+  }
   return (
-    <div role="group" aria-label={label} className={cx('grid grid-cols-[1fr_1fr_auto] gap-0.5 rounded-full bg-well p-1', className)}>
+    <div
+      role="group"
+      aria-label={label}
+      className={cx('flex gap-0.5 rounded-full p-[3px]', onType ? 'bg-(--t-track)' : 'bg-track', className)}
+    >
       {toggle('attended')}
       {toggle('no_show')}
       <MenuTrigger>
-        <AriaButton isDisabled={isDisabled} className={cx(part, 'min-w-0 pr-2 pl-2.5', other && SELECTED)}>
-          {other && <Dot status={status as AttendanceStatus} />}
+        <AriaButton isDisabled={isDisabled} className={cx(part(other), 'pr-2 pl-2.5')}>
+          {other && <span aria-hidden className={cx('size-[7px] shrink-0 rounded-full', DOT[status as AttendanceStatus])} />}
           <span className="truncate">{other ? labels.attendance(status) : t.today.otherStatus}</span>
           <CaretDownIcon aria-hidden weight="bold" className="size-3 shrink-0 opacity-70" />
         </AriaButton>
@@ -75,7 +84,7 @@ export function AttendancePicker({
               <AriaMenuItem
                 key={mark}
                 id={mark}
-                className="flex cursor-default items-center gap-2.5 rounded-[0.5rem] px-2.5 py-2 text-sm text-ink outline-none select-none data-focused:bg-well"
+                className="flex min-h-10 cursor-default items-center gap-2.5 rounded-full px-3 py-2 text-[0.9375rem] text-ink outline-none select-none data-focused:bg-hover"
               >
                 <CheckIcon aria-hidden weight="bold" className={cx('size-4', status === mark ? 'text-accent' : 'opacity-0')} />
                 {labels.attendance(mark)}

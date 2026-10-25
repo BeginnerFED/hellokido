@@ -134,12 +134,14 @@ export default function CalendarPage() {
     view === 'month' ? isSameMonth(anchor, now) : view === 'day' ? isSameDay(anchor, now) : isSameWeek(anchor, now, { weekStartsOn: 1 })
 
   const monday = weekStart(anchor)
-  const heading =
-    view === 'month'
-      ? date(anchor, { month: 'long', year: 'numeric' })
-      : view === 'day' && wide
-        ? date(anchor, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
-        : dateRange(i18n, monday, addDays(monday, 6), { day: 'numeric', month: 'long', year: 'numeric' })
+  // The page is titled by what it shows; phones, which work a day at a time, name the month
+  // Long month names, unless that runs past the toolbar (a Ukrainian or English range across two months)
+  const titled = (month: 'long' | 'short') =>
+    view === 'day'
+      ? date(anchor, { weekday: 'long', day: 'numeric', month, year: 'numeric' })
+      : dateRange(i18n, monday, addDays(monday, 6), { day: 'numeric', month, year: 'numeric' })
+  const shown = view === 'month' || !wide ? date(anchor, { month: 'long', year: 'numeric' }) : titled('long').length > 24 ? titled('short') : titled('long')
+  const heading = `${shown.charAt(0).toLocaleUpperCase(i18n.tag)}${shown.slice(1)}`
 
   // The week being copied is the one on screen; from the month view the week is shown first
   const openCopy = () => {
@@ -151,18 +153,22 @@ export default function CalendarPage() {
 
   const toolbar = (
     <>
-      <Segmented<CalendarView>
-        aria-label={t.calendar.view}
-        size="sm"
-        options={viewOptions}
-        value={view}
-        onChange={(next) => go({ view: next })}
-        fit
-      />
+      <div className="flex items-center gap-1">
+        <IconButton label={stepLabels[0]} variant="quiet" onPress={() => step(-1)}>
+          <CaretLeftIcon aria-hidden weight="bold" className="size-4" />
+        </IconButton>
+        <Button variant="quiet" onPress={() => go({ date: new Date(`${todayKey}T00:00:00`) })} isDisabled={showsToday}>
+          {t.common.today}
+        </Button>
+        <IconButton label={stepLabels[1]} variant="quiet" onPress={() => step(1)}>
+          <CaretRightIcon aria-hidden weight="bold" className="size-4" />
+        </IconButton>
+      </div>
+      <Segmented<CalendarView> aria-label={t.calendar.view} options={viewOptions} value={view} onChange={(next) => go({ view: next })} fit />
       <Menu
         label={t.calendar.more}
         trigger={
-          <IconButton label={t.calendar.more} variant="secondary" size="sm" className="max-lg:ml-auto">
+          <IconButton label={t.calendar.more} variant="quiet" className="max-lg:ml-auto">
             <DotsThreeIcon aria-hidden weight="bold" className="size-5" />
           </IconButton>
         }
@@ -178,29 +184,23 @@ export default function CalendarPage() {
   )
 
   return (
-    <Page title={t.calendar.title} toolbar={toolbar} action={{ label: t.calendar.newLesson, onPress: () => startTask('lesson') }} width="wide">
-      <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-3">
-        <div className="flex items-center gap-1">
-          <IconButton label={stepLabels[0]} size="sm" onPress={() => step(-1)}>
-            <CaretLeftIcon aria-hidden weight="bold" className="size-4" />
-          </IconButton>
-          <Button size="sm" variant="secondary" onPress={() => go({ date: new Date(`${todayKey}T00:00:00`) })} isDisabled={showsToday}>
-            {t.common.today}
-          </Button>
-          <IconButton label={stepLabels[1]} size="sm" onPress={() => step(1)}>
-            <CaretRightIcon aria-hidden weight="bold" className="size-4" />
-          </IconButton>
-        </div>
-        <h2 aria-live="polite" className="text-[1.0625rem] font-semibold first-letter:uppercase">
-          {heading}
-        </h2>
-        {view === 'week' && <WeekTheme week={anchor} theme={themes.data?.[weekKey(anchor)]} isLoading={themesLoading} className="lg:ml-auto" />}
-      </div>
+    <Page
+      title={<span aria-live="polite">{heading}</span>}
+      crumb={t.calendar.title}
+      toolbar={toolbar}
+      // Looking at another week or day, a new lesson starts there rather than back on today
+      action={{ label: t.calendar.newLesson, onPress: () => (showsToday ? startTask('lesson') : createOn(anchor)) }}
+      width="wide"
+    >
+      {/* The week's theme reads as the line under the title */}
+      {view !== 'month' && (
+        <WeekTheme week={anchor} theme={themes.data?.[weekKey(anchor)]} isLoading={themesLoading} className="mb-4 lg:-mt-3.5 lg:mb-5" />
+      )}
 
       {lessons.isError ? (
         <LoadError message={t.calendar.loadFailed} retryLabel={t.common.retry} onRetry={() => void lessons.refetch()} />
       ) : lessons.isPending ? (
-        <Skeleton className={cx('rounded-panel', view === 'day' ? 'h-72' : 'h-[36rem]')} />
+        <Skeleton className={cx('rounded-panel', view === 'day' ? 'h-72 max-w-3xl' : 'h-[36rem]')} />
       ) : (
         <div aria-busy={waiting} className={cx('transition-opacity duration-200', waiting && 'opacity-60')}>
           {view === 'week' && (
@@ -223,10 +223,7 @@ export default function CalendarPage() {
           )}
           {view === 'day' && (
             <div className="flex max-w-3xl flex-col gap-5">
-              <div className="flex flex-col gap-2">
-                <WeekStrip days={daysOf(monday)} selected={anchor} lessons={list} now={now} onSelect={(day) => go({ date: day })} />
-                <WeekTheme week={anchor} theme={themes.data?.[weekKey(anchor)]} isLoading={themesLoading} className="px-1" />
-              </div>
+              <WeekStrip days={daysOf(monday)} selected={anchor} lessons={list} now={now} onSelect={(day) => go({ date: day })} />
               <DayAgenda day={anchor} lessons={list} now={now} isPending={waiting} onOpen={open} onCreate={createOn} />
             </div>
           )}

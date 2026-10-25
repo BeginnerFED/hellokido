@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { StyleSheet, View } from 'react-native'
 import { useQuery } from '@tanstack/react-query'
 import * as Haptics from 'expo-haptics'
@@ -6,44 +6,43 @@ import { saveThemes, themesBetween } from '@hellokido/core/api'
 import { keys, useRefresh } from '../../data/queries'
 import { useI18n } from '../../providers/I18n'
 import { LoadError, Skeleton } from '../../ui/Bits'
-import { Button } from '../../ui/Button'
 import { TextField } from '../../ui/Fields'
+import { ActionRow, Card, FormGroup } from '../../ui/Screen'
 import { SheetActions, SheetScreen, useSheet } from '../../ui/Sheet'
-import { Text } from '../../ui/Text'
 import { useToast } from '../../ui/Toast'
-import type { FormState } from '../payment/fields'
 import { weekRange } from './parts'
 
 const MAX_LENGTH = 80
-const IDLE: FormState = { dirty: false, busy: false }
 
 /** The theme of one week (its Monday, 'yyyy-MM-dd'). An emptied theme is removed. */
 export function WeekThemeSheet({ week }: { week: string }) {
   const i18n = useI18n()
   const { t } = i18n
-  const [state, setState] = useState(IDLE)
   const theme = useQuery({ queryKey: keys.themes(week, week), queryFn: () => themesBetween(week, week) })
+  const subtitle = weekRange(i18n, new Date(`${week}T00:00:00`))
 
-  return (
-    <SheetScreen title={t.calendar.theme.label} subtitle={weekRange(i18n, new Date(`${week}T00:00:00`))} dirty={state.dirty} busy={state.busy}>
-      {theme.isError ? (
-        <LoadError message={t.calendar.loadFailed} retryLabel={t.common.retry} onRetry={() => void theme.refetch()} />
-      ) : !theme.data ? (
-        <View style={styles.stack}>
-          <Skeleton height={50} radius={13} />
-          <Skeleton height={50} radius={14} />
-        </View>
-      ) : (
-        <ThemeForm week={week} current={theme.data[week]?.trim() ?? ''} onStateChange={setState} />
-      )}
-    </SheetScreen>
-  )
+  if (!theme.data) {
+    return (
+      <SheetScreen title={t.calendar.theme.label} subtitle={subtitle}>
+        {theme.isError ? (
+          <LoadError message={t.calendar.loadFailed} retryLabel={t.common.retry} onRetry={() => void theme.refetch()} />
+        ) : (
+          <View style={styles.stack}>
+            <Skeleton height={44} radius={26} />
+            <Skeleton height={44} radius={26} />
+          </View>
+        )}
+      </SheetScreen>
+    )
+  }
+  return <ThemeForm week={week} subtitle={subtitle} current={theme.data[week]?.trim() ?? ''} />
 }
 
-function ThemeForm({ week, current, onStateChange }: { week: string; current: string; onStateChange: (state: FormState) => void }) {
+function ThemeForm({ week, subtitle, current }: { week: string; subtitle: string; current: string }) {
   const { t, fmt, date } = useI18n()
   const toast = useToast()
   const refresh = useRefresh()
+  // This form draws its own SheetScreen, so the bar's action closes the sheet it is in through this
   const sheet = useSheet()
   const [draft, setDraft] = useState(current)
   const [busy, setBusy] = useState(false)
@@ -51,12 +50,11 @@ function ThemeForm({ week, current, onStateChange }: { week: string; current: st
   const [error, setError] = useState<string | null>(null)
   const next = draft.trim()
   const dirty = next !== current
-  useEffect(() => onStateChange({ dirty, busy }), [dirty, busy, onStateChange])
 
   const save = async (value: string) => {
     if (busy || sending.current) return
     if (value === current) return sheet.finish()
-    // The return key and the button can both fire before the next render
+    // The return key and the bar's button can both fire before the next render
     sending.current = true
     setBusy(true)
     setError(null)
@@ -75,8 +73,14 @@ function ThemeForm({ week, current, onStateChange }: { week: string; current: st
   }
 
   return (
-    <>
-      <View>
+    <SheetScreen
+      title={t.calendar.theme.label}
+      subtitle={subtitle}
+      dirty={dirty}
+      busy={busy}
+      action={{ label: t.common.save, disabled: !dirty, onPress: () => void save(next) }}
+    >
+      <FormGroup footer={t.calendar.theme.hint}>
         <TextField
           accessibilityLabel={fmt(t.calendar.theme.editWeek, { date: date(new Date(`${week}T00:00:00`), { day: 'numeric', month: 'long' }) })}
           placeholder={t.calendar.theme.placeholder}
@@ -90,25 +94,18 @@ function ThemeForm({ week, current, onStateChange }: { week: string; current: st
           editable={!busy}
           onSubmitEditing={() => void save(next)}
         />
-        <Text variant="foot" tone="ink3" style={styles.hint}>
-          {t.calendar.theme.hint}
-        </Text>
-      </View>
-      <SheetActions error={error}>
-        <Button variant="primary" size="lg" disabled={!dirty} busy={busy} onPress={() => void save(next)}>
-          {t.common.save}
-        </Button>
-        {current !== '' && (
-          <Button variant="danger" size="md" icon="delete" disabled={busy} onPress={() => void save('')}>
-            {t.mobile.removeTheme}
-          </Button>
-        )}
-      </SheetActions>
-    </>
+      </FormGroup>
+      {/* Last and on its own, as the phone's own "Delete Event" */}
+      {current !== '' && (
+        <Card>
+          <ActionRow icon="delete" label={t.mobile.removeTheme} destructive disabled={busy} onPress={() => void save('')} />
+        </Card>
+      )}
+      <SheetActions error={error} />
+    </SheetScreen>
   )
 }
 
 const styles = StyleSheet.create({
-  stack: { gap: 14 },
-  hint: { marginTop: 8, paddingHorizontal: 2 }
+  stack: { gap: 24 }
 })

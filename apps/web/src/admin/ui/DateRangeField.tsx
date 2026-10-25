@@ -65,7 +65,7 @@ export function DateRangeField({ label, value, onChange, minValue, errorMessage,
       {({ state }) => (
         <>
           {label && <Label className={fieldLabelClass}>{label}</Label>}
-          <Group className={cx(inputClass, 'flex h-11 items-center gap-1 pr-1 data-focus-within:border-accent data-focus-within:ring-3 data-focus-within:ring-accent/20')}>
+          <Group className={cx(inputClass, 'flex h-[2.875rem] items-center gap-1 pr-1 data-focus-within:border-accent data-focus-within:ring-3 data-focus-within:ring-accent/20')}>
             <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden tabular">
               <DateInput slot="start" className="flex items-center">
                 {(segment) => <DateSegment segment={segment} className={segmentClass} />}

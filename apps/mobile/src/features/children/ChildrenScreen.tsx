@@ -1,25 +1,27 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
-import { BackHandler, FlatList, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native'
-import { Stack, useFocusEffect } from 'expo-router'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { BackHandler, FlatList, Keyboard, Linking, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native'
+import { Stack, useNavigation } from 'expo-router'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useQueryClient } from '@tanstack/react-query'
-import type { SearchBarCommands } from 'react-native-screens'
-import type { Registration, UsageMap } from '@hellokido/core/api'
-import { byName, daysLeft, endText, ENDING_WINDOW_DAYS, isEnding, isFree, isPaymentDue, isRunningLow, matchesChild } from '@hellokido/core/view'
-import { useActiveUsage, useLabels, useRegistrations } from '../../data/queries'
-import { headerButton, tasks, useOpenChild } from '../../lib/navigation'
+import { remainingTone, type Registration, type Usage, type UsageMap } from '@hellokido/core/api'
+import { phoneDigits, whatsAppLink } from '@hellokido/core/rules/phone.js'
+import { byName, daysLeft, ENDING_WINDOW_DAYS, isEnding, isFree, isPaymentDue, isRunningLow, matchesChild, remainingText } from '@hellokido/core/view'
+import { useTemplates } from '../../data/messages'
+import { useActiveUsage, useCatalog, useChildLessons, useChildUsage, useLabels, useRegistrations } from '../../data/queries'
+import { tasks, useOpenChild } from '../../lib/navigation'
 import { useI18n } from '../../providers/I18n'
 import { useColors } from '../../theme/colors'
-import { useActionMenu } from '../../ui/ActionMenu'
-import { EmptyState, ListSkeleton, LoadError, Mark } from '../../ui/Bits'
+import { useActionMenu, type MenuItem } from '../../ui/ActionMenu'
+import { Avatar, AVATAR_INSET, EmptyState, firstNameOf, ListSkeleton, LoadError, Mark, Skeleton } from '../../ui/Bits'
 import { Button } from '../../ui/Button'
-import { Chip, Segmented } from '../../ui/Fields'
-import { Icon } from '../../ui/Icon'
+import { Chip, SearchField, Segmented } from '../../ui/Fields'
 import { OfflineNotice } from '../../ui/OfflineNotice'
-import { usePullRefresh } from '../../ui/Screen'
-import { Peg } from '../../ui/signature'
+import { Card, RoundButton, ScreenHeader, usePullRefresh } from '../../ui/Screen'
+import { closeSwipedRow, SwipeRow, type RowAction } from '../../ui/SwipeRow'
 import { DOT, Text } from '../../ui/Text'
-import { UsageLine } from '../../ui/UsageLine'
 import { usePackageOptions } from '../payment/fields'
+import { packageEndText } from './ChildDetailScreen'
+import { useMessageItems } from './ChildMessages'
 
 type ListView = 'active' | 'archived'
 type Filter = 'pending' | 'low' | 'ending'
@@ -32,17 +34,18 @@ const TESTS: Record<Filter, (row: Registration, usage: UsageMap | undefined) => 
 }
 
 /**
- * Every child, found by name, parent or phone from the search bar of the phone. The filters say how
- * many children each one leaves; a child opens on its own page and back returns to the same place.
+ * Every child as one felt list, found by name, parent or phone. The title and the search sit in
+ * the page; the chips say how many children each filter leaves; each row shows the lessons left as
+ * a big figure. A child opens on its own page and back returns to the same place.
  */
-import { BackHandler as DbgBack } from 'react-native'
-DbgBack.addEventListener('hardwareBackPress', () => { console.log('SRCHDBG global back'); return false })
 export function ChildrenScreen() {
   const c = useColors()
+  const insets = useSafeAreaInsets()
   const { t, plural } = useI18n()
   const labels = useLabels()
   const client = useQueryClient()
   const menu = useActionMenu()
+  const openChild = useOpenChild()
   const registrations = useRegistrations()
   const usage = useActiveUsage().data
   const packageOrder = usePackageOptions({ includeFree: true })
@@ -51,31 +54,23 @@ export function ChildrenScreen() {
   const [filter, setFilter] = useState<Filter | null>(null)
   const [pkg, setPkg] = useState<string>(ANY_PACKAGE)
   const [query, setQuery] = useState('')
-  const search = useRef<SearchBarCommands | null>(null)
-  const [searching, setSearching] = useState(false)
 
-  // On Android back hides the keyboard, then leaves the field; an empty search closes there, and
-  // a search with words closes on the next back. The bar's own back only emptied the words. Only
+  // On Android back first hides the keyboard (the phone does that), then empties the search. Only
   // while the list is on screen: a child's page opened from the search goes back as usual.
-  useFocusEffect(
-    useCallback(() => {
-      if (Platform.OS !== 'android' || !searching) return
-      console.log('SRCHDBG add')
-      const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
-        console.log('SRCHDBG back')
-        search.current?.cancelSearch()
-        return true
-      })
-      return () => {
-        console.log('SRCHDBG remove')
-        subscription.remove()
-        // The field would keep the focus under a child's page and swallow its back
-        search.current?.blur()
-      }
-    }, [searching])
-  )
+  const navigation = useNavigation()
+  const searching = query !== ''
+  useEffect(() => {
+    if (Platform.OS !== 'android' || !searching) return
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (!navigation.isFocused()) return false
+      setQuery('')
+      return true
+    })
+    return () => subscription.remove()
+  }, [searching, navigation])
 
   const rows = registrations.data
+  const activeCount = useMemo(() => (rows ?? []).filter((row) => row.is_active === true).length, [rows])
   const inView = useMemo(() => (rows ?? []).filter((row) => (view === 'active' ? row.is_active === true : row.is_active !== true)), [rows, view])
   const searched = useMemo(() => inView.filter((row) => matchesChild(row, query)), [inView, query])
   const inPackage = useMemo(() => (pkg === ANY_PACKAGE ? searched : searched.filter((row) => row.package_type === pkg)), [searched, pkg])
@@ -124,177 +119,293 @@ export function ChildrenScreen() {
     setPkg(ANY_PACKAGE)
   }
 
+  // The search keeps the keyboard (and Android's back) under the child's page unless it lets go first
+  const open = useCallback(
+    (id: string) => {
+      Keyboard.dismiss()
+      openChild(id)
+    },
+    [openChild]
+  )
+
   const refresh = useCallback(async () => {
     await Promise.all([registrations.refetch(), client.invalidateQueries({ queryKey: ['usage'] })])
   }, [registrations, client])
   const pull = usePullRefresh(refresh)
 
+  // "Message" from a row's menu: the family's saved messages are read for that child alone, then offered
+  const [messaging, setMessaging] = useState<Registration | null>(null)
+  const openMenu = menu.open
+  const offerMessages = useCallback(
+    (items: MenuItem[]) => {
+      setMessaging(null)
+      openMenu(t.messages.send.button, items, t.messages.send.menuHint)
+    },
+    [openMenu, t]
+  )
+
+  const pendingCount = count('pending')
   const header = (
-    <View style={styles.header}>
-      <OfflineNotice />
-      <Segmented<ListView>
-        options={[
-          { id: 'active', label: t.children.views.active },
-          { id: 'archived', label: t.children.views.archived }
-        ]}
-        value={view}
-        onChange={changeView}
+    <View>
+      <ScreenHeader
+        title={t.children.title}
+        subtitle={rows ? plural(t.children.summary.active, activeCount) : undefined}
+        actions={<RoundButton icon="add" label={t.children.newRegistration} onPress={() => tasks.registration()} />}
       />
-      {/* One row that scrolls sideways, like the filters of the phone's own apps */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipsScroll} contentContainerStyle={styles.chips} accessibilityLabel={t.children.filters.label}>
-        <Chip label={pkg === ANY_PACKAGE ? t.children.anyPackage : labels.packageName(pkg)} selected={pkg !== ANY_PACKAGE} onPress={choosePackage} menu />
-        {view === 'active' &&
-          filters.map((item) => (
-            <Chip key={item.id} label={item.label} count={count(item.id)} selected={filter === item.id} onPress={() => setFilter(filter === item.id ? null : item.id)} />
-          ))}
-      </ScrollView>
-      {rows && shown.length > 0 && (
-        <Text variant="foot" tone="ink3" style={styles.count}>
-          {plural(t.children.count, shown.length)}
-        </Text>
-      )}
+      <View style={styles.tools}>
+        <OfflineNotice />
+        <SearchField value={query} onChange={setQuery} placeholder={t.children.searchPlaceholder} label={t.children.searchPlaceholder} />
+        <Segmented<ListView>
+          options={[
+            { id: 'active', label: t.children.views.active },
+            { id: 'archived', label: t.children.views.archived }
+          ]}
+          value={view}
+          onChange={changeView}
+        />
+        {/* One row that scrolls sideways, like the filters of the phone's own apps */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          style={styles.chipsScroll}
+          contentContainerStyle={styles.chips}
+          accessibilityLabel={t.children.filters.label}
+        >
+          {view === 'active' &&
+            filters.map((item) => (
+              <Chip
+                key={item.id}
+                label={item.label}
+                count={count(item.id)}
+                dot={item.id === 'pending' && pendingCount ? c.amber : undefined}
+                selected={filter === item.id}
+                onPress={() => setFilter(filter === item.id ? null : item.id)}
+              />
+            ))}
+          <Chip label={pkg === ANY_PACKAGE ? t.children.anyPackage : labels.packageName(pkg)} selected={pkg !== ANY_PACKAGE} onPress={choosePackage} menu />
+        </ScrollView>
+      </View>
     </View>
   )
+  // The count closes the list, as in the phone's Contacts
+  const footer =
+    rows && shown.length > 0 ? (
+      <Text variant="foot" tone="ink3" align="center" tabular style={styles.count}>
+        {plural(t.children.count, shown.length)}
+      </Text>
+    ) : undefined
 
   const empty = registrations.isError ? (
     <LoadError message={t.children.loadFailed} retryLabel={t.common.retry} onRetry={() => void registrations.refetch()} />
   ) : !rows ? (
     <ListSkeleton rows={8} />
-  ) : rows.length === 0 ? (
-    <EmptyState
-      icon="personAdd"
-      title={t.children.empty.none}
-      body={t.children.empty.noneBody}
-      action={
-        <Button variant="primary" icon="add" onPress={() => tasks.registration()}>
-          {t.children.newRegistration}
-        </Button>
-      }
-    />
-  ) : view === 'archived' && inView.length === 0 ? (
-    <EmptyState title={t.children.empty.archive} />
   ) : (
-    <EmptyState
-      icon={query.trim() ? 'search' : undefined}
-      title={query.trim() ? t.children.empty.search : t.children.empty.filters}
-      action={
-        filter || pkg !== ANY_PACKAGE ? (
-          <Button size="sm" onPress={clearFilters}>
-            {t.common.clearFilters}
-          </Button>
-        ) : undefined
-      }
-    />
+    <Card padded>
+      {rows.length === 0 ? (
+        <EmptyState
+          icon="personAdd"
+          title={t.children.empty.none}
+          body={t.children.empty.noneBody}
+          action={
+            <Button variant="primary" icon="add" onPress={() => tasks.registration()}>
+              {t.children.newRegistration}
+            </Button>
+          }
+        />
+      ) : view === 'archived' && inView.length === 0 ? (
+        <EmptyState icon="archive" title={t.children.empty.archive} />
+      ) : (
+        <EmptyState
+          icon="search"
+          title={query.trim() ? t.children.empty.search : t.children.empty.filters}
+          action={
+            filter || pkg !== ANY_PACKAGE ? (
+              <Button size="sm" onPress={clearFilters}>
+                {t.common.clearFilters}
+              </Button>
+            ) : undefined
+          }
+        />
+      )}
+    </Card>
   )
 
+  // The iPhone keeps the list under the status bar by itself; Android's page starts at the very top
+  const top = Platform.OS === 'android' ? insets.top : 0
+
   return (
-    <>
-      <Stack.Screen
-        options={{
-          ...headerButton(c, t.children.newRegistration, 'add', () => tasks.registration()),
-          headerSearchBarOptions: {
-            ref: search,
-            placeholder: t.children.searchPlaceholder,
-            onChangeText: (event) => setQuery(event.nativeEvent.text),
-            onCancelButtonPress: () => setQuery(''),
-            onOpen: () => setSearching(true),
-            onBlur: () => {
-              if (Platform.OS === 'android' && !query.trim()) search.current?.cancelSearch()
-            },
-            onClose: () => {
-              setSearching(false)
-              setQuery('')
-            },
-            autoCapitalize: 'none',
-            hideWhenScrolling: false,
-            placement: 'stacked',
-            tintColor: c.accentInk,
-            textColor: c.ink,
-            headerIconColor: c.ink2,
-            hintTextColor: c.ink3
-          }
-        }}
-      />
+    <View style={[styles.flex, { backgroundColor: c.page }]}>
+      <Stack.Screen options={{ headerShown: false }} />
       {menu.element}
+      {messaging && <MessagePicker key={messaging.id} registration={messaging} activeUsage={usage?.[messaging.id]} onReady={offerMessages} />}
       <FlatList
         data={rows ? shown : []}
         keyExtractor={(row) => row.id}
-        renderItem={({ item, index }) => <ChildRow row={item} usage={usage} first={index === 0} last={index === shown.length - 1} />}
+        renderItem={({ item, index }) => (
+          <ChildRow row={item} usage={usage} first={index === 0} last={index === shown.length - 1} onOpen={open} openMenu={openMenu} onMessage={setMessaging} />
+        )}
         ListHeaderComponent={header}
+        ListFooterComponent={footer}
         ListEmptyComponent={empty}
+        onScrollBeginDrag={closeSwipedRow}
         contentInsetAdjustmentBehavior="automatic"
         keyboardDismissMode="on-drag"
         keyboardShouldPersistTaps="handled"
         initialNumToRender={14}
         windowSize={11}
-        style={{ backgroundColor: c.ground }}
-        contentContainerStyle={styles.content}
-        refreshControl={<RefreshControl refreshing={pull.refreshing} onRefresh={pull.onRefresh} tintColor={c.ink3} colors={[c.accent]} progressBackgroundColor={c.surface} />}
+        style={{ backgroundColor: c.page }}
+        contentContainerStyle={[styles.content, { paddingTop: top }]}
+        refreshControl={
+          <RefreshControl
+            refreshing={pull.refreshing}
+            onRefresh={pull.onRefresh}
+            tintColor={c.ink3}
+            colors={[c.accent]}
+            progressBackgroundColor={c.raised}
+            progressViewOffset={top}
+          />
+        }
       />
-    </>
-  )
-}
-
-function ChildRow({ row, usage, first, last }: { row: Registration; usage: UsageMap | undefined; first: boolean; last: boolean }) {
-  const c = useColors()
-  const i18n = useI18n()
-  const { t } = i18n
-  const labels = useLabels()
-  const openChild = useOpenChild()
-  const active = row.is_active === true
-  const free = isFree(row)
-  const days = active ? daysLeft(row) : null
-  const mark = !active ? null : isPaymentDue(row) ? (
-    <Mark tone="action">{t.children.pendingPayment}</Mark>
-  ) : days !== null && days <= ENDING_WINDOW_DAYS ? (
-    <Mark tone={days < 0 ? 'action' : 'neutral'}>{endText(i18n, days)}</Mark>
-  ) : null
-  // The rows of a long list draw the phone card between them: its edge, its corners and its rules
-  return (
-    <View style={[styles.card, { backgroundColor: c.surface, borderColor: c.line }, first && styles.first, first && !last && styles.overlap, last && styles.last]}>
-      <Pressable
-        onPress={() => openChild(row.id)}
-        accessibilityRole="button"
-        style={({ pressed }) => [styles.row, pressed && { backgroundColor: c.well }]}
-      >
-        <Peg seat={{ id: row.id, name: row.student_name, status: 'scheduled' }} size="md" />
-        <View style={styles.text}>
-          <View style={styles.nameLine}>
-            <Text variant="body" weight="500" numberOfLines={1} style={styles.name}>
-              {row.student_name}
-            </Text>
-            {mark}
-          </View>
-          {active && !free && <UsageLine usage={usage?.[row.id]} />}
-          <Text variant="foot" tone="ink3" numberOfLines={1}>
-            {labels.packageName(row.package_type)}{DOT}{row.parent_name}
-          </Text>
-        </View>
-        <Icon name="chevronRight" size={13} color={c.ink3} weight="semibold" />
-      </Pressable>
-      {/* On the top edge of the row below: a line on a row's bottom edge can lose its last pixel row
-          to the next row when heights fall between pixels, and the rule then vanishes. */}
-      {!first && <View pointerEvents="none" style={[styles.separator, { backgroundColor: c.line2 }]} />}
+      {/* What scrolls up passes under the status bar on plain paper, not under the clock */}
+      <View pointerEvents="none" style={[styles.statusCover, { height: insets.top, backgroundColor: c.page }]} />
     </View>
   )
 }
 
+type ChildRowProps = {
+  row: Registration
+  usage: UsageMap | undefined
+  first: boolean
+  last: boolean
+  onOpen: (id: string) => void
+  openMenu: (title: string | undefined, items: MenuItem[]) => void
+  onMessage: (row: Registration) => void
+}
+
+/** The lessons left at the right of a row: the figure (amber when two or fewer) over a small word. */
+function LessonsLeft({ usage }: { usage: Usage | undefined }) {
+  const i18n = useI18n()
+  if (!usage) {
+    return (
+      <View style={styles.left}>
+        <Skeleton height={20} width={22} radius={6} />
+      </View>
+    )
+  }
+  if (usage.isFree || usage.total === null) return null
+  const remaining = Math.max(usage.remaining ?? 0, 0)
+  const tone = remainingTone(usage)
+  return (
+    <View style={styles.left}>
+      <Text variant="figure" tabular tone={tone === 'low' || tone === 'out' ? 'amberInk' : 'ink'} maxFontSizeMultiplier={1.2}>
+        {remaining}
+      </Text>
+      <Text variant="foot" tone="ink3" numberOfLines={1} maxFontSizeMultiplier={1.2}>
+        {i18n.plural(i18n.t.children.phone.lessonsUnit, remaining)}
+      </Text>
+    </View>
+  )
+}
+
+function ChildRow({ row, usage, first, last, onOpen, openMenu, onMessage }: ChildRowProps) {
+  const c = useColors()
+  const i18n = useI18n()
+  const { t, fmt } = i18n
+  const labels = useLabels()
+  const active = row.is_active === true
+  const free = isFree(row)
+  const days = active ? daysLeft(row) : null
+  // The child's page's own buttons, a swipe or a hold away: call and take a payment behind the row
+  const digits = phoneDigits(row.parent_phone)
+  const offered: (RowAction | null)[] = [
+    digits
+      ? { key: 'call', label: t.children.detail.callParent, short: t.common.call, icon: 'call', swipe: 'accent', onPress: () => void Linking.openURL(`tel:${digits}`).catch(() => undefined) }
+      : null,
+    whatsAppLink(row.parent_phone) ? { key: 'message', label: t.messages.send.button, icon: 'chat', onPress: () => onMessage(row) } : null,
+    active ? { key: 'pay', label: t.children.detail.actions.takePayment, icon: 'money', swipe: 'positive', onPress: () => tasks.payment({ registrationId: row.id }) } : null
+  ]
+  const actions = offered.filter((action): action is RowAction => action !== null)
+  // Under the name: the one thing that asks for a look, else the package and the parent
+  const about = [labels.packageName(row.package_type), row.parent_name ? fmt(t.children.phone.parentOf, { name: firstNameOf(row.parent_name) }) : ''].filter(Boolean).join(', ')
+  const kind = !active ? 'about' : isPaymentDue(row) ? 'due' : days !== null && days < 0 ? 'ended' : days !== null && days <= ENDING_WINDOW_DAYS ? 'ending' : 'about'
+  const subText = kind === 'due' ? t.children.pendingPayment : (kind === 'ended' || kind === 'ending') && days !== null ? packageEndText(i18n, days) : about
+  const sub =
+    kind === 'due' || kind === 'ended' ? (
+      <Mark tone="action">{subText}</Mark>
+    ) : (
+      <Text variant="sub" tone={kind === 'ending' ? 'ink2' : 'ink3'} numberOfLines={1}>
+        {subText}
+      </Text>
+    )
+  // The row reads as one sentence to a screen reader: name, what asks for a look, lessons left
+  const left = active && !free ? usage?.[row.id] : undefined
+  const label = [row.student_name, subText, left && !left.isFree && left.total !== null ? remainingText(i18n, left) : ''].filter(Boolean).join(', ')
+  // The rows of a long list draw the felt card between them: its corners and its rules
+  return (
+    <View style={[styles.card, { backgroundColor: c.felt }, first && styles.first, first && !last && styles.overlap, last && styles.last]}>
+      {/* The card's corners clip the buttons a swipe shows */}
+      <SwipeRow actions={actions} openMenu={openMenu} menuTitle={row.student_name} onPress={() => onOpen(row.id)}>
+        {(press) => (
+          <Pressable {...press} accessibilityRole="button" accessibilityLabel={label} style={({ pressed }) => [styles.row, pressed && { backgroundColor: c.pressed }]}>
+            <Avatar name={row.student_name} />
+            <View style={styles.text}>
+              <Text weight="500" numberOfLines={1}>
+                {row.student_name}
+              </Text>
+              {sub}
+            </View>
+            {active && !free && <LessonsLeft usage={usage?.[row.id]} />}
+          </Pressable>
+        )}
+      </SwipeRow>
+      {/* On the top edge of the row below: a line on a row's bottom edge can lose its last pixel row
+          to the next row when heights fall between pixels, and the rule then vanishes. */}
+      {!first && <View pointerEvents="none" style={[styles.separator, { backgroundColor: c.line }]} />}
+    </View>
+  )
+}
+
+/**
+ * The child's page's message menu, for one row: the same reads that page makes, for this child
+ * only, and the menu once they are in (or failed: the plain chat is still offered).
+ */
+function MessagePicker({ registration, activeUsage, onReady }: { registration: Registration; activeUsage: Usage | undefined; onReady: (items: MenuItem[]) => void }) {
+  const active = registration.is_active === true
+  // Archived children are not in the batch of active ones
+  const own = useChildUsage(active ? undefined : registration)
+  const items = useMessageItems(registration, active ? activeUsage : own.data)
+  const templates = useTemplates()
+  const catalog = useCatalog()
+  const lessons = useChildLessons(registration.id)
+  const settled = (query: { data?: unknown; isError: boolean }) => query.data !== undefined || query.isError
+  const ready = settled(templates) && settled(catalog) && settled(lessons) && (active || settled(own))
+  const done = useRef(false)
+  useEffect(() => {
+    if (!ready || done.current) return
+    done.current = true
+    onReady(items)
+  }, [ready, items, onReady])
+  return null
+}
+
 const styles = StyleSheet.create({
-  content: { paddingHorizontal: 16, paddingTop: Platform.OS === 'ios' ? 4 : 10, paddingBottom: 40 },
-  header: { gap: 12, marginBottom: 10 },
+  flex: { flex: 1 },
+  content: { paddingHorizontal: 16, paddingBottom: 40 },
+  statusCover: { position: 'absolute', top: 0, left: 0, right: 0 },
+  tools: { gap: 12, marginBottom: 14 },
   chipsScroll: { marginHorizontal: -16 },
   chips: { paddingHorizontal: 16, paddingVertical: 3, gap: 8 },
-  count: { paddingHorizontal: 4, marginTop: 2 },
-  // Card and Row of the kit: 1px edge, 18px corners, 14 × 12 padding, rules from 60px like Card inset 60
-  card: { borderLeftWidth: 1, borderRightWidth: 1, overflow: 'hidden' },
-  first: { borderTopWidth: 1, borderTopLeftRadius: 18, borderTopRightRadius: 18 },
-  last: { borderBottomWidth: 1, borderBottomLeftRadius: 18, borderBottomRightRadius: 18 },
-  // Android softens the straight bottom edge of the rounded first row, which showed as a faint rule
-  // across the whole card; the row below covers that edge by a point
+  count: { marginTop: 14 },
+  // Card and Row of the kit: no edge, 26pt corners, rules across the content
+  card: { overflow: 'hidden' },
+  first: { borderTopLeftRadius: 26, borderTopRightRadius: 26, paddingTop: 2 },
+  last: { borderBottomLeftRadius: 26, borderBottomRightRadius: 26, paddingBottom: 2 },
+  // Android softens the straight bottom edge of the rounded first row into a faint rule across the
+  // card; the row below covers that edge by a point
   overlap: { marginBottom: -1 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, paddingVertical: 12, minHeight: 56 },
-  text: { flex: 1, minWidth: 0, gap: 3 },
-  nameLine: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  name: { flexShrink: 1 },
-  separator: { position: 'absolute', left: 60, right: 0, top: 0, height: 1 }
+  row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingLeft: 16, paddingRight: 18, paddingVertical: 11, minHeight: 64 },
+  text: { flex: 1, minWidth: 0, gap: 2 },
+  left: { alignItems: 'flex-end', minWidth: 44, flexShrink: 0 },
+  separator: { position: 'absolute', left: AVATAR_INSET, right: 16, top: 0, height: 1 }
 })

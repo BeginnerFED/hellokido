@@ -8,6 +8,15 @@ import { ConfirmDialog } from './ConfirmDialog'
 import { cx } from './cx'
 
 const FooterSlot = createContext<HTMLElement | null>(null)
+const CloseRequest = createContext<(() => void) | null>(null)
+
+/**
+ * Closes the sheet this is rendered in the way its X does: a dirty form asks first and a busy one
+ * stays open. For a "Vazgeç" button that lives in a form inside the sheet. Null outside a sheet.
+ */
+export function useCloseSheet() {
+  return useContext(CloseRequest)
+}
 
 /**
  * Puts its children in the footer of the sheet it is rendered in. Lets a form that lives inside the
@@ -49,8 +58,9 @@ type SheetProps = {
 }
 
 /**
- * Work happens in sheets, not modals: a panel from the right on wide screens and a sheet from
- * the bottom on phones. The page behind stays in place, so the person keeps their context.
+ * Work happens in sheets, not modals: a floating panel at the right on wide screens (inset 12,
+ * radius 28, over the scrim) and a sheet from the bottom on phones. The page behind stays in place,
+ * so the person keeps their context. Esc, the X and a tap on the scrim close it; a dirty form asks first.
  */
 export function Sheet({
   isOpen,
@@ -86,32 +96,34 @@ export function Sheet({
       >
         <Modal
           className={cx(
-            'fixed flex flex-col bg-surface text-ink shadow-lift outline-none',
+            'fixed flex flex-col bg-sheet text-ink shadow-float outline-none',
             'inset-x-0 bottom-0 max-h-[92dvh] rounded-t-sheet data-entering:animate-sheet-in-up data-exiting:animate-sheet-out-down',
-            'md:inset-y-0 md:right-0 md:left-auto md:max-h-none md:rounded-none md:border-l md:border-line',
+            'md:top-3 md:right-3 md:bottom-3 md:left-auto md:max-h-none md:rounded-sheet',
             'md:data-entering:animate-sheet-in-right md:data-exiting:animate-sheet-out-right',
-            size === 'md' ? 'md:w-[min(30rem,100vw)]' : 'md:w-[min(42rem,100vw)]'
+            size === 'md' ? 'md:w-[min(31.25rem,calc(100vw-1.5rem))]' : 'md:w-[min(42rem,calc(100vw-1.5rem))]'
           )}
         >
           <Dialog className="flex min-h-0 flex-1 flex-col outline-none">
             <div aria-hidden className="mx-auto mt-2 h-1 w-9 shrink-0 rounded-full bg-line-strong md:hidden" />
-            <header className="flex shrink-0 items-start gap-3 px-5 pt-3 pb-3 md:mb-5 md:border-b md:border-line md:px-6 md:pt-5 md:pb-4">
-              <div className="min-w-0 flex-1 pt-1">
-                <Heading slot="title" className="text-[1.0625rem] leading-tight font-semibold tracking-[-0.01em] text-balance">
+            <header className="flex shrink-0 items-start gap-3 px-5 pt-3 pb-3.5 md:px-6 md:pt-6">
+              <div className="min-w-0 flex-1 pt-0.5">
+                <Heading slot="title" className="text-[1.25rem] leading-7 font-semibold tracking-[-0.02em] text-balance md:text-2xl md:leading-[1.875rem]">
                   {title}
                 </Heading>
-                {description && <div className="mt-1 text-[0.84375rem] text-ink-3">{description}</div>}
+                {description && <div className="mt-[3px] text-[0.90625rem] text-ink-2">{description}</div>}
               </div>
-              <IconButton label={t.common.close} onPress={requestClose} isDisabled={isBusy} className="-mr-2">
-                <XIcon aria-hidden className="size-5" />
+              <IconButton label={t.common.close} variant="quiet" onPress={requestClose} isDisabled={isBusy} className="size-10! max-md:-mr-1">
+                <XIcon aria-hidden className="size-[1.125rem]" />
               </IconButton>
             </header>
             <div className={cx('min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-6 md:px-6', bodyClassName)}>
-              <FooterSlot.Provider value={footerSlot}>{children}</FooterSlot.Provider>
+              <CloseRequest.Provider value={requestClose}>
+                <FooterSlot.Provider value={footerSlot}>{children}</FooterSlot.Provider>
+              </CloseRequest.Provider>
             </div>
             <footer
               ref={setFooterSlot}
-              className="shrink-0 border-t border-line bg-surface px-5 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] empty:hidden md:px-6 md:pb-4"
+              className="shrink-0 rounded-b-[inherit] border-t border-line bg-sheet px-5 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] empty:hidden md:px-6 md:pb-5"
             >
               {footer}
             </footer>

@@ -81,6 +81,8 @@ export function IncomeEntryForm({ kind, registrationId, entry, collect, onDone, 
   }
 
   const paid = status === 'odendi'
+  // Correcting a saved entry saves only once something changed; collecting an expected one is new work
+  const editing = Boolean(entry) && !(collect && entry?.payment_status === 'beklemede')
   const valid =
     isPositiveAmount(amount) && (kind === 'child' || Boolean(category)) && (!paid || Boolean(method && method !== 'belirlenmedi' && date))
   const dirty =
@@ -187,7 +189,7 @@ export function IncomeEntryForm({ kind, registrationId, entry, collect, onDone, 
       />
       <SheetFooter>
         <SheetActions>
-          <Button variant="primary" isDisabled={!valid} isPending={busy} onPress={save} className="max-md:flex-1">
+          <Button variant="primary" isDisabled={!valid || (editing && !dirty)} isPending={busy} onPress={save} className="max-md:flex-1">
             {t.finance.entry.save}
           </Button>
         </SheetActions>

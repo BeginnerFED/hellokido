@@ -1,19 +1,19 @@
 import { useMemo, useState } from 'react'
 import { Button as AriaButton } from 'react-aria-components'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowCounterClockwiseIcon, CheckIcon, DotsThreeIcon, PencilSimpleIcon, PlusIcon, TrashIcon, UserPlusIcon } from '@phosphor-icons/react'
+import { ArrowCounterClockwiseIcon, CheckIcon, DotsThreeIcon, HourglassIcon, PencilSimpleIcon, PlusIcon, TrashIcon, UserPlusIcon } from '@phosphor-icons/react'
 import { deleteWaitlistEntry, listWaitlist, updateWaitlistEntry, WAITLIST_PACKAGES, type WaitlistEntry } from '@hellokido/core/api'
 import { keys, useLabels, useRefresh } from '../../data/queries'
 import { useI18n } from '../../providers/I18n'
 import { useToast } from '../../providers/Toasts'
 import { useActions } from '../../shell/Actions'
-import { EmptyState, initialsOf, LoadError, Skeleton } from '../../ui/Bits'
+import { EmptyState, IconDisc, initialsOf, LoadError, Skeleton } from '../../ui/Bits'
 import { Button, IconButton } from '../../ui/Button'
 import { Select, type Option } from '../../ui/Choice'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { SearchField } from '../../ui/Field'
 import { Menu, MenuItem, MenuSeparator } from '../../ui/Menu'
-import { Page, Section } from '../../ui/Page'
+import { Card, Page } from '../../ui/Page'
 import { displayPhone, PhoneActions } from '../../ui/PhoneActions'
 import { askedAgo, askedOn, byQueue, CONTACTED, matchesEntry, UNDECIDED, WAITING, type WaitStatus } from './rules'
 
@@ -106,7 +106,8 @@ export default function WaitlistPage() {
       {tools && (
         <Select aria-label={t.waitlist.packageFilter} options={packageOptions} value={pkg} onChange={setPkg} className="min-w-0 flex-1 sm:w-[15rem] sm:flex-none" />
       )}
-      <Button variant="primary" icon={<PlusIcon aria-hidden weight="bold" className="size-4" />} onPress={add} className="lg:hidden">
+      {/* Phones: the header's + stays the one filled button */}
+      <Button variant="quiet" icon={<PlusIcon aria-hidden weight="bold" className="size-4" />} onPress={add} className="lg:hidden">
         {t.waitlist.add}
       </Button>
     </>
@@ -122,10 +123,10 @@ export default function WaitlistPage() {
       {list.isError ? (
         <LoadError message={t.waitlist.loadFailed} retryLabel={t.common.retry} onRetry={() => void list.refetch()} />
       ) : !rows ? (
-        <div aria-busy className="grid gap-8 lg:grid-cols-2 lg:gap-10">
+        <div aria-busy className="grid items-start gap-4 lg:grid-cols-2 lg:gap-5">
           {[0, 1].map((column) => (
-            <div key={column} className="flex flex-col gap-3">
-              <Skeleton className="h-5 w-32" />
+            <div key={column} className="flex flex-col gap-3 rounded-panel bg-felt px-4 pt-5 pb-4 sm:px-[1.375rem]">
+              <Skeleton className="h-6 w-36" />
               <Skeleton className="h-28" />
               <Skeleton className="h-28" />
             </div>
@@ -133,7 +134,12 @@ export default function WaitlistPage() {
         </div>
       ) : rows.length === 0 ? (
         <EmptyState
-          className="py-16"
+          className="rounded-panel bg-felt py-14"
+          icon={
+            <IconDisc className="size-11 bg-raised dark:bg-track">
+              <HourglassIcon className="size-5" />
+            </IconDisc>
+          }
           title={t.waitlist.empty}
           body={t.waitlist.emptyBody}
           action={
@@ -162,13 +168,13 @@ export default function WaitlistPage() {
               }
             />
           ) : (
-            <div className="grid items-start gap-5 lg:grid-cols-2 lg:gap-6">
-              <Section boxed title={t.waitlist.waiting} aside={<span className="tabular">{waiting.length}</span>}>
+            <div className="grid items-start gap-4 lg:grid-cols-2 lg:gap-5">
+              <Card title={t.waitlist.waiting} aside={waiting.length} bodyClassName="pb-1.5">
                 <Entries entries={waiting} empty={t.waitlist.waitingEmpty} actions={actions} />
-              </Section>
-              <Section boxed title={t.waitlist.contacted} aside={<span className="tabular">{contacted.length}</span>}>
+              </Card>
+              <Card title={t.waitlist.contacted} aside={contacted.length} bodyClassName="pb-1.5">
                 <Entries entries={contacted} empty={t.waitlist.contactedEmpty} actions={actions} />
-              </Section>
+              </Card>
             </div>
           )}
         </div>
@@ -201,9 +207,9 @@ type EntryActions = {
 }
 
 function Entries({ entries, empty, actions }: { entries: WaitlistEntry[]; empty: string; actions: EntryActions }) {
-  if (entries.length === 0) return <p className="py-2 text-sm text-ink-3">{empty}</p>
+  if (entries.length === 0) return <p className="px-4 pt-0.5 pb-4 text-[0.9375rem] text-ink-3 sm:px-[1.375rem]">{empty}</p>
   return (
-    <ul className="-my-3 divide-y divide-line">
+    <ul>
       {entries.map((entry) => (
         <Entry key={entry.id} entry={entry} actions={actions} />
       ))}
@@ -222,11 +228,11 @@ function Entry({ entry, actions }: { entry: WaitlistEntry; actions: EntryActions
   const phone = displayPhone(entry.parent_phone)
 
   return (
-    <li className="flex gap-3 py-4">
+    <li className="flex gap-3 border-t border-line px-4 pt-3.5 pb-4 first:border-t-0 first:pt-1.5 sm:px-[1.375rem]">
       {/* A seat not taken yet: the peg of a child who has no place */}
       <span
         aria-hidden
-        className="mt-0.5 grid size-9 shrink-0 place-items-center rounded-tile border-[1.5px] border-dashed border-line-strong text-[0.78125rem] font-semibold text-ink-2"
+        className="mt-0.5 grid size-[2.375rem] shrink-0 place-items-center rounded-full border-[1.5px] border-dashed border-ink-3/50 text-[0.8125rem] font-semibold text-ink-2"
       >
         {initialsOf(name)}
       </span>
@@ -236,13 +242,13 @@ function Entry({ entry, actions }: { entry: WaitlistEntry; actions: EntryActions
             <h3 className="min-w-0">
               <AriaButton
                 onPress={() => actions.edit(entry)}
-                className="relative inline-block max-w-full rounded-[0.375rem] text-left align-top text-[0.9375rem] font-semibold text-ink underline-offset-2 outline-none data-hovered:underline data-focus-visible:ring-2 data-focus-visible:ring-focus pointer-coarse:after:absolute pointer-coarse:after:-inset-x-1 pointer-coarse:after:-inset-y-2.5"
+                className="relative inline-block max-w-full rounded-[0.25rem] text-left align-top text-[0.96875rem] leading-[1.3125rem] font-medium text-ink outline-none data-hovered:underline data-hovered:decoration-1 data-hovered:underline-offset-[3px] data-focus-visible:ring-2 data-focus-visible:ring-focus pointer-coarse:after:absolute pointer-coarse:after:-inset-x-1 pointer-coarse:after:-inset-y-2.5"
               >
                 {/* Cut off inside, so the larger touch area is not cut off with it */}
                 <span className="block truncate">{name}</span>
               </AriaButton>
             </h3>
-            <p className="text-[0.8125rem] text-ink-2">
+            <p className="mt-0.5 text-[0.84375rem] leading-[1.125rem] text-ink-2">
               {entry.student_age}
               {' · '}
               {entry.parent_name}
@@ -257,7 +263,7 @@ function Entry({ entry, actions }: { entry: WaitlistEntry; actions: EntryActions
           <Menu
             label={more}
             trigger={
-              <IconButton label={more} size="sm" className="-mt-1 -mr-2 shrink-0 max-lg:size-10">
+              <IconButton label={more} size="sm" className="-mt-0.5 -mr-2 shrink-0 max-lg:size-10">
                 <DotsThreeIcon aria-hidden weight="bold" className="size-[1.125rem]" />
               </IconButton>
             }
@@ -280,8 +286,8 @@ function Entry({ entry, actions }: { entry: WaitlistEntry; actions: EntryActions
             </MenuItem>
           </Menu>
         </div>
-        <p className="mt-0.5 text-[0.8125rem] text-ink-3">
-          <span className={entry.package_type === UNDECIDED ? undefined : 'text-ink-2'}>{labels.packageName(entry.package_type)}</span>
+        <p className="mt-0.5 text-[0.84375rem] leading-[1.125rem] text-ink-3">
+          <span className={entry.package_type === UNDECIDED ? undefined : 'font-medium text-ink-2'}>{labels.packageName(entry.package_type)}</span>
           {day && (
             <>
               {' · '}
@@ -291,8 +297,8 @@ function Entry({ entry, actions }: { entry: WaitlistEntry; actions: EntryActions
             </>
           )}
         </p>
-        {note && <p className="mt-2 line-clamp-3 text-sm whitespace-pre-line text-ink-2 text-pretty">{note}</p>}
-        <div className="mt-3 flex flex-wrap items-center gap-2">
+        {note && <p className="mt-2 line-clamp-3 text-[0.90625rem] leading-[1.3125rem] whitespace-pre-line text-ink text-pretty">{note}</p>}
+        <div className="mt-3 flex flex-wrap items-center gap-1.5">
           <PhoneActions phone={entry.parent_phone} />
           {contacted ? (
             <Button

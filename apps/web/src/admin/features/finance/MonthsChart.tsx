@@ -2,31 +2,30 @@ import { useMemo, useRef, useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { moneySince } from '@hellokido/core/api'
 import { formatMoney } from '@hellokido/core/rules/money.js'
-import { cyclesUpTo, niceTicks, periodTotals, samePeriod, type Period } from '@hellokido/core/view'
+import { cyclesUpTo, niceTicks, periodTotals, samePeriod, type Period, type PeriodRule } from '@hellokido/core/view'
 import { keys } from '../../data/queries'
 import { useI18n } from '../../providers/I18n'
 import { LoadError, Skeleton } from '../../ui/Bits'
-import { Button } from '../../ui/Button'
 import { Segmented } from '../../ui/Choice'
-import { Card } from '../../ui/Page'
+import { Card, CardLink } from '../../ui/Page'
 import { cx } from '../../ui/cx'
 import { MINUS, useWidth } from './bits'
-import { periodLabel } from './period'
+import { inMonths, periodLabel, presetName } from './period'
 
 type Bucket = ReturnType<typeof periodTotals>[number]
 type Span = '6' | '12'
 
 const PLOT = 176
-const TOP = 10
-const AXIS_X = 26
+const TOP = 14
+const AXIS_X = 28
 const AXIS_Y = 54
-const TIP = 196
+const TIP = 200
 // The chart reads this many periods back; the period before the one on screen comes from the same rows
 const REACH = 12
 
 /** Daily amounts of the last twelve money periods, for the chart and for "the period before". */
-export function useMoneySeries(today: Date, startDay: number | undefined) {
-  const first = startDay === undefined ? null : cyclesUpTo(today, startDay, REACH)[0].start
+export function useMoneySeries(today: Date, rule: PeriodRule | undefined) {
+  const first = rule === undefined ? null : cyclesUpTo(today, rule, REACH)[0].start
   const query = useQuery({
     queryKey: keys.finance('months', first?.toISOString() ?? ''),
     queryFn: () => moneySince(first ?? new Date()),
@@ -37,17 +36,19 @@ export function useMoneySeries(today: Date, startDay: number | undefined) {
 }
 
 /** A column with a rounded top and a square foot on the baseline. */
-function column(x: number, top: number, width: number, height: number) {
+function column(x: number, top: number, width: number, height: number, radius = 6) {
   if (height <= 0) return ''
-  const r = Math.min(4, width / 2, height)
+  const r = Math.min(radius, width / 2, height)
   const bottom = top + height
   return `M${x},${bottom}V${top + r}A${r},${r} 0 0 1 ${x + r},${top}H${x + width - r}A${r},${r} 0 0 1 ${x + width},${top + r}V${bottom}Z`
 }
 
 type Props = {
   today: Date
-  /** The day money periods start on: 1 gives calendar months. */
-  startDay: number
+  /** How money periods are cut: by salary pay-outs. */
+  rule: PeriodRule
+  /** Salary rows of the pay-outs: shown apart, not as money out. */
+  payouts: Set<string> | undefined
   /** The period on the page, marked in the chart when it is one of its columns. */
   period: Period
   series: ReturnType<typeof useMoneySeries>
@@ -56,17 +57,19 @@ type Props = {
 }
 
 /**
- * Money in and out of each of the last money periods (calendar months when periods start on the
- * 1st). It does not follow the filters on the page; pressing a column shows that period.
+ * Money in and out of each of the last money periods (salary to salary; calendar months when
+ * nothing else cuts them). Salaries shared out at a period's end are not money out: the gap between
+ * the columns is what was there to share. It does not follow the filters on the page; pressing a
+ * column shows that period.
  */
-export function MonthsChart({ today, startDay, period, series, onPick, className }: Props) {
+export function MonthsChart({ today, rule, payouts, period, series, onPick, className }: Props) {
   const { t, fmt } = useI18n()
   const [span, setSpan] = useState<Span>('6')
   const [asTable, setAsTable] = useState(false)
   const count = Number(span)
-  const months = startDay === 1
+  const months = inMonths(rule)
 
-  const buckets = useMemo(() => periodTotals(series.data, today, startDay, count), [series.data, today, startDay, count])
+  const buckets = useMemo(() => periodTotals(series.data, today, rule, count, payouts), [series.data, today, rule, count, payouts])
 
   const viewed = buckets.find((bucket) => samePeriod(bucket.period, period))?.key ?? null
   const label = fmt(months ? t.finance.months.chartLabel : t.finance.months.periodsLabel, { count })
@@ -75,51 +78,57 @@ export function MonthsChart({ today, startDay, period, series, onPick, className
     <Card
       title={months ? t.finance.months.title : t.finance.months.periodsTitle}
       aside={
-        <Segmented<Span>
-          aria-label={t.finance.months.rangeLabel}
-          size="sm"
-          fit
-          options={[
-            { id: '6', label: t.finance.months.six },
-            { id: '12', label: t.finance.months.twelve }
-          ]}
-          value={span}
-          onChange={setSpan}
-        />
-      }
-      footer={
         <>
           {/* The table names its columns itself */}
-          {asTable ? (
-            <span />
-          ) : (
-            <span className="flex items-center gap-4">
+          {!asTable && (
+            <span className="mr-2 flex items-center gap-4 text-[0.8125rem] text-ink-2">
               <span className="flex items-center gap-1.5">
-                <span aria-hidden className="size-2.5 rounded-[2px] bg-series-in" />
+                <span aria-hidden className="size-[7px] rounded-full bg-sky" />
                 {t.finance.balance.in}
               </span>
               <span className="flex items-center gap-1.5">
-                <span aria-hidden className="size-2.5 rounded-[2px] bg-series-out" />
+                <span aria-hidden className="size-[7px] rounded-full bg-out" />
                 {t.finance.balance.out}
               </span>
             </span>
           )}
-          <Button variant="ghost" size="sm" className="-my-1.5 -mr-3" onPress={() => setAsTable((on) => !on)}>
-            {asTable ? t.finance.months.chart : t.finance.months.table}
-          </Button>
+          <Segmented<Span>
+            aria-label={months ? t.finance.months.rangeLabel : t.finance.web.rangeLabel}
+            size="sm"
+            fit
+            options={[
+              { id: '6', label: months ? t.finance.months.six : t.finance.web.six },
+              { id: '12', label: months ? t.finance.months.twelve : t.finance.web.twelve }
+            ]}
+            value={span}
+            onChange={setSpan}
+          />
         </>
+      }
+      footer={
+        <span className="ml-auto">
+          <CardLink onPress={() => setAsTable((on) => !on)}>{asTable ? t.finance.months.chart : t.finance.months.table}</CardLink>
+        </span>
       }
       className={className}
     >
-      <div className="px-4 pt-4 pb-3 sm:px-5">
+      <div className="px-4 pt-2 pb-4 sm:px-[1.375rem]">
         {series.isError ? (
           <LoadError message={t.common.loadFailed} retryLabel={t.common.retry} onRetry={() => void series.refetch()} />
         ) : !series.data ? (
-          <Skeleton className="h-[13.25rem] rounded-control" />
+          <Skeleton className="h-[13.625rem] rounded-control" />
         ) : asTable ? (
           <MonthsTable buckets={buckets} caption={label} months={months} />
         ) : (
-          <Plot buckets={buckets} viewed={viewed} onPick={onPick} waiting={series.isPlaceholderData} label={label} months={months} />
+          <Plot
+            buckets={buckets}
+            viewed={viewed}
+            onPick={onPick}
+            waiting={series.isPlaceholderData}
+            label={label}
+            months={months}
+            currentName={presetName(t, 'thisPeriod', rule)}
+          />
         )}
       </div>
     </Card>
@@ -132,7 +141,8 @@ function Plot({
   onPick,
   waiting,
   label,
-  months
+  months,
+  currentName
 }: {
   buckets: Bucket[]
   viewed: string | null
@@ -140,6 +150,8 @@ function Plot({
   waiting: boolean
   label: string
   months: boolean
+  /** "Bu dönem": the name of the last column, the period running now. */
+  currentName: string
 }) {
   const i18n = useI18n()
   const { t, fmt, money, date } = i18n
@@ -152,11 +164,20 @@ function Plot({
   const top = ticks[ticks.length - 1]
   const height = TOP + PLOT + AXIS_X
   const band = buckets.length ? Math.max(0, width - AXIS_Y) / buckets.length : 0
-  const bar = Math.max(3, Math.min(24, (band - 12) / 2))
+  const gap = band < 40 ? 2 : 5
+  const bar = Math.max(3, Math.min(22, (band - 16 - gap) / 2))
   const y = (value: number) => TOP + PLOT - (value / top) * PLOT
   const size = (value: number) => (value > 0 ? Math.max(2, (value / top) * PLOT) : 0)
   const narrow = band < 38
   const name = (bucket: Bucket) => periodLabel(i18n, bucket.period)
+  // A column is named by the day its period starts ("12 Eki"), by its month when periods are months
+  // or the columns are narrow; the period running now by its name when there is room for it
+  const columnName = (bucket: Bucket, index: number) => {
+    if (index === buckets.length - 1 && band >= 70) return currentName
+    if (narrow) return date(bucket.period.start, { month: 'narrow' })
+    if (months || band < 56) return date(bucket.period.start, { month: 'short' })
+    return date(bucket.period.start, { day: 'numeric', month: 'short' })
+  }
 
   const shown = active === null ? null : buckets[active]
   const center = active === null ? 0 : AXIS_Y + band * (active + 0.5)
@@ -169,16 +190,8 @@ function Plot({
         <svg width={width} height={height} role="img" aria-label={label} className="block overflow-visible">
           {ticks.map((tick) => (
             <g key={tick}>
-              <line
-                x1={AXIS_Y}
-                x2={width}
-                y1={y(tick)}
-                y2={y(tick)}
-                stroke={tick === 0 ? 'var(--line-strong)' : 'var(--line)'}
-                strokeWidth={1}
-                shapeRendering="crispEdges"
-              />
-              <text x={AXIS_Y - 8} y={y(tick)} dy="0.32em" textAnchor="end" className="fill-ink-3 text-[0.6875rem] tabular">
+              {tick > 0 && <line x1={AXIS_Y} x2={width} y1={y(tick)} y2={y(tick)} stroke="var(--line)" strokeWidth={1} shapeRendering="crispEdges" />}
+              <text x={AXIS_Y - 10} y={y(tick)} dy="0.32em" textAnchor="end" className="fill-ink-3 text-[0.71875rem]">
                 {formatMoney(tick)}
               </text>
             </g>
@@ -187,25 +200,32 @@ function Plot({
             const middle = AXIS_Y + band * (index + 0.5)
             const inHeight = size(bucket.in)
             const outHeight = size(bucket.out)
+            const inset = Math.min(6, band * 0.08)
             return (
               <g key={bucket.key}>
+                {/* The period on the page sits in the groove; the one under the pointer gets a lighter one */}
                 {(active === index || bucket.key === viewed) && (
-                  <rect x={middle - band / 2 + 2} y={TOP - 6} width={band - 4} height={PLOT + 6} rx={6} fill={active === index ? 'var(--well)' : 'var(--surface-2)'} />
+                  <path
+                    d={column(middle - band / 2 + inset, TOP - 10, band - inset * 2, PLOT + 10, 14)}
+                    fill="var(--track)"
+                    fillOpacity={bucket.key === viewed ? 1 : 0.55}
+                  />
                 )}
-                <path d={column(middle - 1 - bar, TOP + PLOT - inHeight, bar, inHeight)} fill="var(--series-in)" />
-                <path d={column(middle + 1, TOP + PLOT - outHeight, bar, outHeight)} fill="var(--series-out)" />
+                <path d={column(middle - gap / 2 - bar, TOP + PLOT - inHeight, bar, inHeight)} fill="var(--sky)" />
+                <path d={column(middle + gap / 2, TOP + PLOT - outHeight, bar, outHeight)} fill="var(--out)" />
                 <text
                   x={middle}
-                  y={TOP + PLOT + 18}
+                  y={TOP + PLOT + 20}
                   textAnchor="middle"
-                  className={cx('text-[0.6875rem]', bucket.key === viewed ? 'fill-ink font-semibold' : 'fill-ink-3')}
+                  className={cx('text-[0.78125rem]', bucket.key === viewed ? 'fill-ink font-semibold' : 'fill-ink-3')}
                 >
-                  {/* A period is named by the month it starts in; the tip and the table give its days */}
-                  {date(bucket.period.start, { month: narrow ? 'narrow' : 'short' })}
+                  {/* The tip and the table give the period's days */}
+                  {columnName(bucket, index)}
                 </text>
               </g>
             )
           })}
+          <line x1={AXIS_Y} x2={width} y1={TOP + PLOT + 0.5} y2={TOP + PLOT + 0.5} stroke="var(--line-strong)" strokeWidth={1} />
         </svg>
       )}
       {width > 0 &&
@@ -220,14 +240,14 @@ function Plot({
             onFocus={() => setActive(index)}
             onBlur={() => setActive((current) => (current === index ? null : current))}
             onClick={() => onPick(bucket.period)}
-            className="absolute top-0 cursor-pointer rounded-[0.5rem] outline-none focus-visible:ring-2 focus-visible:ring-focus"
+            className="absolute top-0 cursor-pointer rounded-[0.875rem] outline-none focus-visible:ring-2 focus-visible:ring-focus"
             style={{ left: AXIS_Y + band * index, width: band, height }}
           />
         ))}
       {shown && (
         <div
           aria-hidden
-          className="pointer-events-none absolute z-10 rounded-control border border-line bg-surface px-3 py-2 text-[0.8125rem] shadow-lift"
+          className="pointer-events-none absolute z-10 rounded-control bg-raised px-3.5 py-2.5 text-[0.8125rem] shadow-lift"
           style={{ left: tipLeft, top: TOP, width: TIP }}
         >
           <p className={cx('font-medium text-ink', months && 'first-letter:uppercase')}>{name(shown)}</p>
@@ -240,6 +260,12 @@ function Plot({
             </span>
             <span className="text-ink-3">{t.finance.months.difference}</span>
           </p>
+          {shown.paid > 0 && (
+            <p className="mt-0.5 flex items-baseline gap-2">
+              <span className="font-semibold text-ink tabular">{money(shown.paid)}</span>
+              <span className="text-ink-3">{t.finance.balance.paid}</span>
+            </p>
+          )}
         </div>
       )}
     </div>
@@ -249,8 +275,8 @@ function Plot({
 function TipRow({ tone, value, label }: { tone: 'in' | 'out'; value: string; label: string }) {
   return (
     <p className="mt-1 flex items-center gap-2">
-      <span aria-hidden className={cx('h-0.5 w-3 shrink-0 rounded-full', tone === 'in' ? 'bg-series-in' : 'bg-series-out')} />
-      <span className="font-semibold text-ink tabular">{value}</span>
+      <span aria-hidden className={cx('size-[7px] shrink-0 rounded-full', tone === 'in' ? 'bg-sky' : 'bg-out')} />
+      <span className="font-semibold text-ink">{value}</span>
       <span className="text-ink-3">{label}</span>
     </p>
   )
@@ -260,6 +286,7 @@ function TipRow({ tone, value, label }: { tone: 'in' | 'out'; value: string; lab
 function MonthsTable({ buckets, caption, months }: { buckets: Bucket[]; caption: string; months: boolean }) {
   const i18n = useI18n()
   const { t, money } = i18n
+  const salaries = buckets.some((bucket) => bucket.paid > 0)
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
@@ -278,6 +305,11 @@ function MonthsTable({ buckets, caption, months }: { buckets: Bucket[]; caption:
             <th scope="col" className="py-2 pl-3 text-right font-medium">
               {t.finance.months.difference}
             </th>
+            {salaries && (
+              <th scope="col" className="py-2 pl-3 text-right font-medium">
+                {t.finance.balance.paid}
+              </th>
+            )}
           </tr>
         </thead>
         <tbody className="divide-y divide-line">
@@ -285,15 +317,16 @@ function MonthsTable({ buckets, caption, months }: { buckets: Bucket[]; caption:
             const difference = bucket.in - bucket.out
             return (
               <tr key={bucket.key}>
-                <th scope="row" className={cx('py-2 pr-3 text-left font-normal whitespace-nowrap', months && 'first-letter:uppercase')}>
+                <th scope="row" className={cx('min-w-[8.5rem] py-2 pr-3 text-left font-normal text-balance', months && 'first-letter:uppercase')}>
                   {periodLabel(i18n, bucket.period)}
                 </th>
-                <td className="py-2 pl-3 text-right tabular">{money(bucket.in)}</td>
-                <td className="py-2 pl-3 text-right tabular">{money(bucket.out)}</td>
-                <td className={cx('py-2 pl-3 text-right font-medium tabular', difference < 0 && 'text-negative-ink')}>
+                <td className="py-2 pl-3 text-right whitespace-nowrap tabular">{money(bucket.in)}</td>
+                <td className="py-2 pl-3 text-right whitespace-nowrap tabular">{money(bucket.out)}</td>
+                <td className={cx('py-2 pl-3 text-right font-medium whitespace-nowrap tabular', difference < 0 && 'text-negative-ink')}>
                   {difference < 0 ? MINUS : ''}
                   {money(Math.abs(difference))}
                 </td>
+                {salaries && <td className="py-2 pl-3 text-right whitespace-nowrap tabular">{bucket.paid > 0 ? money(bucket.paid) : '—'}</td>}
               </tr>
             )
           })}

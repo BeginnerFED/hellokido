@@ -1,23 +1,25 @@
 import { useMemo, useState } from 'react'
-import { Alert, Pressable, StyleSheet, View } from 'react-native'
+import { Alert, Linking, Pressable, StyleSheet, View } from 'react-native'
 import { Stack } from 'expo-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as Haptics from 'expo-haptics'
 import { deleteWaitlistEntry, listWaitlist, updateWaitlistEntry, WAITLIST_PACKAGES, type WaitlistEntry } from '@hellokido/core/api'
+import { phoneDigits } from '@hellokido/core/rules/phone.js'
 import { askedOn, byQueue, CONTACTED, matchesEntry, UNDECIDED, WAITING, type WaitStatus } from '@hellokido/core/view'
 import { keys, useLabels, useRefresh } from '../../data/queries'
 import { headerButton, tasks } from '../../lib/navigation'
 import { useI18n } from '../../providers/I18n'
 import { useColors } from '../../theme/colors'
-import { useActionMenu } from '../../ui/ActionMenu'
-import { EmptyState, ListSkeleton, LoadError } from '../../ui/Bits'
+import { useActionMenu, type MenuItem } from '../../ui/ActionMenu'
+import { Avatar, AVATAR_INSET, EmptyState, ListSkeleton, LoadError } from '../../ui/Bits'
 import { Button, IconButton } from '../../ui/Button'
 import { Chip, SearchField } from '../../ui/Fields'
 import { displayPhone, PhoneActions } from '../../ui/PhoneActions'
-import { Card, Screen, Section } from '../../ui/Screen'
+import { Card, QuietCard, Screen, Section } from '../../ui/Screen'
+import { SwipeRow, type RowAction } from '../../ui/SwipeRow'
 import { DOT, Text } from '../../ui/Text'
 import { useToast } from '../../ui/Toast'
-import { askedAgo, WaitPeg } from './bits'
+import { askedAgo } from './bits'
 
 const ANY_PACKAGE = 'all'
 /** A short list is read at a glance; search and the package filter come once there is a list to search. */
@@ -124,13 +126,27 @@ export function WaitlistScreen() {
       { label: t.waitlist.delete, icon: 'delete', destructive: true, onPress: () => remove(entry) }
     ])
 
+  // Everything the row's buttons and its "…" menu offer, held or swiped: register and delete behind the row
+  const rowActions = (entry: WaitlistEntry): RowAction[] => {
+    const digits = phoneDigits(entry.parent_phone)
+    const offered: (RowAction | null)[] = [
+      digits ? { key: 'call', label: t.children.detail.callParent, icon: 'call', onPress: () => void Linking.openURL(`tel:${digits}`).catch(() => undefined) } : null,
+      entry.status === CONTACTED
+        ? { key: 'waiting', label: t.waitlist.markWaiting, icon: 'undo', onPress: () => void changeStatus(entry, WAITING) }
+        : { key: 'contacted', label: t.waitlist.markContacted, icon: 'check', onPress: () => void changeStatus(entry, CONTACTED) },
+      { key: 'register', label: t.waitlist.register, icon: 'personAdd', swipe: 'accent', onPress: () => register(entry) },
+      { key: 'edit', label: t.waitlist.edit, icon: 'edit', onPress: () => tasks.waitlist(entry.id) },
+      // Through the same question as the menu's, a full swipe included
+      { key: 'delete', label: t.waitlist.delete, icon: 'delete', destructive: true, swipe: 'negative', onPress: () => remove(entry) }
+    ]
+    return offered.filter((action): action is RowAction => action !== null)
+  }
+
   const entries = (items: WaitlistEntry[], empty: string) =>
     items.length === 0 ? (
-      <Text variant="foot" tone="ink3" style={styles.sectionEmpty}>
-        {empty}
-      </Text>
+      <QuietCard>{empty}</QuietCard>
     ) : (
-      <Card inset={60}>
+      <Card inset={AVATAR_INSET}>
         {items.map((entry) => (
           <EntryRow
             key={entry.id}
@@ -138,6 +154,8 @@ export function WaitlistScreen() {
             onContacted={() => void changeStatus(entry, CONTACTED)}
             onRegister={() => register(entry)}
             onMore={() => more(entry)}
+            actions={rowActions(entry)}
+            openMenu={menu.open}
           />
         ))}
       </Card>
@@ -153,16 +171,18 @@ export function WaitlistScreen() {
         ) : !rows ? (
           <ListSkeleton rows={4} />
         ) : rows.length === 0 ? (
-          <EmptyState
-            icon="waitlist"
-            title={t.waitlist.empty}
-            body={t.waitlist.emptyBody}
-            action={
-              <Button variant="primary" icon="add" onPress={() => tasks.waitlist()}>
-                {t.waitlist.add}
-              </Button>
-            }
-          />
+          <Card padded>
+            <EmptyState
+              icon="waitlist"
+              title={t.waitlist.empty}
+              body={t.waitlist.emptyBody}
+              action={
+                <Button variant="primary" icon="add" onPress={() => tasks.waitlist()}>
+                  {t.waitlist.add}
+                </Button>
+              }
+            />
+          </Card>
         ) : (
           <>
             <View style={styles.top}>
@@ -177,15 +197,17 @@ export function WaitlistScreen() {
               )}
             </View>
             {shown.length === 0 ? (
-              <EmptyState
-                icon="search"
-                title={t.waitlist.noMatch}
-                action={
-                  <Button size="sm" onPress={clearFilters}>
-                    {t.common.clearFilters}
-                  </Button>
-                }
-              />
+              <Card padded>
+                <EmptyState
+                  icon="search"
+                  title={t.waitlist.noMatch}
+                  action={
+                    <Button size="sm" onPress={clearFilters}>
+                      {t.common.clearFilters}
+                    </Button>
+                  }
+                />
+              </Card>
             ) : (
               <>
                 <Section title={t.waitlist.waiting} aside={waiting.length}>
@@ -203,9 +225,16 @@ export function WaitlistScreen() {
   )
 }
 
-type EntryRowProps = { entry: WaitlistEntry; onContacted: () => void; onRegister: () => void; onMore: () => void }
+type EntryRowProps = {
+  entry: WaitlistEntry
+  onContacted: () => void
+  onRegister: () => void
+  onMore: () => void
+  actions: RowAction[]
+  openMenu: (title: string | undefined, items: MenuItem[]) => void
+}
 
-function EntryRow({ entry, onContacted, onRegister, onMore }: EntryRowProps) {
+function EntryRow({ entry, onContacted, onRegister, onMore, actions, openMenu }: EntryRowProps) {
   const c = useColors()
   const i18n = useI18n()
   const { t, fmt } = i18n
@@ -218,53 +247,58 @@ function EntryRow({ entry, onContacted, onRegister, onMore }: EntryRowProps) {
   const asked = day ? fmt(t.waitlist.asked, { when: askedAgo(i18n, day) }) : null
 
   return (
-    <View style={styles.entry}>
-      <WaitPeg name={name} />
-      <View style={styles.entryBody}>
-        <View style={styles.entryTop}>
-          {/* The words open the entry; the buttons under them stay buttons of their own */}
-          <Pressable
-            onPress={() => tasks.waitlist(entry.id)}
-            accessibilityRole="button"
-            accessibilityLabel={[name, who, packageName, asked, note].filter(Boolean).join('. ')}
-            style={({ pressed }) => [styles.entryText, pressed && styles.pressed]}
-          >
-            <Text variant="callout" weight="600" numberOfLines={1}>
-              {name}
-            </Text>
-            <Text variant="foot" tone="ink2" numberOfLines={2}>
-              {who}
-            </Text>
-            <Text variant="foot" tone="ink3" numberOfLines={2}>
-              {/* A package they asked about reads stronger than "not decided yet" */}
-              <Text variant="foot" tone={entry.package_type === UNDECIDED ? 'ink3' : 'ink2'}>
-                {packageName}
-              </Text>
-              {asked && `${DOT}${asked}`}
-            </Text>
-            {note && (
-              <Text variant="foot" tone="ink2" numberOfLines={3} style={styles.note}>
-                {note}
-              </Text>
-            )}
-          </Pressable>
-          <IconButton icon="ellipsis" label={fmt(t.waitlist.more, { name })} variant="plain" size={32} color={c.ink3} onPress={onMore} />
+    // Swiped, the whole entry moves; held, the words offer everything the entry can do
+    <SwipeRow actions={actions} openMenu={openMenu} menuTitle={name} onPress={() => tasks.waitlist(entry.id)}>
+      {(press) => (
+        <View style={styles.entry}>
+          <Avatar name={name} />
+          <View style={styles.entryBody}>
+            <View style={styles.entryTop}>
+              {/* The words open the entry; the buttons under them stay buttons of their own */}
+              <Pressable
+                {...press}
+                accessibilityRole="button"
+                accessibilityLabel={[name, who, packageName, asked, note].filter(Boolean).join('. ')}
+                style={({ pressed }) => [styles.entryText, pressed && styles.pressed]}
+              >
+                <Text weight="500" numberOfLines={1}>
+                  {name}
+                </Text>
+                <Text variant="sub" tone="ink3" numberOfLines={2}>
+                  {who}
+                </Text>
+                <Text variant="sub" tone="ink3" numberOfLines={2}>
+                  {/* A package they asked about reads stronger than "not decided yet" */}
+                  <Text variant="sub" weight={entry.package_type === UNDECIDED ? undefined : '500'} tone={entry.package_type === UNDECIDED ? 'ink3' : 'ink2'}>
+                    {packageName}
+                  </Text>
+                  {asked && `${DOT}${asked}`}
+                </Text>
+                {note && (
+                  <Text variant="sub" tone="ink2" numberOfLines={3} style={styles.note}>
+                    {note}
+                  </Text>
+                )}
+              </Pressable>
+              <IconButton icon="ellipsis" label={fmt(t.waitlist.more, { name })} variant="plain" size={32} color={c.ink3} onPress={onMore} />
+            </View>
+            <View style={styles.actions}>
+              {/* As tall as the button beside them */}
+              <PhoneActions phone={entry.parent_phone} size={34} />
+              {entry.status === CONTACTED ? (
+                <Button size="sm" icon="personAdd" accessibilityLabel={fmt(t.waitlist.registerLabel, { name })} onPress={onRegister}>
+                  {t.waitlist.register}
+                </Button>
+              ) : (
+                <Button size="sm" icon="check" accessibilityLabel={fmt(t.waitlist.markContactedLabel, { name })} onPress={onContacted}>
+                  {t.waitlist.markContacted}
+                </Button>
+              )}
+            </View>
+          </View>
         </View>
-        <View style={styles.actions}>
-          {/* As tall as the button beside them */}
-          <PhoneActions phone={entry.parent_phone} size={34} />
-          {entry.status === CONTACTED ? (
-            <Button size="sm" icon="personAdd" accessibilityLabel={fmt(t.waitlist.registerLabel, { name })} onPress={onRegister}>
-              {t.waitlist.register}
-            </Button>
-          ) : (
-            <Button size="sm" icon="check" accessibilityLabel={fmt(t.waitlist.markContactedLabel, { name })} onPress={onContacted}>
-              {t.waitlist.markContacted}
-            </Button>
-          )}
-        </View>
-      </View>
-    </View>
+      )}
+    </SwipeRow>
   )
 }
 
@@ -272,12 +306,11 @@ const styles = StyleSheet.create({
   top: { gap: 12 },
   summary: { paddingHorizontal: 4 },
   chips: { flexDirection: 'row' },
-  sectionEmpty: { paddingHorizontal: 4 },
-  entry: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingLeft: 16, paddingRight: 8, paddingVertical: 12 },
-  entryBody: { flex: 1, minWidth: 0, gap: 10 },
+  entry: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingLeft: 16, paddingRight: 8, paddingVertical: 14 },
+  entryBody: { flex: 1, minWidth: 0, gap: 12 },
   entryTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 4 },
-  entryText: { flex: 1, minWidth: 0, gap: 2 },
+  entryText: { flex: 1, minWidth: 0, gap: 1 },
   pressed: { opacity: 0.6 },
-  note: { marginTop: 4 },
+  note: { marginTop: 6 },
   actions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 }
 })

@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react'
-import { Pressable, StyleSheet, View } from 'react-native'
+import { StyleSheet, View } from 'react-native'
 import Animated, { FadeIn, useReducedMotion } from 'react-native-reanimated'
-import { Stack } from 'expo-router'
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import { addDays, addMonths, isSameMonth, isSameWeek } from 'date-fns'
 import { lessonsBetween, themesBetween } from '@hellokido/core/api'
@@ -9,29 +8,29 @@ import { upperFirst } from '@hellokido/core/rules/text.js'
 import { byDay, dayKey, daysOf, rangeOf, weekKey, weekStart } from '@hellokido/core/view'
 import { keys } from '../../data/queries'
 import { useClock } from '../../lib/clock'
-import { headerButton, tasks, useOpenLesson } from '../../lib/navigation'
+import { tasks, useOpenLesson } from '../../lib/navigation'
 import { useI18n } from '../../providers/I18n'
-import { useColors } from '../../theme/colors'
+import { useActionMenu } from '../../ui/ActionMenu'
 import { EmptyState, LoadError, Skeleton } from '../../ui/Bits'
-import { Button, IconButton } from '../../ui/Button'
+import { Button } from '../../ui/Button'
 import { Segmented } from '../../ui/Fields'
-import { Icon } from '../../ui/Icon'
-import { Screen, Section } from '../../ui/Screen'
+import { Card, RoundButton, Screen, Section } from '../../ui/Screen'
 import { Text } from '../../ui/Text'
-import { AgendaCard, AgendaSkeleton, MonthDots, WeekStrip, weekRange } from './parts'
+import { dayTitle, DayTimeline, MonthDots, PeriodBar, TimelineSkeleton, useLessonActions, WeekStrip, WeekThemeRow, weekRange } from './parts'
 
 type Mode = 'day' | 'month'
 
 /**
- * Lessons a day at a time under a strip of the week, as the web panel shows them on phones; the
- * month view shows which days have lessons and the theme of each week.
+ * A day at a time on an hour board under its week, as the phone's Calendar draws a day; the month
+ * view shows which days have lessons and the theme of each week.
  */
 export function CalendarScreen() {
-  const c = useColors()
   const i18n = useI18n()
   const { t, plural, date } = i18n
   const client = useQueryClient()
   const openLesson = useOpenLesson()
+  const menu = useActionMenu()
+  const lessonActions = useLessonActions()
   const { now, dayKey: todayKey } = useClock()
   const still = useReducedMotion()
   const [mode, setMode] = useState<Mode>('day')
@@ -58,6 +57,8 @@ export function CalendarScreen() {
     for (let day = range.start; day < range.end; day = addDays(day, 7)) mondays.push(day)
     return mondays
   }, [range])
+  // The month view reads whole weeks; only the month's own days count toward its total
+  const shownCount = mode === 'month' ? list.filter((lesson) => isSameMonth(new Date(lesson.event_date), selected)).length : list.length
 
   const showsNow = mode === 'month' ? isSameMonth(selected, now) : isSameWeek(selected, now, { weekStartsOn: 1 })
   const step = (direction: 1 | -1) => setSelected((day) => (mode === 'month' ? addMonths(day, direction) : addDays(day, direction * 7)))
@@ -70,108 +71,92 @@ export function CalendarScreen() {
 
   return (
     <>
-      <Stack.Screen options={headerButton(c, t.calendar.newLesson, 'add', () => createOn(selected))} />
-      <Screen onRefresh={refresh} gap={24}>
-        <View style={styles.top}>
-          <Segmented<Mode>
-            options={[
-              { id: 'day', label: t.calendar.views.day },
-              { id: 'month', label: t.calendar.views.month }
-            ]}
-            value={mode}
-            onChange={setMode}
-          />
-          <View style={styles.nav}>
-            {/* A week across two years is the longest heading; it narrows a little rather than lose its end */}
-            <Text
-              variant="headline"
-              accessibilityRole="header"
-              accessibilityLiveRegion="polite"
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              minimumFontScale={0.82}
-              tabular
-              style={styles.flex}
-            >
-              {heading}
-            </Text>
-            {!showsNow && (
-              <Button size="sm" onPress={() => setSelected(new Date(`${todayKey}T00:00:00`))}>
+      {menu.element}
+      <Screen
+        onRefresh={refresh}
+        gap={0}
+        title={t.calendar.title}
+        actions={
+          <>
+            <Segmented<Mode>
+              compact
+              options={[
+                { id: 'day', label: t.calendar.views.day },
+                { id: 'month', label: t.calendar.views.month }
+              ]}
+              value={mode}
+              onChange={setMode}
+              style={styles.modes}
+            />
+            <RoundButton icon="add" label={t.calendar.newLesson} onPress={() => createOn(selected)} />
+          </>
+        }
+      >
+        <PeriodBar
+          label={heading}
+          previousLabel={previousLabel}
+          nextLabel={nextLabel}
+          onPrevious={() => step(-1)}
+          onNext={() => step(1)}
+          under={
+            !showsNow ? (
+              <Button variant="plain" size="sm" onPress={() => setSelected(new Date(`${todayKey}T00:00:00`))} style={styles.today}>
                 {t.common.today}
               </Button>
-            )}
-            <IconButton icon="chevronLeft" label={previousLabel} variant="well" onPress={() => step(-1)} />
-            <IconButton icon="chevronRight" label={nextLabel} variant="well" onPress={() => step(1)} />
+            ) : (
+              <Text variant="sub" tone="ink3" tabular numberOfLines={1}>
+                {waiting ? ' ' : plural(t.calendar.lessonCount, shownCount)}
+              </Text>
+            )
+          }
+        />
+
+        {mode === 'day' && (
+          <View style={styles.week}>
+            <WeekStrip days={daysOf(monday)} selected={selected} lessons={list} now={now} waiting={waiting} onSelect={setSelected} />
+            <WeekThemeRow theme={theme} loading={themesShown === undefined} onPress={() => tasks.weekTheme(dayKey(monday))} />
           </View>
-          {mode === 'day' && (
-            <>
-              <WeekStrip days={daysOf(monday)} selected={selected} lessons={list} now={now} onSelect={setSelected} />
-              <Pressable
-                onPress={() => tasks.weekTheme(dayKey(monday))}
-                accessibilityRole="button"
-                accessibilityLabel={`${t.calendar.theme.label}: ${theme || t.calendar.theme.none}`}
-                accessibilityHint={theme ? t.calendar.theme.edit : t.calendar.theme.add}
-                // The line stays slim; the fingertip still gets 44 points
-                hitSlop={{ top: 6, bottom: 6 }}
-                style={({ pressed }) => [styles.theme, pressed && { opacity: 0.6 }]}
-              >
-                <Text variant="foot" tone="ink3">
-                  {t.calendar.theme.label}
-                </Text>
-                {themesShown === undefined ? (
-                  <Skeleton height={12} width={110} radius={6} />
-                ) : (
-                  <Text variant="foot" weight={theme ? '600' : '400'} tone={theme ? 'ink' : 'ink3'} numberOfLines={2} style={styles.flex}>
-                    {theme || t.calendar.theme.none}
-                  </Text>
-                )}
-                <Icon name={theme ? 'edit' : 'add'} size={14} color={c.accentInk} />
-              </Pressable>
-            </>
-          )}
-        </View>
+        )}
 
         {lessons.isError ? (
-          <LoadError message={t.calendar.loadFailed} retryLabel={t.common.retry} onRetry={() => void lessons.refetch()} />
+          <View style={styles.below}>
+            <LoadError message={t.calendar.loadFailed} retryLabel={t.common.retry} onRetry={() => void lessons.refetch()} />
+          </View>
         ) : mode === 'day' ? (
           <Section
-            title={date(selected, { weekday: 'long', day: 'numeric', month: 'long' })}
+            title={dayTitle(i18n, selected, now)}
             aside={!waiting && dayLessons.length > 0 ? plural(t.calendar.lessonCount, dayLessons.length) : undefined}
+            style={styles.below}
           >
             {waiting ? (
-              <AgendaSkeleton />
+              <TimelineSkeleton />
             ) : (
               // Another day's lessons settle in softly instead of jumping into place
               <Animated.View key={dayKey(selected)} entering={still ? undefined : FadeIn.duration(180)}>
                 {dayLessons.length === 0 ? (
-                  <View style={[styles.empty, { borderColor: c.lineStrong }]}>
+                  <Card padded>
                     <EmptyState
                       icon="calendar"
                       title={t.calendar.noLessonsDay}
                       action={
-                        <Button size="sm" icon="add" onPress={() => createOn(selected)}>
+                        <Button icon="add" size="sm" onPress={() => createOn(selected)}>
                           {t.calendar.addLessonDay}
                         </Button>
                       }
                     />
-                  </View>
+                  </Card>
                 ) : (
-                  <View style={styles.list}>
-                    {dayLessons.map((lesson) => (
-                      <AgendaCard key={lesson.id} lesson={lesson} now={now} onOpen={() => openLesson(lesson.id)} />
-                    ))}
-                    <Button variant="plain" size="sm" icon="add" onPress={() => createOn(selected)} style={styles.addMore}>
-                      {t.calendar.addLessonDay}
-                    </Button>
-                  </View>
+                  <DayTimeline day={selected} lessons={dayLessons} now={now} onOpen={(lesson) => openLesson(lesson.id)} actionsOf={lessonActions} openMenu={menu.open} />
                 )}
               </Animated.View>
             )}
           </Section>
         ) : waiting && !lessons.data ? (
-          <Skeleton height={320} radius={18} />
+          <View style={styles.monthPlace}>
+            <Skeleton height={330} radius={26} />
+          </View>
         ) : (
-          <View style={waiting && styles.dim}>
+          <View style={[styles.monthPlace, waiting && styles.dim]}>
             <MonthDots
               weeks={weeks}
               anchor={selected}
@@ -192,12 +177,11 @@ export function CalendarScreen() {
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1, minWidth: 0 },
-  top: { gap: 12 },
-  nav: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 4, minHeight: 44 },
-  theme: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 4, minHeight: 32 },
-  list: { gap: 12 },
-  empty: { borderRadius: 18, borderWidth: 1, borderStyle: 'dashed' },
-  addMore: { alignSelf: 'flex-start', marginLeft: 4 },
+  modes: { width: 132 },
+  // Takes the height of the line it replaces; it still answers to a whole fingertip
+  today: { marginVertical: -7 },
+  week: { marginTop: 14, gap: 14 },
+  below: { marginTop: 24 },
+  monthPlace: { marginTop: 16 },
   dim: { opacity: 0.6 }
 })

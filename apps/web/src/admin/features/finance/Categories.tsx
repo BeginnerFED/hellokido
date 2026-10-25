@@ -4,9 +4,9 @@ import type { Expense } from '@hellokido/core/api'
 import { useLabels } from '../../data/queries'
 import { useI18n } from '../../providers/I18n'
 import { Skeleton } from '../../ui/Bits'
-import { Section } from '../../ui/Page'
+import { Card } from '../../ui/Page'
 import { cx } from '../../ui/cx'
-import { CategoryTablet } from './bits'
+import { CategoryTablet, cardPad } from './bits'
 
 const percentFormats = new Map<string, Intl.NumberFormat>()
 
@@ -47,17 +47,17 @@ export function CategoriesSection({
   const largest = groups[0]?.amount ?? 0
 
   return (
-    <Section boxed title={t.finance.categories.title} className={className}>
+    <Card title={t.finance.categories.title} className={className}>
       {!expenses ? (
-        <div aria-hidden className="flex flex-col gap-3">
+        <div aria-hidden className={cx(cardPad, 'flex flex-col gap-3')}>
           <Skeleton className="h-10" />
           <Skeleton className="h-10" />
           <Skeleton className="h-10" />
         </div>
       ) : groups.length === 0 ? (
-        <p className="text-sm text-ink-2">{t.finance.categories.empty}</p>
+        <p className={cx(cardPad, 'text-[0.9375rem] text-ink-2')}>{t.finance.categories.empty}</p>
       ) : (
-        <ul aria-busy={waiting} className={cx('-mx-3 flex flex-col transition-opacity duration-200', waiting && 'opacity-60')}>
+        <ul aria-busy={waiting} className={cx('flex flex-col px-2 pb-3 transition-opacity duration-200 sm:px-3', waiting && 'opacity-60')}>
           {groups.map((group) => {
             const name = labels.expenseCategory(group.code)
             return (
@@ -66,24 +66,24 @@ export function CategoriesSection({
                   onPress={() => onPick(group.code)}
                   aria-label={`${fmt(t.finance.categories.show, { category: name })}: ${money(group.amount)}`}
                   className={cx(
-                    'flex w-full items-center gap-3 rounded-control px-3 py-2 text-left outline-none transition-colors duration-150',
-                    'data-hovered:bg-[color-mix(in_oklab,var(--well)_70%,transparent)] data-pressed:bg-well data-focus-visible:ring-2 data-focus-visible:ring-focus data-focus-visible:ring-inset'
+                    'flex w-full items-center gap-3 rounded-tile px-2 py-2.5 text-left outline-none transition-colors duration-150 sm:px-[0.625rem]',
+                    'data-hovered:bg-hover data-pressed:scale-[0.99] data-focus-visible:ring-2 data-focus-visible:ring-focus data-focus-visible:ring-inset'
                   )}
                 >
                   <CategoryTablet code={group.code} />
                   <span className="min-w-0 flex-1">
                     <span className="flex items-baseline gap-3">
-                      <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink">{name}</span>
-                      <span className="shrink-0 text-sm font-semibold tabular">{money(group.amount)}</span>
+                      <span className="min-w-0 flex-1 truncate text-[0.9375rem] font-medium text-ink">{name}</span>
+                      <span className="shrink-0 text-[0.9375rem] font-semibold whitespace-nowrap">{money(group.amount)}</span>
                     </span>
-                    <span aria-hidden className="mt-1.5 flex items-center gap-2.5">
-                      <span className="h-1.5 min-w-0 flex-1">
+                    <span aria-hidden className="mt-2 flex items-center gap-2.5">
+                      <span className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-track">
                         <span
-                          className="block h-full rounded-r-[3px] bg-series-out"
+                          className="block h-full rounded-full bg-out"
                           style={{ width: `${largest > 0 ? Math.max((group.amount / largest) * 100, 1.5) : 0}%` }}
                         />
                       </span>
-                      <span className="w-10 shrink-0 text-right text-[0.75rem] text-ink-3 tabular">{percent(tag, total > 0 ? group.amount / total : 0)}</span>
+                      <span className="w-10 shrink-0 text-right text-[0.78125rem] text-ink-3">{percent(tag, total > 0 ? group.amount / total : 0)}</span>
                     </span>
                   </span>
                 </AriaButton>
@@ -92,6 +92,6 @@ export function CategoriesSection({
           })}
         </ul>
       )}
-    </Section>
+    </Card>
   )
 }

@@ -1,6 +1,5 @@
-import { useCallback, useRef, useState } from 'react'
-import { ActivityIndicator, Alert, Platform, StyleSheet, Switch, View } from 'react-native'
-import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker'
+import { useCallback, useRef, useState, type ReactNode } from 'react'
+import { Alert, Platform, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native'
 import Constants from 'expo-constants'
 import * as Haptics from 'expo-haptics'
 import * as Updates from 'expo-updates'
@@ -14,27 +13,33 @@ import { useAuth } from '../../providers/Auth'
 import { useI18n } from '../../providers/I18n'
 import { useTheme, type ThemeChoice } from '../../providers/Theme'
 import { useColors } from '../../theme/colors'
-import { initialsOf, ListSkeleton, LoadError, Mark } from '../../ui/Bits'
+import { Avatar, ListSkeleton, LoadError } from '../../ui/Bits'
 import { Button } from '../../ui/Button'
-import { Segmented } from '../../ui/Fields'
-import { Icon, type IconName } from '../../ui/Icon'
-import { Card, Row, Screen, Section } from '../../ui/Screen'
-import { DOT, Text } from '../../ui/Text'
+import { Segmented, SwitchField, TimeField } from '../../ui/Fields'
+import { ActionRow, Card, CardButton, GroupFooter, Row, Screen, Section } from '../../ui/Screen'
+import { dots, Text } from '../../ui/Text'
 import { useToast } from '../../ui/Toast'
 import { CategoryTablet, IncomeTablet, methodName } from '../finance/bits'
 import { SettingTitle } from './bits'
 
 const isFree = (row: PackageType) => row.family === 'free'
 
+/** The tile before a row (a category, a person, a day), the same size in every list on the page. */
+const TILE = 32
+
+/** The room over the first part of the page, under the bar. */
+const FIRST_GROUP = { marginTop: 6 }
+
 // "ayse.yilmaz@…" gives "AY", the way the web panel's account button shows it
-const initialsOfEmail = (email: string) => initialsOf((email.split('@')[0] ?? '').replace(/[._-]+/g, ' '))
+/** "ayse.yilmaz@…" → "ayse yilmaz", so an account's tile shows the initials of the name before the @. */
+const nameOfEmail = (email: string) => (email.split('@')[0] ?? '').replace(/[._-]+/g, ' ')
 
 /**
- * The few things set once and changed rarely, on one page: how the app looks on this phone, the
- * prices and names the forms use, card money, monthly expenses, categories, and who may sign in.
+ * The few things set once and changed rarely, on one page laid out as the phone's Settings: how the
+ * app looks on this phone, the prices and names the forms use, card money, monthly expenses,
+ * categories, the evening reminder and who may sign in.
  */
 export function SettingsScreen() {
-  const { t } = useI18n()
   const client = useQueryClient()
   const refresh = useCallback(
     () =>
@@ -45,71 +50,57 @@ export function SettingsScreen() {
       ]),
     [client]
   )
-  const copy = t.settings
 
   return (
     <Screen onRefresh={refresh}>
-      <Section title={copy.appearance.title} description={copy.appearance.body}>
-        <Appearance />
-      </Section>
-      <Section title={copy.packages.title} description={copy.packages.body}>
-        <Packages />
-      </Section>
-      <Section title={copy.period.title} description={copy.period.body}>
-        <MoneyPeriod />
-      </Section>
-      <Section title={copy.card.title} description={copy.card.body}>
-        <CardMoney />
-      </Section>
-      <Section title={copy.monthly.title} description={copy.monthly.body}>
-        <Monthly />
-      </Section>
-      <Section title={copy.categories.expenseTitle} description={copy.categories.expenseBody}>
-        <Categories kind="expense" />
-      </Section>
-      <Section title={copy.categories.incomeTitle} description={copy.categories.incomeBody}>
-        <Categories kind="income" />
-      </Section>
-      <Section title={t.messages.evening.setting.title} description={t.messages.evening.setting.body}>
-        <EveningReminderSetting />
-      </Section>
-      <Section title={copy.access.title} description={copy.access.body}>
-        <Access />
-      </Section>
-      <Section title={t.mobile.account}>
-        <Account />
-      </Section>
-      <Section title={copy.about.title}>
-        <About />
-      </Section>
+      <Appearance />
+      <Packages />
+      <CardMoney />
+      <Monthly />
+      <Categories kind="expense" />
+      <Categories kind="income" />
+      <EveningReminderSetting />
+      <Access />
+      <Account />
+      <About />
     </Screen>
   )
 }
 
-function AddButton({ label, icon = 'add', onPress }: { label: string; icon?: IconName; onPress: () => void }) {
+type GroupProps = {
+  title: string
+  /** A count or the setting's state at the right of the head ("12", "Her gün 16:00"). */
+  aside?: ReactNode
+  /** What the rows mean, under the card. */
+  footer?: ReactNode
+  children: ReactNode
+  style?: StyleProp<ViewStyle>
+}
+
+/** One part of the page as on the felt board: its head (20pt) with a muted note at the right, the rows on one felt card, a note under it. */
+function Group({ title, aside, footer, children, style }: GroupProps) {
   return (
-    <Button variant="plain" size="sm" icon={icon} onPress={onPress} style={styles.add}>
-      {label}
-    </Button>
+    <Section title={title} aside={aside} style={style}>
+      <Card>{children}</Card>
+      {footer !== undefined && <GroupFooter>{footer}</GroupFooter>}
+    </Section>
   )
 }
 
-/**
- * A value at the end of a row, in the quieter ink the phone's own settings use. It never takes more
- * than half the row, so the name beside it is not cut to a few letters.
- */
-function Value({ children, strong, quiet }: { children: string; strong?: boolean; quiet?: boolean }) {
+/** A group still loading or that failed: its heading stays in place, so the page does not jump. */
+function Waiting({ title, failed, onRetry, rows = 2 }: { title: string; failed: boolean; onRetry: () => void; rows?: number }) {
+  const { t } = useI18n()
   return (
-    <Text variant="sub" weight={strong ? '600' : '400'} tone={quiet ? 'ink3' : strong ? 'ink' : 'ink2'} tabular numberOfLines={1} style={styles.value}>
-      {children}
-    </Text>
+    <Section title={title}>
+      {failed ? <LoadError message={t.common.loadFailed} retryLabel={t.common.retry} onRetry={onRetry} /> : <ListSkeleton rows={rows} />}
+    </Section>
   )
 }
 
-/** The name of a row that has a value at its end: a long one (English, Ukrainian) wraps instead of being cut. */
-function Label({ children }: { children: string }) {
+/** A value the row does not have yet ("No price"), quieter than a real one. */
+function Missing({ children }: { children: string }) {
   return (
-    <Text variant="body" numberOfLines={2}>
+    <Text variant="body" tone="ink3" numberOfLines={1} style={styles.value}>
       {children}
     </Text>
   )
@@ -128,7 +119,7 @@ function Appearance() {
   const { t, locale, setLocale } = useI18n()
   const { choice, setChoice } = useTheme()
   return (
-    <View style={styles.appearance}>
+    <Group title={t.settings.appearance.title} footer={t.settings.appearance.body} style={FIRST_GROUP}>
       <Segmented<ThemeChoice>
         label={t.settings.appearance.theme}
         value={choice}
@@ -140,7 +131,7 @@ function Appearance() {
         ]}
       />
       <Segmented<Locale> label={t.shell.account.language} value={locale} onChange={setLocale} options={LOCALES.map((id) => ({ id, label: LANGUAGE_NAMES[id] }))} />
-    </View>
+    </Group>
   )
 }
 
@@ -148,9 +139,9 @@ function Packages() {
   const { t, plural, money } = useI18n()
   const labels = useLabels()
   const catalog = useCatalog()
+  const copy = t.settings.packages
 
-  if (catalog.isError) return <LoadError message={t.common.loadFailed} retryLabel={t.common.retry} onRetry={() => void catalog.refetch()} />
-  if (!catalog.data) return <ListSkeleton rows={4} />
+  if (!catalog.data) return <Waiting title={copy.title} failed={catalog.isError} onRetry={() => void catalog.refetch()} rows={4} />
 
   const lessonsOf = (row: PackageType, name: string) => {
     if (isFree(row)) return t.children.form.noQuota
@@ -160,47 +151,22 @@ function Packages() {
   }
 
   return (
-    <Card>
+    <Group title={copy.title} aside={catalog.data.packages.length} footer={copy.body}>
       {catalog.data.packages.map((row) => {
         const name = labels.packageName(row.code)
+        const subtitle = dots(lessonsOf(row, name), !row.is_active && t.settings.hidden)
         return (
           <Row
             key={row.code}
-            title={<SettingTitle mark={!row.is_active && t.settings.hidden}>{name}</SettingTitle>}
-            subtitle={lessonsOf(row, name)}
-            trailing={
-              isFree(row) ? undefined : row.default_price != null ? (
-                <Value strong>{money(row.default_price)}</Value>
-              ) : (
-                <Value quiet>{t.settings.packages.noPrice}</Value>
-              )
-            }
+            title={<SettingTitle dimmed={!row.is_active}>{name}</SettingTitle>}
+            subtitle={subtitle || undefined}
+            value={isFree(row) ? undefined : row.default_price != null ? money(row.default_price) : <Missing>{copy.noPrice}</Missing>}
             chevron
             onPress={() => tasks.packageType(row.code)}
           />
         )
       })}
-    </Card>
-  )
-}
-
-function MoneyPeriod() {
-  const { t, fmt } = useI18n()
-  const catalog = useCatalog()
-  const day = catalog.data?.settings.moneyPeriodStartDay
-
-  if (catalog.isError) return <LoadError message={t.common.loadFailed} retryLabel={t.common.retry} onRetry={() => void catalog.refetch()} />
-  if (day === undefined) return <ListSkeleton rows={1} />
-
-  return (
-    <Card>
-      <Row
-        title={<Label>{t.settings.period.start}</Label>}
-        trailing={<Value>{day === 1 ? t.settings.period.calendar : fmt(t.settings.period.value, { day })}</Value>}
-        chevron
-        onPress={tasks.moneyPeriod}
-      />
-    </Card>
+    </Group>
   )
 }
 
@@ -218,8 +184,7 @@ const timeText = (day: Date) => `${String(day.getHours()).padStart(2, '0')}:${St
  * all admins and the web; each change is saved at once, as the phone's own settings are.
  */
 function EveningReminderSetting() {
-  const c = useColors()
-  const { t, tag } = useI18n()
+  const { t, fmt } = useI18n()
   const catalog = useCatalog()
   const refresh = useRefresh()
   const toast = useToast()
@@ -229,8 +194,7 @@ function EveningReminderSetting() {
   const pending = useRef<ReturnType<typeof setTimeout> | null>(null)
   const saved = catalog.data?.settings.eveningReminder
 
-  if (catalog.isError) return <LoadError message={t.common.loadFailed} retryLabel={t.common.retry} onRetry={() => void catalog.refetch()} />
-  if (!saved) return <ListSkeleton rows={2} />
+  if (!saved) return <Waiting title={copy.title} failed={catalog.isError} onRetry={() => void catalog.refetch()} />
   const shown = draft ?? saved
 
   const save = async (next: EveningReminder) => {
@@ -259,60 +223,10 @@ function EveningReminderSetting() {
   }
 
   return (
-    <Card>
-      <Row
-        title={<Label>{copy.enabled}</Label>}
-        trailing={
-          <Switch
-            value={shown.enabled}
-            onValueChange={(enabled) => choose({ ...shown, enabled })}
-            accessibilityLabel={copy.enabled}
-            trackColor={{ false: c.lineStrong, true: c.accentSolid }}
-            // The phone's own switches keep a white knob in both themes
-            thumbColor="#ffffff"
-            ios_backgroundColor={c.lineStrong}
-          />
-        }
-      />
-      {shown.enabled && (
-        <Row
-          title={<Label>{copy.time}</Label>}
-          subtitle={copy.timeHint}
-          trailing={
-            Platform.OS === 'ios' ? (
-              <DateTimePicker
-                value={timeOfDay(shown.time)}
-                mode="time"
-                display="compact"
-                // tr-TR, en-GB and uk-UA all read the day in 24 hours
-                locale={tag}
-                minuteInterval={5}
-                accentColor={c.accentSolid}
-                onChange={(event, picked) => {
-                  if (event.type === 'set' && picked) pickTime(picked)
-                }}
-              />
-            ) : (
-              <Value strong>{shown.time}</Value>
-            )
-          }
-          chevron={Platform.OS === 'android'}
-          onPress={
-            Platform.OS === 'android'
-              ? () =>
-                  DateTimePickerAndroid.open({
-                    value: timeOfDay(shown.time),
-                    mode: 'time',
-                    is24Hour: true,
-                    onChange: (event, picked) => {
-                      if (event.type === 'set' && picked) pickTime(picked)
-                    }
-                  })
-              : undefined
-          }
-        />
-      )}
-    </Card>
+    <Group title={copy.title} aside={shown.enabled ? fmt(copy.on, { time: shown.time }) : copy.off} footer={copy.body}>
+      <SwitchField label={copy.enabled} value={shown.enabled} onChange={(enabled) => choose({ ...shown, enabled })} />
+      {shown.enabled && <TimeField label={copy.time} hint={copy.timeHint} value={timeOfDay(shown.time)} onChange={pickTime} minuteInterval={5} />}
+    </Group>
   )
 }
 
@@ -320,25 +234,20 @@ function CardMoney() {
   const { t, fmt, locale } = useI18n()
   const catalog = useCatalog()
   const saved = catalog.data?.settings
+  const copy = t.settings.card
 
-  if (catalog.isError) return <LoadError message={t.common.loadFailed} retryLabel={t.common.retry} onRetry={() => void catalog.refetch()} />
-  if (!saved) return <ListSkeleton rows={2} />
+  if (!saved) return <Waiting title={copy.title} failed={catalog.isError} onRetry={() => void catalog.refetch()} />
 
   return (
-    <Card>
+    <Group title={copy.title} footer={copy.body}>
+      <Row title={<SettingTitle>{copy.days}</SettingTitle>} value={`${saved.cardSettlementDays} ${copy.daysUnit}`} chevron onPress={tasks.cardSettings} />
       <Row
-        title={<Label>{t.settings.card.days}</Label>}
-        trailing={<Value>{`${saved.cardSettlementDays} ${t.settings.card.daysUnit}`}</Value>}
+        title={<SettingTitle>{copy.commission}</SettingTitle>}
+        value={fmt(t.mobile.percent, { rate: rateText(saved.cardCommissionRate, locale) })}
         chevron
         onPress={tasks.cardSettings}
       />
-      <Row
-        title={<Label>{t.settings.card.commission}</Label>}
-        trailing={<Value>{fmt(t.mobile.percent, { rate: rateText(saved.cardCommissionRate, locale) })}</Value>}
-        chevron
-        onPress={tasks.cardSettings}
-      />
-    </Card>
+    </Group>
   )
 }
 
@@ -348,49 +257,38 @@ function Monthly() {
   const { t, fmt, money } = useI18n()
   const labels = useLabels()
   const templates = useQuery({ queryKey: keys.finance('recurring'), queryFn: listRecurring })
+  const copy = t.settings.monthly
 
-  if (templates.isError) return <LoadError message={t.common.loadFailed} retryLabel={t.common.retry} onRetry={() => void templates.refetch()} />
-  if (!templates.data) return <ListSkeleton rows={2} />
+  if (!templates.data) return <Waiting title={copy.title} failed={templates.isError} onRetry={() => void templates.refetch()} />
 
   return (
-    <View>
-      {templates.data.length > 0 && (
-        <Card inset={60}>
-          {templates.data.map((row) => {
-            const meta = [labels.expenseCategory(row.expense_type), methodName(t, labels, row.payment_method)].filter(Boolean).join(DOT)
-            const amount = row.amount != null ? money(row.amount) : t.finance.monthly.varies
-            return (
-              <Row
-                key={row.id}
-                leading={
-                  <View style={[styles.dayTablet, { backgroundColor: c.well }]}>
-                    <Text variant="foot" weight="700" tabular tone={row.is_active ? 'ink2' : 'ink3'}>
-                      {row.day_of_month}
-                    </Text>
-                  </View>
-                }
-                title={<SettingTitle mark={!row.is_active && t.finance.monthly.paused}>{row.title}</SettingTitle>}
-                subtitle={meta}
-                trailing={
-                  row.amount != null ? (
-                    <Value strong={row.is_active === true}>{amount}</Value>
-                  ) : (
-                    <Value quiet>{amount}</Value>
-                  )
-                }
-                // The tablet shows the day; it is read out with the rest
-                accessibilityLabel={[fmt(t.finance.monthly.day, { day: row.day_of_month }), row.title, !row.is_active && t.finance.monthly.paused, meta, amount]
-                  .filter(Boolean)
-                  .join(', ')}
-                chevron
-                onPress={() => tasks.recurring(row.id)}
-              />
-            )
-          })}
-        </Card>
-      )}
-      <AddButton label={t.finance.monthly.add} onPress={() => tasks.recurring()} />
-    </View>
+    <Group title={copy.title} aside={templates.data.length > 0 ? templates.data.length : undefined} footer={copy.body}>
+      {templates.data.map((row) => {
+        const meta = dots(labels.expenseCategory(row.expense_type), methodName(t, labels, row.payment_method), !row.is_active && t.finance.monthly.paused)
+        const amount = row.amount != null ? money(row.amount) : t.finance.monthly.varies
+        return (
+          <Row
+            key={row.id}
+            leading={
+              // The day of the month it is due, in a circle on the felt like the other rows' tiles
+              <View style={[styles.day, { backgroundColor: c.onFelt }]}>
+                <Text weight="600" tabular tone={row.is_active ? 'ink' : 'ink3'} maxFontSizeMultiplier={1.15} style={styles.dayText}>
+                  {row.day_of_month}
+                </Text>
+              </View>
+            }
+            title={<SettingTitle dimmed={!row.is_active}>{row.title}</SettingTitle>}
+            subtitle={meta || undefined}
+            value={row.amount != null ? amount : <Missing>{amount}</Missing>}
+            // The leaf shows the day; it is read out with the rest
+            accessibilityLabel={[fmt(t.finance.monthly.day, { day: row.day_of_month }), row.title, meta, amount].filter(Boolean).join(', ')}
+            chevron
+            onPress={() => tasks.recurring(row.id)}
+          />
+        )
+      })}
+      <ActionRow icon="add" lead={TILE} label={t.finance.monthly.add} onPress={() => tasks.recurring()} />
+    </Group>
   )
 }
 
@@ -398,28 +296,28 @@ function Categories({ kind }: { kind: 'expense' | 'income' }) {
   const { t } = useI18n()
   const labels = useLabels()
   const catalog = useCatalog()
+  const copy = t.settings.categories
+  const title = kind === 'expense' ? copy.expenseTitle : copy.incomeTitle
 
-  if (catalog.isError) return <LoadError message={t.common.loadFailed} retryLabel={t.common.retry} onRetry={() => void catalog.refetch()} />
-  if (!catalog.data) return <ListSkeleton rows={4} />
+  if (!catalog.data) return <Waiting title={title} failed={catalog.isError} onRetry={() => void catalog.refetch()} rows={4} />
 
   const rows = kind === 'expense' ? catalog.data.expenseCategories : catalog.data.incomeCategories
   const name = (code: string) => (kind === 'expense' ? labels.expenseCategory(code) : labels.incomeCategory(code))
 
   return (
-    <View>
-      <Card inset={60}>
-        {rows.map((row) => (
-          <Row
-            key={row.code}
-            leading={kind === 'expense' ? <CategoryTablet code={row.code} /> : <IncomeTablet code={row.code} />}
-            title={<SettingTitle mark={!row.is_active && t.settings.hidden}>{name(row.code)}</SettingTitle>}
-            chevron
-            onPress={() => tasks.category(kind, row.code)}
-          />
-        ))}
-      </Card>
-      <AddButton label={t.settings.categories.add} onPress={() => tasks.category(kind)} />
-    </View>
+    <Group title={title} aside={rows.length} footer={kind === 'expense' ? copy.expenseBody : copy.incomeBody}>
+      {rows.map((row) => (
+        <Row
+          key={row.code}
+          leading={kind === 'expense' ? <CategoryTablet code={row.code} size={TILE} /> : <IncomeTablet code={row.code} size={TILE} />}
+          title={<SettingTitle dimmed={!row.is_active}>{name(row.code)}</SettingTitle>}
+          subtitle={row.is_active ? undefined : t.settings.hidden}
+          chevron
+          onPress={() => tasks.category(kind, row.code)}
+        />
+      ))}
+      <ActionRow icon="add" lead={TILE} label={copy.add} onPress={() => tasks.category(kind)} />
+    </Group>
   )
 }
 
@@ -430,7 +328,6 @@ const failedWith = (error: unknown, code: string) => String((error as Error)?.me
  * existing account gets access or loses it.
  */
 function Access() {
-  const c = useColors()
   const { t, fmt } = useI18n()
   const toast = useToast()
   const refresh = useRefresh()
@@ -463,50 +360,39 @@ function Access() {
     ])
   }
 
-  if (admins.isError) return <LoadError message={t.common.loadFailed} retryLabel={t.common.retry} onRetry={() => void admins.refetch()} />
-  if (!admins.data) return <ListSkeleton rows={2} />
+  if (!admins.data) return <Waiting title={copy.title} failed={admins.isError} onRetry={() => void admins.refetch()} />
 
   return (
-    <View>
-      <Card inset={60}>
-        {admins.data.map((admin) => (
-          <Row
-            key={admin.user_id}
-            leading={
-              // People are square tiles; the one round avatar is the signed-in account below
-              <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={[styles.tile, { backgroundColor: c.surface2, borderColor: c.line }]}>
-                <Text variant="caption" weight="600" tone="ink2">
-                  {initialsOfEmail(admin.email)}
-                </Text>
-              </View>
-            }
-            title={<Email>{admin.email}</Email>}
-            trailing={
-              admin.is_self ? (
-                <Mark tone="neutral">{copy.you}</Mark>
-              ) : (
-                <Button
-                  variant="plain"
-                  size="sm"
-                  accessibilityLabel={fmt(copy.removeLabel, { email: admin.email })}
-                  busy={removing === admin.user_id}
-                  disabled={removing !== null && removing !== admin.user_id}
-                  onPress={() => revoke(admin)}
-                >
-                  {copy.remove}
-                </Button>
-              )
-            }
-          />
-        ))}
-      </Card>
-      <AddButton label={copy.grant} icon="personAdd" onPress={tasks.grantAccess} />
-    </View>
+    <Group title={copy.title} aside={admins.data.length} footer={copy.body}>
+      {admins.data.map((admin) => (
+        <Row
+          key={admin.user_id}
+          leading={<Avatar name={nameOfEmail(admin.email)} size={TILE} />}
+          title={<Email>{admin.email}</Email>}
+          value={admin.is_self ? copy.you : undefined}
+          trailing={
+            admin.is_self ? undefined : (
+              // A small raised button with red words: it takes something away
+              <Button
+                variant="danger"
+                size="sm"
+                accessibilityLabel={fmt(copy.removeLabel, { email: admin.email })}
+                busy={removing === admin.user_id}
+                disabled={removing !== null && removing !== admin.user_id}
+                onPress={() => revoke(admin)}
+              >
+                {copy.remove}
+              </Button>
+            )
+          }
+        />
+      ))}
+      <ActionRow icon="personAdd" lead={TILE} label={copy.grant} onPress={tasks.grantAccess} />
+    </Group>
   )
 }
 
 function Account() {
-  const c = useColors()
   const { t } = useI18n()
   const { session, signOut } = useAuth()
   const toast = useToast()
@@ -530,32 +416,14 @@ function Account() {
       }
     ])
 
+  // The account, then signing out on its own in red, as the phone's own account page ends
   return (
-    <Card inset={60}>
-      <Row
-        leading={
-          <View style={[styles.avatar, { backgroundColor: c.accentWash2 }]}>
-            <Text variant="caption" weight="600" tone="accentInk">
-              {initialsOfEmail(email)}
-            </Text>
-          </View>
-        }
-        title={<Email>{email}</Email>}
-      />
-      <Row
-        leading={
-          <View style={styles.avatar}>
-            {busy ? <ActivityIndicator size="small" color={c.ink3} /> : <Icon name="logout" size={18} color={c.accentInk} />}
-          </View>
-        }
-        title={
-          <Text variant="body" tone={busy ? 'ink3' : 'accentInk'}>
-            {t.shell.account.signOut}
-          </Text>
-        }
-        onPress={busy ? undefined : confirm}
-      />
-    </Card>
+    <View style={styles.account}>
+      <Group title={t.mobile.account}>
+        <Row leading={<Avatar name={nameOfEmail(email)} size={TILE} />} title={<Email>{email}</Email>} />
+      </Group>
+      <CardButton label={t.shell.account.signOut} destructive busy={busy} onPress={confirm} />
+    </View>
   )
 }
 
@@ -564,23 +432,17 @@ function About() {
   // An update sent over the air keeps the store version, so its day tells which one is running
   const updated = !Updates.isEmbeddedLaunch ? Updates.createdAt : null
   return (
-    <Card>
-      <Row title={t.mobile.version} trailing={<Value>{Constants.expoConfig?.version ?? ''}</Value>} />
-      {updated && (
-        <Row
-          title={<Label>{t.settings.about.updated}</Label>}
-          trailing={<Value>{date(updated, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</Value>}
-        />
-      )}
-    </Card>
+    <Group title={t.settings.about.title}>
+      <Row title={t.mobile.version} value={Constants.expoConfig?.version ?? ''} />
+      {updated && <Row title={<SettingTitle>{t.settings.about.updated}</SettingTitle>} value={date(updated, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })} />}
+    </Group>
   )
 }
 
 const styles = StyleSheet.create({
-  appearance: { gap: 16 },
-  add: { alignSelf: 'flex-start', marginTop: 6, marginLeft: 4 },
-  value: { flexShrink: 1, maxWidth: '50%' },
-  dayTablet: { width: 32, height: 32, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
-  tile: { width: 32, height: 32, borderRadius: 9, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  avatar: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' }
+  value: { flexShrink: 1, maxWidth: '55%' },
+  // As large as the other rows' tiles, so every list on the page lines up
+  day: { width: TILE, height: TILE, borderRadius: TILE / 2, alignItems: 'center', justifyContent: 'center' },
+  dayText: { fontSize: 14, lineHeight: 18 },
+  account: { gap: 12 }
 })

@@ -1,46 +1,56 @@
 import { useMemo, useRef, useState } from 'react'
-import { AccessibilityInfo, Pressable, ScrollView, StyleSheet, View, type ScrollViewInstance } from 'react-native'
-import { router, Stack, type Href } from 'expo-router'
+import { AccessibilityInfo, Pressable, StyleSheet, useWindowDimensions, View, type ScrollViewInstance, type ViewInstance } from 'react-native'
+import { router, type Href } from 'expo-router'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as Haptics from 'expo-haptics'
-import { addDays, addMinutes } from 'date-fns'
+import { addDays, addMinutes, differenceInMinutes } from 'date-fns'
 import { lessonsBetween, LessonError, SEATS_SHOWN, setAttendance, type AttendanceStatus, type Lesson, type Seat, type UsageMap } from '@hellokido/core/api'
 import { holdsSeat } from '@hellokido/core/rules/attendance.js'
-import { isPaymentDue, LESSON_MINUTES } from '@hellokido/core/view'
+import { endText, isPaymentDue, LESSON_MINUTES, remainingText } from '@hellokido/core/view'
 import { keys, useLabels, useUsageOf } from '../../data/queries'
 import { useClock } from '../../lib/clock'
-import { headerMenu, tasks, useOpenLesson } from '../../lib/navigation'
+import { tasks, useOpenLesson } from '../../lib/navigation'
 import { useI18n } from '../../providers/I18n'
-import { useColors } from '../../theme/colors'
+import { tint, typeTone, useColors } from '../../theme/colors'
 import { useActionMenu } from '../../ui/ActionMenu'
 import { AttendancePicker } from '../../ui/AttendancePicker'
-import { EmptyState, LoadError, Mark, Skeleton } from '../../ui/Bits'
+import { Avatar, EmptyState, firstNameOf, ListSkeleton, LiveMark, LoadError, Mark, Skeleton, TodoRow } from '../../ui/Bits'
 import { Button } from '../../ui/Button'
-import { Icon, type IconName } from '../../ui/Icon'
-import { Card, Screen, Section } from '../../ui/Screen'
-import { AgeTablet, LessonShape, Peg, SocketBoard } from '../../ui/signature'
-import { DOT, Text } from '../../ui/Text'
+import { Card, QuietCard, RoundButton, Screen, Section } from '../../ui/Screen'
+import { LessonShape, ProgressTrack } from '../../ui/signature'
+import { Text, together } from '../../ui/Text'
 import { useToast } from '../../ui/Toast'
-import { UsageLine, useLessonTitle } from '../../ui/UsageLine'
+import { useLessonTitle } from '../../ui/UsageLine'
 import { useEndingPackages, usePaymentsDue, useUnmarked } from './data'
-import { ChildName, EndingSection, PaymentsSection, TomorrowSection, UnmarkedSection } from './sections'
+import { ChildName, EndingSection, PaymentsSection, TomorrowSection, UnmarkedSection, useTomorrowReminders } from './sections'
 
-/** A count and its word ("12 çocuk") as one unbreakable piece of a sentence. */
-const keepTogether = (text: string) => text.replace(/ /g, ' ')
+type Open = 'unmarked' | 'payments' | 'ending' | 'tomorrow'
+
+const lessonEnd = (lesson: Lesson) => addMinutes(new Date(lesson.event_date), LESSON_MINUTES)
+
+/** "Ada, Defne, Aras" with "+2" for the rest: the children a waiting job is about. */
+const names = (list: string[], max = 3) => {
+  const unique = [...new Set(list)]
+  return unique.length > max ? `${unique.slice(0, max).join(', ')} +${unique.length - max}` : unique.join(', ')
+}
 
 /**
- * The working day: today's lessons with attendance in one tap, forgotten attendance, tomorrow's
- * reminders, and the families who owe a payment or need a new package.
+ * The working day as a felt board: the running lesson (or the next one; after the last, the last
+ * one) as a card in its type's colour with attendance in one tap, the rest of the day as tiles, and
+ * what waits for the admin as one card of jobs, each opening its list.
  */
 export function TodayScreen() {
-  const c = useColors()
-  const { t, plural, date } = useI18n()
+  const { t, plural, fmt, date } = useI18n()
+  const i18n = useI18n()
   const toast = useToast()
   const client = useQueryClient()
   const { now, dayKey } = useClock()
   const menu = useActionMenu()
+  const insets = useSafeAreaInsets()
   const scroll = useRef<ScrollViewInstance>(null)
-  const offsets = useRef<Record<string, number>>({})
+  const [open, setOpen] = useState<Set<Open>>(() => new Set())
+  const pendingJump = useRef<Open | null>(null)
 
   const todayStart = useMemo(() => new Date(`${dayKey}T00:00:00`), [dayKey])
   const tomorrowStart = useMemo(() => addDays(todayStart, 1), [todayStart])
@@ -48,7 +58,10 @@ export function TodayScreen() {
   const key = keys.lessons(todayStart.toISOString(), rangeEnd.toISOString())
   const lessons = useQuery({ queryKey: key, queryFn: () => lessonsBetween(todayStart, rangeEnd) })
 
-  const todays = useMemo(() => (lessons.data ?? []).filter((lesson) => new Date(lesson.event_date) < tomorrowStart), [lessons.data, tomorrowStart])
+  const todays = useMemo(
+    () => (lessons.data ?? []).filter((lesson) => new Date(lesson.event_date) < tomorrowStart).sort((a, b) => a.event_date.localeCompare(b.event_date)),
+    [lessons.data, tomorrowStart]
+  )
   const tomorrows = useMemo(() => (lessons.data ?? []).filter((lesson) => new Date(lesson.event_date) >= tomorrowStart), [lessons.data, tomorrowStart])
   const usage = useUsageOf(useMemo(() => (lessons.data ?? []).flatMap((lesson) => lesson.seats.map((seat) => seat.child)), [lessons.data]))
   const [saving, setSaving] = useState<Set<string>>(() => new Set())
@@ -92,33 +105,155 @@ export function TodayScreen() {
     void client.invalidateQueries({ queryKey: ['lessons'], refetchType: 'none' })
   }
 
-  const childCount = new Set(todays.flatMap((lesson) => lesson.seats.map((seat) => seat.registration_id))).size
-  const day = date(now, { weekday: 'long', day: 'numeric', month: 'long' })
-  // "3 ders" and "12 çocuk" stay whole when the line wraps
-  const counts = lessons.data && todays.length > 0 ? `${keepTogether(plural(t.today.lessonCount, todays.length))}, ${keepTogether(plural(t.today.childCount, childCount))}` : null
-  const summary = counts ? `${day}${DOT}${counts}` : day
+  // The hero: the running lesson, else the next one. Once the day is over, the last lesson whose
+  // attendance is still missing, else the last one with children, else the last one.
+  const running = todays.find((lesson) => now >= new Date(lesson.event_date) && now < lessonEnd(lesson))
+  const upcoming = todays.find((lesson) => new Date(lesson.event_date) > now)
+  const lastOf = (test: (lesson: Lesson) => boolean) => [...todays].reverse().find(test)
+  const hero =
+    running ??
+    upcoming ??
+    lastOf((lesson) => lesson.seats.some((seat) => seat.status === 'scheduled')) ??
+    lastOf((lesson) => lesson.seats.length > 0) ??
+    todays[todays.length - 1]
+  const phase: Phase = running ? 'running' : upcoming ? 'next' : 'done'
+  const later = hero ? todays.filter((lesson) => lesson.id !== hero.id && new Date(lesson.event_date) > new Date(hero.event_date) && lessonEnd(lesson) > now) : []
+  // Lessons of today that have ended (other than the hero), whose missing attendance waits below
+  const earlier = todays.filter((lesson) => lesson.id !== hero?.id && lessonEnd(lesson) <= now)
 
-  // What waits for the admin, counted from the same queries as the sections it jumps to
-  const [unmarkedOpen, setUnmarkedOpen] = useState(false)
+  const childCount = new Set(todays.flatMap((lesson) => lesson.seats.map((seat) => seat.registration_id))).size
+  const weekday = date(now, { weekday: 'long' })
+  const title = `${weekday.charAt(0).toLocaleUpperCase(i18n.tag)}${weekday.slice(1)}, ${date(now, { day: 'numeric', month: 'long' })}`
+  const summary = !lessons.data
+    ? undefined
+    : todays.length === 0
+      ? t.today.noLessons
+      : fmt(phase === 'done' ? t.today.board.summaryPast : t.today.board.summary, {
+          lessons: together(plural(t.today.lessonCount, todays.length)),
+          children: together(plural(t.today.childCount, childCount))
+        })
+
+  // --- what waits ----------------------------------------------------------------------------
   const unmarked = useUnmarked(dayKey).query
   const payments = usePaymentsDue()
   const ending = useEndingPackages(now)
-  const waiting = [
-    { id: 'payments', count: payments.total, label: t.today.strip.payments, icon: 'card' as IconName },
-    { id: 'ending', count: ending.rows.length, label: t.today.strip.ending, icon: 'refresh' as IconName },
-    { id: 'unmarked', count: unmarked.data?.length ?? 0, label: t.today.strip.unmarked, icon: 'check' as IconName }
-  ].filter((item) => item.count > 0)
+  const reminders = useTomorrowReminders(tomorrows, now)
+  const earlierUnmarked = earlier.flatMap((lesson) => lesson.seats.filter((seat) => seat.status === 'scheduled').map((seat) => ({ lesson, seat })))
 
-  const jump = async (id: string) => {
-    if (id === 'unmarked') setUnmarkedOpen(true)
-    const y = offsets.current[id]
-    if (y === undefined) return
+  const toggle = async (id: Open) => {
+    const opening = !open.has(id)
+    setOpen((current) => {
+      const next = new Set(current)
+      if (opening) next.add(id)
+      else next.delete(id)
+      return next
+    })
+    // The list opens below; the page moves to it once it has its place
+    if (opening) pendingJump.current = id
+  }
+  const jump = async (id: Open) => {
+    const target = places.current[id]
+    const content = scroll.current?.getInnerViewRef()
+    if (!target || !content) return
     const still = await AccessibilityInfo.isReduceMotionEnabled().catch(() => false)
-    scroll.current?.scrollTo({ y: Math.max(y - 12, 0), animated: !still })
+    // Its head lands just under the status bar
+    target.measureLayout(content, (_x, y) => scroll.current?.scrollTo({ y: Math.max(y - insets.top - 6, 0), animated: !still }))
   }
-  const remember = (id: string) => (event: { nativeEvent: { layout: { y: number } } }) => {
-    offsets.current[id] = event.nativeEvent.layout.y
+  // Each list sits in a place of its own, measured against the page once it has opened
+  const places = useRef<Partial<Record<Open, ViewInstance | null>>>({})
+  const place = (id: Open) => ({
+    ref: (view: ViewInstance | null) => {
+      places.current[id] = view
+    },
+    onLayout: (event: { nativeEvent: { layout: { height: number } } }) => {
+      if (pendingJump.current === id && event.nativeEvent.layout.height > 0) {
+        pendingJump.current = null
+        void jump(id)
+      }
+    },
+    style: open.has(id) ? styles.place : undefined
+  })
+  const close = (id: Open) => () =>
+    setOpen((current) => {
+      const next = new Set(current)
+      next.delete(id)
+      return next
+    })
+
+  const jobs: { id: Open; row: Parameters<typeof TodoRow>[0] }[] = []
+  const pastCount = unmarked.data?.length ?? 0
+  const unmarkedCount = pastCount + earlierUnmarked.length
+  if (unmarkedCount > 0) {
+    // The most recent lesson first: today's ended ones, then the last day with gaps
+    const first = earlierUnmarked.length > 0 ? earlierUnmarked[earlierUnmarked.length - 1].lesson : null
+    const lessonIds = new Set([...earlierUnmarked.map((row) => row.lesson.id), ...(unmarked.data ?? []).map((row) => row.events.id)])
+    const who = names([...earlierUnmarked.map((row) => firstNameOf(row.seat.child.student_name)), ...(unmarked.data ?? []).map((row) => firstNameOf(row.child.student_name))])
+    const latest = first?.event_date ?? [...(unmarked.data ?? [])].sort((a, b) => b.events.event_date.localeCompare(a.events.event_date))[0]?.events.event_date
+    const when = lessonIds.size > 1 ? plural(t.today.board.inLessons, lessonIds.size) : latest ? date(latest, { weekday: 'long', hour: '2-digit', minute: '2-digit' }) : ''
+    jobs.push({
+      id: 'unmarked',
+      row: {
+        icon: 'clipboard',
+        title: plural(t.today.strip.unmarked, unmarkedCount),
+        subtitle: [when, who].filter(Boolean).join(', '),
+        alert: true,
+        action: { label: t.today.board.enter, onPress: () => void toggle('unmarked') }
+      }
+    })
   }
+  if (payments.total > 0) {
+    const single = payments.total === 1 ? (payments.packages[0] ?? payments.byId.get(payments.fees[0]?.registrationId ?? '')) : undefined
+    const fee = payments.total === 1 ? payments.fees[0] : undefined
+    jobs.push({
+      id: 'payments',
+      row: {
+        icon: 'lira',
+        title: plural(t.today.strip.payments, payments.total),
+        subtitle: names([...payments.packages.map((child) => child.student_name), ...payments.fees.map((line) => payments.byId.get(line.registrationId!)?.student_name ?? '')].filter(Boolean).map(firstNameOf)),
+        alert: true,
+        action: single
+          ? { label: t.today.payments.collect, onPress: () => tasks.payment({ registrationId: single.id, choice: 'collect', entryId: fee?.id }) }
+          : { label: t.today.board.see, onPress: () => void toggle('payments') }
+      }
+    })
+  }
+  if (ending.rows.length > 0) {
+    const sorted = [...ending.rows].sort((a, b) => a.days - b.days)
+    const single = ending.rows.length === 1 ? ending.rows[0].child : undefined
+    jobs.push({
+      id: 'ending',
+      row: {
+        icon: 'renew',
+        title: plural(t.today.strip.ending, ending.rows.length),
+        subtitle: sorted
+          .slice(0, 2)
+          .map((row) => `${firstNameOf(row.child.student_name)}: ${endText(i18n, row.days)}`)
+          .join(', ')
+          .concat(sorted.length > 2 ? ` +${sorted.length - 2}` : ''),
+        alert: ending.rows.some((row) => row.days < 0),
+        action: single
+          ? { label: t.today.ending.renew, onPress: () => tasks.payment({ registrationId: single.id, choice: 'renew' }) }
+          : { label: t.today.board.see, onPress: () => void toggle('ending') }
+      }
+    })
+  }
+  if (reminders.items.length > 0) {
+    const { items, sent, next } = reminders
+    jobs.push({
+      id: 'tomorrow',
+      row: {
+        icon: 'bell',
+        title: t.today.board.tomorrowReminders,
+        subtitle: !next ? t.messages.inOrder.done : sent > 0 ? fmt(t.today.tomorrow.progress, { sent, total: items.length }) : plural(t.today.board.toParents, items.length),
+        onPress: () => void toggle('tomorrow'),
+        expanded: open.has('tomorrow'),
+        action: next
+          ? { label: t.today.board.send, accessibilityLabel: fmt(t.messages.inOrder.label, { name: next.seat.child.student_name }), onPress: () => reminders.send(next) }
+          : undefined
+      }
+    })
+  }
+  const waitingReady = !payments.registrations.isPending && !unmarked.isPending
 
   const refresh = () =>
     Promise.all([
@@ -138,161 +273,289 @@ export function TodayScreen() {
 
   return (
     <>
-      <Stack.Screen options={headerMenu(c, t.shell.quickAdd.title, quickAdd, (items) => menu.open(t.shell.quickAdd.title, items))} />
       {menu.element}
-      <Screen scrollRef={scroll} onRefresh={refresh}>
-        <View style={styles.top}>
-          <Text variant="sub" tone="ink2" style={styles.summary}>
-            {summary}
-          </Text>
-          {waiting.length > 0 && (
-            // What waits, as soft blue pills that scroll sideways; each jumps to its list below
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} accessibilityLabel={t.today.strip.label} style={styles.stripScroll} contentContainerStyle={styles.strip}>
-              {waiting.map((item) => (
-                <Pressable
-                  key={item.id}
-                  onPress={() => void jump(item.id)}
-                  accessibilityRole="button"
-                  style={({ pressed }) => [styles.pill, { backgroundColor: pressed ? c.accentWash2 : c.accentWash, borderColor: c.accentLine }]}
-                >
-                  <Icon name={item.icon} size={17} color={c.accentInk} />
-                  <Text variant="sub" weight="500" tone="accentInk" numberOfLines={1} style={{ fontSize: 14 }}>
-                    {plural(item.label, item.count)}
-                  </Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-          )}
-        </View>
+      <Screen
+        scrollRef={scroll}
+        onRefresh={refresh}
+        title={title}
+        subtitle={summary}
+        actions={<RoundButton icon="add" label={t.shell.quickAdd.title} onPress={() => menu.open(t.shell.quickAdd.title, quickAdd)} />}
+        gap={0}
+      >
+        {lessons.isError ? (
+          <LoadError message={t.today.lessonsFailed} retryLabel={t.common.retry} onRetry={() => void lessons.refetch()} />
+        ) : lessons.isPending ? (
+          <View style={styles.tiles}>
+            <Skeleton height={300} radius={26} />
+          </View>
+        ) : !hero ? (
+          <Card padded>
+            <EmptyState
+              icon="calendar"
+              title={t.today.noLessons}
+              body={t.today.noLessonsBody}
+              action={
+                <Button size="sm" onPress={() => router.navigate('/(tabs)/(calendar)/calendar' as Href)}>
+                  {t.today.openCalendar}
+                </Button>
+              }
+            />
+          </Card>
+        ) : (
+          <>
+            <HeroLesson lesson={hero} phase={phase} now={now} usage={usage} saving={saving} onMark={(seat, status) => void mark(seat, status)} />
+            {later.length > 0 && (
+              <View style={styles.tiles}>
+                {pairs(later).map((pair) => (
+                  <View key={pair[0].id} style={styles.pair}>
+                    {pair.map((lesson) => (
+                      <NextTile key={lesson.id} lesson={lesson} />
+                    ))}
+                    {pair.length === 1 && <View style={styles.flex} />}
+                  </View>
+                ))}
+              </View>
+            )}
+          </>
+        )}
 
-        <Section title={t.today.lessonsTitle}>
-          {lessons.isError ? (
-            <LoadError message={t.today.lessonsFailed} retryLabel={t.common.retry} onRetry={() => void lessons.refetch()} />
-          ) : lessons.isPending ? (
-            <View style={styles.cards}>
-              <Skeleton height={220} radius={18} />
-              <Skeleton height={160} radius={18} />
-            </View>
-          ) : todays.length === 0 ? (
-            <View style={[styles.emptyCard, { borderColor: c.lineStrong }]}>
-              <EmptyState
-                icon="calendar"
-                title={t.today.noLessons}
-                body={t.today.noLessonsBody}
-                action={
-                  <Button size="sm" onPress={() => router.navigate('/(tabs)/(calendar)/calendar' as Href)}>
-                    {t.today.openCalendar}
-                  </Button>
-                }
-              />
-            </View>
+        <Section title={t.today.board.waitingTitle} aside={jobs.length > 0 ? plural(t.today.board.jobs, jobs.length) : undefined} style={styles.waiting}>
+          {!waitingReady && jobs.length === 0 ? (
+            <ListSkeleton rows={2} />
+          ) : jobs.length === 0 ? (
+            payments.registrations.isError ? (
+              <LoadError message={t.common.loadFailed} retryLabel={t.common.retry} onRetry={() => void payments.registrations.refetch()} />
+            ) : (
+              <QuietCard>{t.today.nothingWaiting}</QuietCard>
+            )
           ) : (
-            <View style={styles.cards}>
-              {todays.map((lesson) => (
-                <LessonCard key={lesson.id} lesson={lesson} usage={usage} now={now} saving={saving} onMark={(seat, status) => void mark(seat, status)} />
+            <Card style={styles.todoCard}>
+              {jobs.map((job) => (
+                <TodoRow key={job.id} {...job.row} />
               ))}
-            </View>
+            </Card>
           )}
         </Section>
 
-        <UnmarkedSection dayKey={dayKey} open={unmarkedOpen} onOpenChange={setUnmarkedOpen} onLayout={remember('unmarked')} />
-        <PaymentsSection dayKey={dayKey} onLayout={remember('payments')} />
-        <EndingSection now={now} dayKey={dayKey} onLayout={remember('ending')} />
-        <TomorrowSection lessons={tomorrows} isPending={lessons.isPending} isError={lessons.isError} onRetry={() => void lessons.refetch()} now={now} />
+        <View {...place('unmarked')}>
+          <UnmarkedSection
+            dayKey={dayKey}
+            today={earlier}
+            savingToday={saving}
+            onMarkToday={(seat, status) => void mark(seat, status)}
+            open={open.has('unmarked')}
+            onClose={close('unmarked')}
+          />
+        </View>
+        <View {...place('payments')}>
+          <PaymentsSection dayKey={dayKey} open={open.has('payments')} onClose={close('payments')} />
+        </View>
+        <View {...place('ending')}>
+          <EndingSection now={now} dayKey={dayKey} open={open.has('ending')} onClose={close('ending')} />
+        </View>
+        <View {...place('tomorrow')}>
+          <TomorrowSection lessons={tomorrows} reminders={reminders} open={open.has('tomorrow')} onClose={close('tomorrow')} />
+        </View>
       </Screen>
     </>
   )
 }
 
-function LessonCard({ lesson, usage, now, saving, onMark }: { lesson: Lesson; usage: UsageMap | undefined; now: Date; saving: Set<string>; onMark: (seat: Seat, status: AttendanceStatus) => void }) {
+type Phase = 'running' | 'next' | 'done'
+
+function pairs<T>(list: T[]): T[][] {
+  const out: T[][] = []
+  for (let i = 0; i < list.length; i += 2) out.push(list.slice(i, i + 2))
+  return out
+}
+
+/**
+ * The lesson of the moment as a card in its type's felt: the time, a live mark, the type line with
+ * age group and seats, how far it has run (or what attendance is missing once it is over), then
+ * one attendance row per child. The head opens the lesson.
+ */
+function HeroLesson({ lesson, phase, now, usage, saving, onMark }: { lesson: Lesson; phase: Phase; now: Date; usage: UsageMap | undefined; saving: Set<string>; onMark: (seat: Seat, status: AttendanceStatus) => void }) {
+  const c = useColors()
+  const i18n = useI18n()
+  const { t, fmt, plural, date } = i18n
+  const labels = useLabels()
+  const title = useLessonTitle()
+  const openLesson = useOpenLesson()
+  // With the phone's larger text the picker goes under the name, so the name and its line keep their words whole
+  const stacked = useWindowDimensions().fontScale > 1.15
+  const tone = typeTone(c, lesson.event_type)
+  const start = new Date(lesson.event_date)
+  const end = lessonEnd(lesson)
+  const time = `${date(start, { hour: '2-digit', minute: '2-digit' })}–${date(end, { hour: '2-digit', minute: '2-digit' })}`
+  const taken = lesson.seats.filter((seat) => holdsSeat(seat.status)).length
+  const seats = fmt(t.today.lessonsCard.seatsShort, { count: taken, capacity: SEATS_SHOWN })
+  const meta = [labels.ageGroup(lesson.age_group), seats].filter(Boolean).join(', ')
+  const passed = Math.max(0, differenceInMinutes(now, start))
+  const toStart = differenceInMinutes(start, now)
+  const marked = lesson.seats.filter((seat) => seat.status !== 'scheduled').length
+  const missing = lesson.seats.length - marked
+  // A first name is enough on the card, unless two children of the lesson share it
+  const firsts = lesson.seats.map((seat) => firstNameOf(seat.child.student_name))
+
+  return (
+    <View style={[styles.hero, { backgroundColor: tone.felt }]}>
+      <Pressable
+        onPress={() => openLesson(lesson.id)}
+        accessibilityRole="button"
+        accessibilityLabel={`${time}, ${title(lesson)}, ${meta}`}
+        style={({ pressed }) => [styles.heroHead, pressed && { opacity: 0.7 }]}
+      >
+        <View style={styles.heroTop}>
+          <Text variant="hero" tabular numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75} style={[styles.shrink, { color: tone.ink }]}>
+            {time}
+          </Text>
+          <LiveMark live={phase === 'running'} type={lesson.event_type}>
+            {phase === 'running' ? t.today.now : phase === 'next' ? t.today.board.next : t.today.board.done}
+          </LiveMark>
+        </View>
+        <View style={styles.heroType}>
+          <LessonShape type={lesson.event_type} />
+          <Text variant="headline" numberOfLines={1} style={[styles.typeName, { color: tone.ink }]}>
+            {title(lesson)}
+          </Text>
+          <Text numberOfLines={1} style={[styles.typeMeta, { color: tone.ink }]}>
+            {meta}
+          </Text>
+        </View>
+      </Pressable>
+
+      {phase === 'running' && (
+        <View style={styles.progress}>
+          <ProgressTrack share={passed / LESSON_MINUTES} type={lesson.event_type} />
+          <View style={styles.progressWords}>
+            <Text tabular style={[styles.progressText, { color: tone.ink }]}>
+              {fmt(t.today.board.elapsed, { count: passed })}
+            </Text>
+            <Text tabular style={[styles.progressText, { color: tone.ink }]}>
+              {fmt(t.today.board.left, { count: Math.max(0, LESSON_MINUTES - passed) })}
+            </Text>
+          </View>
+        </View>
+      )}
+      {phase === 'next' && toStart <= 60 && (
+        <Text tabular style={[styles.progressText, styles.startsIn, { color: tone.ink }]}>
+          {fmt(t.today.board.startsIn, { count: Math.max(1, toStart) })}
+        </Text>
+      )}
+      {phase === 'done' && lesson.seats.length > 0 && (
+        <View style={[styles.progressWords, styles.startsIn]}>
+          <Text style={[styles.progressText, styles.shrink, { color: tone.ink }]}>{missing > 0 ? plural(t.today.board.missing, missing) : t.today.lessonsCard.done}</Text>
+          <Text tabular style={[styles.progressText, { color: tone.ink }]}>
+            {fmt(t.today.lessonsCard.marked, { marked, total: lesson.seats.length })}
+          </Text>
+        </View>
+      )}
+
+      <View style={styles.heroRows}>
+        {lesson.seats.length === 0 ? (
+          <Text variant="sub" style={[styles.heroEmpty, { color: tone.ink }]}>
+            {t.today.emptyLesson}
+          </Text>
+        ) : (
+          lesson.seats.map((seat, index) => {
+            const child = seat.child
+            const first = firsts[index]
+            const name = firsts.filter((other) => other === first).length > 1 ? child.student_name : first
+            const left = usage?.[child.id]
+            const low = left && !left.isFree && (left.remaining ?? 0) <= 2
+            return (
+              <View key={seat.id} style={[styles.attRow, stacked && styles.attRowStacked, index > 0 && { borderTopWidth: 1, borderTopColor: tint(tone.ink, 0.12) }]}>
+                <View style={[styles.attWho, !stacked && styles.flex]}>
+                  <Avatar name={child.student_name} size={36} type={lesson.event_type} />
+                  <View style={styles.flex}>
+                    <ChildName id={child.id} name={name} />
+                    {child.is_active !== true ? (
+                      <Mark tone="neutral">{t.today.archived}</Mark>
+                    ) : isPaymentDue(child) ? (
+                      <Mark tone="action">{t.children.pendingPayment}</Mark>
+                    ) : (
+                      <Text variant="sub" numberOfLines={2} style={{ color: low ? c.amberInk : tone.ink, opacity: low ? 1 : 0.82 }}>
+                        {left ? remainingText(i18n, left) : ' '}
+                      </Text>
+                    )}
+                  </View>
+                </View>
+                <AttendancePicker
+                  compact={!stacked}
+                  type={lesson.event_type}
+                  status={seat.status}
+                  onChange={(status) => onMark(seat, status)}
+                  disabled={saving.has(seat.id)}
+                  label={fmt(t.children.detail.lessonStatus, { name: child.student_name })}
+                />
+              </View>
+            )
+          })
+        )}
+      </View>
+    </View>
+  )
+}
+
+/** A later lesson of the day as a felt tile in its type: the time, the type and its age group and seats. */
+function NextTile({ lesson }: { lesson: Lesson }) {
   const c = useColors()
   const { t, fmt, date } = useI18n()
   const labels = useLabels()
   const title = useLessonTitle()
   const openLesson = useOpenLesson()
-  const start = new Date(lesson.event_date)
-  const running = now >= start && now < addMinutes(start, LESSON_MINUTES)
+  const tone = typeTone(c, lesson.event_type)
+  const time = date(lesson.event_date, { hour: '2-digit', minute: '2-digit' })
   const taken = lesson.seats.filter((seat) => holdsSeat(seat.status)).length
-  const capacity = fmt(t.today.seats, { count: taken, capacity: SEATS_SHOWN })
-  const time = date(start, { hour: '2-digit', minute: '2-digit' })
-
+  const meta = [labels.ageGroup(lesson.age_group), fmt(t.today.lessonsCard.seatsShort, { count: taken, capacity: SEATS_SHOWN })].filter(Boolean).join(', ')
   return (
-    <Card inset={60}>
-      {/* The lesson itself opens from its head: children to add, time to change */}
-      <Pressable
-        onPress={() => openLesson(lesson.id)}
-        accessibilityRole="button"
-        accessibilityLabel={`${time} ${title(lesson)}, ${labels.ageGroup(lesson.age_group)}, ${capacity}`}
-        style={({ pressed }) => [styles.lessonHead, pressed && { backgroundColor: c.well }]}
-      >
-        <View style={styles.lessonTop}>
-          <Text variant="title" tabular>
-            {time}
-          </Text>
-          <View style={styles.flex}>
-            <View style={styles.lessonName}>
-              <LessonShape type={lesson.event_type} />
-              <Text variant="sub" weight="600" numberOfLines={1} style={styles.shrink}>
-                {title(lesson)}
-              </Text>
-            </View>
-            <AgeTablet group={lesson.age_group} label={labels.ageGroup(lesson.age_group)} />
-          </View>
-          {running && <Mark tone="accent">{t.today.now}</Mark>}
-        </View>
-        <SocketBoard capacity={SEATS_SHOWN} label={capacity} seats={lesson.seats.map((seat) => ({ id: seat.id, name: seat.child.student_name, status: seat.status }))} />
-      </Pressable>
-      {lesson.seats.length === 0 ? (
-        <Text variant="sub" tone="ink3" style={styles.emptyLesson}>
-          {t.today.emptyLesson}
+    <Pressable
+      onPress={() => openLesson(lesson.id)}
+      accessibilityRole="button"
+      accessibilityLabel={`${time}, ${title(lesson)}, ${meta}`}
+      style={({ pressed }) => [styles.tile, { backgroundColor: tone.felt }, pressed && { transform: [{ scale: 0.98 }] }]}
+    >
+      <Text variant="figure" tabular style={{ color: tone.ink }}>
+        {time}
+      </Text>
+      <View style={styles.tileName}>
+        <LessonShape type={lesson.event_type} />
+        <Text weight="600" numberOfLines={1} style={[styles.tileTitle, { color: tone.ink }]}>
+          {title(lesson)}
         </Text>
-      ) : (
-        lesson.seats.map((seat) => {
-          const child = seat.child
-          return (
-            <View key={seat.id} style={styles.seat}>
-              <View style={styles.seatHead}>
-                <Peg seat={{ id: seat.id, name: child.student_name, status: seat.status }} />
-                <View style={styles.flex}>
-                  <ChildName id={child.id} name={child.student_name}>
-                    {child.is_active !== true && <Mark tone="neutral">{t.today.archived}</Mark>}
-                    {isPaymentDue(child) && <Mark tone="action">{t.children.pendingPayment}</Mark>}
-                  </ChildName>
-                  {/* The child's beads: marking "attended" moves the string on in the same row */}
-                  <View style={styles.usage}>
-                    {child.student_age ? (
-                      <Text variant="foot" tone="ink3" numberOfLines={1}>
-                        {child.student_age}
-                      </Text>
-                    ) : null}
-                    <UsageLine usage={usage?.[child.id]} />
-                  </View>
-                </View>
-              </View>
-              <AttendancePicker status={seat.status} onChange={(status) => onMark(seat, status)} disabled={saving.has(seat.id)} label={fmt(t.children.detail.lessonStatus, { name: child.student_name })} />
-            </View>
-          )
-        })
-      )}
-    </Card>
+      </View>
+      <Text numberOfLines={1} style={[styles.tileMeta, { color: tone.ink }]}>
+        {meta}
+      </Text>
+    </Pressable>
   )
 }
 
 const styles = StyleSheet.create({
   flex: { flex: 1, minWidth: 0 },
   shrink: { flexShrink: 1 },
-  top: { gap: 14, marginTop: -6 },
-  summary: { paddingHorizontal: 4 },
-  stripScroll: { marginHorizontal: -16 },
-  strip: { flexDirection: 'row', gap: 8, paddingHorizontal: 16 },
-  pill: { height: 46, borderRadius: 14, borderWidth: 1, paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center', gap: 9 },
-  cards: { gap: 14 },
-  emptyCard: { borderRadius: 18, borderWidth: 1, borderStyle: 'dashed' },
-  lessonHead: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 14, gap: 12 },
-  lessonTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  lessonName: { flexDirection: 'row', alignItems: 'center', gap: 6, minWidth: 0 },
-  emptyLesson: { paddingHorizontal: 16, paddingVertical: 14 },
-  seat: { paddingHorizontal: 16, paddingVertical: 12, gap: 10 },
-  seatHead: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  usage: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 10, rowGap: 3, marginTop: 3 }
+  hero: { borderRadius: 26, paddingTop: 18, paddingHorizontal: 18, paddingBottom: 8 },
+  heroHead: { gap: 6 },
+  heroTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  heroType: { flexDirection: 'row', alignItems: 'center', gap: 8, minWidth: 0 },
+  typeName: { flexShrink: 1 },
+  typeMeta: { fontSize: 15, lineHeight: 20, opacity: 0.85, flexShrink: 2 },
+  progress: { marginTop: 16, gap: 6 },
+  progressWords: { flexDirection: 'row', justifyContent: 'space-between', gap: 10 },
+  progressText: { fontSize: 13, lineHeight: 17, opacity: 0.9 },
+  startsIn: { marginTop: 10 },
+  heroRows: { marginTop: 8 },
+  heroEmpty: { paddingVertical: 12, opacity: 0.85 },
+  attRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 },
+  attRowStacked: { flexDirection: 'column', alignItems: 'stretch' },
+  attWho: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  tiles: { marginTop: 10, gap: 10 },
+  pair: { flexDirection: 'row', gap: 10 },
+  tile: { flex: 1, minWidth: 0, borderRadius: 22, paddingTop: 14, paddingHorizontal: 15, paddingBottom: 15 },
+  tileName: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 6 },
+  tileTitle: { fontSize: 15, lineHeight: 20, flexShrink: 1 },
+  tileMeta: { fontSize: 13, lineHeight: 17, marginTop: 2, opacity: 0.88 },
+  waiting: { marginTop: 22 },
+  todoCard: { paddingVertical: 2 },
+  place: { marginTop: 22 }
 })

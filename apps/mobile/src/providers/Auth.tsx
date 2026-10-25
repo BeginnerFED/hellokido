@@ -21,7 +21,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null)
-  const user = session?.user ?? null
+  // While this phone signs out the sign-in screen is already shown; the network calls finish behind it
+  const [leaving, setLeaving] = useState(false)
+  const shown = leaving ? null : session
+  const user = shown?.user ?? null
   const userId = user?.id ?? null
 
   useEffect(() => {
@@ -71,18 +74,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AuthValue>(
     () => ({
       user,
-      session,
+      session: shown,
       loading,
       isAdmin,
-      // This phone only: the default would end the account's sessions everywhere
+      // This phone only: the default would end the account's sessions everywhere. The sign-in screen
+      // takes over at once instead of waiting for the reminder list and the server to answer.
       signOut: async () => {
-        await forgetThisPhone()
-        const { error } = await supabase.auth.signOut({ scope: 'local' })
-        if (!error) queryClient.clear()
-        return !error
+        setLeaving(true)
+        try {
+          await forgetThisPhone()
+          await supabase.auth.signOut({ scope: 'local' })
+        } catch {
+          // Judged below by what is left on this phone
+        }
+        // The library drops this phone's session even when the server cannot be reached, so only a
+        // session still here means the sign-out failed
+        const { data } = await supabase.auth.getSession().catch(() => ({ data: { session: null } }))
+        const out = !data.session
+        if (out) queryClient.clear()
+        setLeaving(false)
+        return out
       }
     }),
-    [user, session, loading, isAdmin]
+    [user, shown, loading, isAdmin]
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

@@ -17,32 +17,32 @@ const CATEGORY_ICONS: Record<string, IconName> = {
   filament: 'cube'
 }
 
-/** The tile of a finance row: as large as a child's peg, so names line up whatever leads the row. */
-export const TILE = 38
-/** Where the rule between finance rows starts: the row's 16px edge, the tile and the 12px gap. */
-export const ROW_INSET = 16 + TILE + 12
+/** The tile of a finance row: as large as a child's avatar, so names line up whatever leads the row. */
+export const TILE = 40
+/** Where the rule between finance rows starts: rules run across the card's content, as on the felt board. */
+export const ROW_INSET = 16
 
-// Settings lists the types in smaller rows; the finance lists mix them with children's pegs
-const tabletLook = (size: number) => ({ width: size, height: size, borderRadius: size >= TILE ? 11 : 9 })
+// A circle set on the felt, as the avatars of the children it is listed with
+const tabletLook = (size: number) => ({ width: size, height: size, borderRadius: size / 2 })
 
-/** An expense type as a small tablet with its picture. Own types get a receipt. */
+/** An expense type as a circle with its picture. Own types get a receipt. */
 export function CategoryTablet({ code, size = 32 }: { code: string | null | undefined; size?: number }) {
   const c = useColors()
   return (
-    <View style={[styles.tablet, tabletLook(size), { backgroundColor: c.well }]}>
-      <Icon name={CATEGORY_ICONS[code ?? ''] ?? 'receipt'} size={Math.round(size * 0.52)} color={c.ink2} />
+    <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={[styles.tablet, tabletLook(size), { backgroundColor: c.onFelt }]}>
+      <Icon name={CATEGORY_ICONS[code ?? ''] ?? 'receipt'} size={Math.round(size * 0.46)} color={c.ink2} />
     </View>
   )
 }
 
 const INCOME_ICONS: Record<string, IconName> = { etkinlik: 'party', 'dogum-gunu': 'cake', satis: 'bag' }
 
-/** Income that belongs to no child (a party, a sale), with the picture of its category. */
+/** Income that belongs to no child (a party, a sale), with the picture of its category in the money-in blue. */
 export function IncomeTablet({ code, size = 32 }: { code?: string | null; size?: number }) {
   const c = useColors()
   return (
-    <View style={[styles.tablet, tabletLook(size), { backgroundColor: c.accentWash2 }]}>
-      <Icon name={INCOME_ICONS[code ?? ''] ?? 'money'} size={Math.round(size * 0.52)} color={c.accentInk} />
+    <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={[styles.tablet, tabletLook(size), { backgroundColor: c.onFelt }]}>
+      <Icon name={INCOME_ICONS[code ?? ''] ?? 'money'} size={Math.round(size * 0.46)} color={c.accentInk} />
     </View>
   )
 }

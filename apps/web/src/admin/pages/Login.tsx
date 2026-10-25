@@ -52,61 +52,63 @@ export default function Login() {
   }
 
   return (
-    <main className="flex min-h-dvh flex-col bg-ground px-5 pt-[max(2.5rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))] text-ink">
-      <div className="mx-auto flex w-full max-w-[22rem] flex-1 flex-col justify-center">
-        <Logo className="mx-auto w-40" />
-        <h1 className="mt-9 text-center text-[1.375rem] font-semibold text-balance">{t.login.title}</h1>
-        <Form onSubmit={onSubmit} className="mt-7 flex flex-col gap-4">
-          <TextField
-            label={t.login.email}
-            type="email"
-            value={email}
-            onChange={setEmail}
-            isRequired
-            autoComplete="username"
-            inputMode="email"
-            autoFocus
-          />
-          <TextField
-            label={t.login.password}
-            type={showPassword ? 'text' : 'password'}
-            value={password}
-            onChange={setPassword}
-            isRequired
-            autoComplete="current-password"
-            endSlot={
-              <IconButton
-                label={showPassword ? t.login.hidePassword : t.login.showPassword}
-                size="sm"
-                onPress={() => setShowPassword((v) => !v)}
-              >
-                {showPassword ? <EyeSlashIcon aria-hidden className="size-[1.125rem]" /> : <EyeIcon aria-hidden className="size-[1.125rem]" />}
-              </IconButton>
-            }
-          />
-          <Checkbox isSelected={remember} onChange={setRemember}>
-            <span className="block">{t.login.remember}</span>
-            <span className="mt-0.5 block text-[0.8125rem] text-ink-3">{t.login.rememberHint}</span>
-          </Checkbox>
-          {error && (
-            <p role="alert" className="rounded-control bg-negative-wash px-3 py-2.5 text-sm text-negative-ink">
-              {error}
-            </p>
-          )}
-          <Button type="submit" variant="primary" size="lg" isPending={submitting} className="mt-1 w-full">
-            {submitting ? t.login.submitting : t.login.submit}
-          </Button>
-        </Form>
+    <main className="flex min-h-dvh flex-col bg-page px-4 pt-[max(2.5rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))] text-ink">
+      <div className="mx-auto flex w-full max-w-[25rem] flex-1 flex-col justify-center">
+        {/* The logo alone, centred, as at the top of the sidebar */}
+        <Logo className="mx-auto w-[9.5rem]" />
+        <section aria-labelledby="login-title" className="on-felt mt-8 rounded-panel bg-felt px-5 pt-6 pb-6 sm:px-7 sm:pt-7 sm:pb-7">
+          <h1 id="login-title" className="text-[1.375rem] leading-7 font-semibold tracking-[-0.015em] text-balance">
+            {t.login.title}
+          </h1>
+          <Form onSubmit={onSubmit} className="mt-5 flex flex-col gap-4">
+            <TextField
+              label={t.login.email}
+              type="email"
+              value={email}
+              onChange={setEmail}
+              isRequired
+              autoComplete="username"
+              inputMode="email"
+              autoFocus
+            />
+            <TextField
+              label={t.login.password}
+              type={showPassword ? 'text' : 'password'}
+              value={password}
+              onChange={setPassword}
+              isRequired
+              autoComplete="current-password"
+              endSlot={
+                <IconButton label={showPassword ? t.login.hidePassword : t.login.showPassword} size="sm" onPress={() => setShowPassword((v) => !v)}>
+                  {showPassword ? <EyeSlashIcon aria-hidden className="size-[1.125rem]" /> : <EyeIcon aria-hidden className="size-[1.125rem]" />}
+                </IconButton>
+              }
+            />
+            <Checkbox isSelected={remember} onChange={setRemember}>
+              <span className="block">{t.login.remember}</span>
+              <span className="mt-0.5 block text-[0.8125rem] text-ink-3">{t.login.rememberHint}</span>
+            </Checkbox>
+            {error && (
+              <p role="alert" className="rounded-control bg-negative-wash px-3 py-2.5 text-sm text-negative-ink">
+                {error}
+              </p>
+            )}
+            <Button type="submit" variant="primary" size="lg" isPending={submitting} className="mt-1 w-full">
+              {submitting ? t.login.submitting : t.login.submit}
+            </Button>
+          </Form>
+        </section>
       </div>
-      <div className="mx-auto mt-10 flex w-full max-w-[22rem] flex-col items-center gap-4">
+      <div className="mx-auto mt-10 flex w-full max-w-[25rem] flex-col items-center gap-4">
         <Segmented<Locale>
           aria-label={t.shell.account.language}
           size="sm"
+          fit
           value={locale}
           onChange={setLocale}
           options={LOCALES.map((id) => ({ id, label: LANGUAGE_NAMES[id] }))}
         />
-        <p className="text-[0.8125rem] text-ink-3">{fmt(t.login.footer, { year: new Date().getFullYear() })}</p>
+        <p className="text-[0.84375rem] text-ink-3">{fmt(t.login.footer, { year: new Date().getFullYear() })}</p>
       </div>
     </main>
   )

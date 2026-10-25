@@ -8,11 +8,10 @@ import { useLabels, type Labels } from '../../data/queries'
 import { tasks, useOpenChild } from '../../lib/navigation'
 import { useI18n, type I18n } from '../../providers/I18n'
 import { useColors } from '../../theme/colors'
-import { EmptyState, ListSkeleton, LoadError, Mark } from '../../ui/Bits'
+import { Avatar, EmptyState, ListSkeleton, LoadError, Mark } from '../../ui/Bits'
 import { Button } from '../../ui/Button'
 import { Chip, Segmented } from '../../ui/Fields'
-import { Card, Section } from '../../ui/Screen'
-import { Peg } from '../../ui/signature'
+import { ActionRow, Card, GroupTitle, Section } from '../../ui/Screen'
 import { DOT, DotLine, dots, Text } from '../../ui/Text'
 import { CategoryTablet, IncomeTablet, MINUS, methodName, ROW_INSET, TILE, together } from './bits'
 
@@ -67,7 +66,7 @@ function incomeMove(i18n: I18n, labels: Labels, line: IncomeLine, openChild: (id
     title,
     // The weeks a package covers stay together on one line
     meta: [what, together(period)].filter(Boolean),
-    glyph: forChild ? <Peg seat={{ id: registrationId ?? line.key, name: line.student, status: 'scheduled' }} /> : <IncomeTablet code={line.category} size={TILE} />,
+    glyph: forChild ? <Avatar name={line.student} size={TILE} /> : <IncomeTablet code={line.category} size={TILE} />,
     // Archived children keep their payments; a missing status counts as archived, as before
     mark: forChild && line.isActive !== true ? t.common.archived : null,
     // Package payments are corrected on the child's page, where the lesson counts stay in step
@@ -109,7 +108,6 @@ type Props = {
  * bank statement. The filter narrows the list only; the figures above always show the whole month.
  */
 export function MovesSection({ income, expenses, isError, waiting, onRetry, filter, onFilter, onLayout }: Props) {
-  const c = useColors()
   const i18n = useI18n()
   const { t, plural, money, date } = i18n
   const labels = useLabels()
@@ -176,8 +174,9 @@ export function MovesSection({ income, expenses, isError, waiting, onRetry, filt
       ) : !moves ? (
         <ListSkeleton rows={5} />
       ) : moves.length === 0 ? (
-        <View style={[styles.emptyCard, { borderColor: c.lineStrong }]}>
+        <Card>
           <EmptyState
+            icon="receipt"
             title={t.finance.moves.empty}
             body={t.finance.moves.emptyBody}
             action={
@@ -186,7 +185,7 @@ export function MovesSection({ income, expenses, isError, waiting, onRetry, filt
               </Button>
             }
           />
-        </View>
+        </Card>
       ) : shown.length === 0 ? (
         <EmptyState
           title={t.finance.moves.noMatchFilter}
@@ -200,11 +199,11 @@ export function MovesSection({ income, expenses, isError, waiting, onRetry, filt
         <View style={[styles.days, waiting && styles.dim]}>
           {days.map((group) => (
             <View key={group.key}>
-              <Text variant="foot" weight="600" tone="ink2" accessibilityRole="header" style={styles.dayHead}>
+              <GroupTitle>
                 {upperFirst(
                   date(group.day, isSameYear(group.day, now) ? { weekday: 'long', day: 'numeric', month: 'long' } : { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
                 )}
-              </Text>
+              </GroupTitle>
               <Card inset={ROW_INSET}>
                 {group.moves.map((move) => (
                   <MoveRow key={move.key} move={move} />
@@ -213,9 +212,10 @@ export function MovesSection({ income, expenses, isError, waiting, onRetry, filt
             </View>
           ))}
           {shown.length > limit && (
-            <Button variant="plain" size="sm" onPress={() => setLimit((count) => count + STEP)} style={styles.more}>
-              {plural(t.finance.moves.showMore, Math.min(STEP, shown.length - limit))}
-            </Button>
+            // A card of its own: the days above are cards too, and none of them is where the rest goes
+            <Card>
+              <ActionRow label={plural(t.finance.moves.showMore, Math.min(STEP, shown.length - limit))} onPress={() => setLimit((count) => count + STEP)} />
+            </Card>
           )}
         </View>
       )}
@@ -235,19 +235,19 @@ function MoveRow({ move }: { move: Move }) {
       {move.glyph}
       <View style={styles.flex}>
         <View style={styles.nameLine}>
-          <Text variant="callout" weight="500" numberOfLines={1} style={styles.shrink}>
+          <Text weight="500" numberOfLines={1} style={styles.shrink}>
             {move.title}
           </Text>
           {move.mark ? <Mark tone="neutral">{move.mark}</Mark> : null}
         </View>
-        {move.meta.length > 0 ? <DotLine variant="foot" tone="ink3" numberOfLines={2} parts={move.meta} /> : null}
+        {move.meta.length > 0 ? <DotLine variant="sub" tone="ink3" numberOfLines={2} parts={move.meta} /> : null}
       </View>
       <View style={styles.amount}>
-        <Text variant="callout" weight="600" tabular numberOfLines={1}>
+        <Text weight="600" tabular numberOfLines={1}>
           {amount}
         </Text>
         {method ? (
-          <Text variant="foot" tone="ink3" numberOfLines={1}>
+          <Text variant="sub" tone="ink3" numberOfLines={1}>
             {method}
           </Text>
         ) : null}
@@ -260,7 +260,7 @@ function MoveRow({ move }: { move: Move }) {
       onPress={move.onOpen}
       accessibilityRole="button"
       accessibilityLabel={[move.title, move.mark, dots(...move.meta), amount, method].filter(Boolean).join(', ')}
-      style={({ pressed }) => [styles.move, pressed && { backgroundColor: c.well }]}
+      style={({ pressed }) => [styles.move, pressed && { backgroundColor: c.pressed }]}
     >
       {body}
     </Pressable>
@@ -272,12 +272,10 @@ const styles = StyleSheet.create({
   shrink: { flexShrink: 1 },
   controls: { gap: 10, marginBottom: 14 },
   filterLine: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 4, minHeight: 34 },
-  emptyCard: { borderRadius: 18, borderWidth: 1, borderStyle: 'dashed' },
-  days: { gap: 16 },
+  days: { gap: 18 },
   dim: { opacity: 0.6 },
-  dayHead: { paddingHorizontal: 4, marginBottom: 7 },
-  move: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingLeft: 16, paddingRight: 14, paddingVertical: 12, minHeight: 62 },
-  nameLine: { flexDirection: 'row', alignItems: 'center', gap: 6, minWidth: 0 },
-  amount: { alignItems: 'flex-end', flexShrink: 0 },
-  more: { alignSelf: 'flex-start', marginLeft: 4 }
+  move: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12, minHeight: 64 },
+  // A word beside the name (archived, monthly) as a quiet mark: it gives way before the name does
+  nameLine: { flexDirection: 'row', alignItems: 'center', gap: 8, minWidth: 0 },
+  amount: { alignItems: 'flex-end', flexShrink: 0 }
 })

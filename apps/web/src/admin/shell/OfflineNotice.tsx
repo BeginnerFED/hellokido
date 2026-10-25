@@ -19,7 +19,7 @@ export function OfflineNotice() {
   return (
     <div
       role="status"
-      className="pointer-events-auto flex w-full max-w-sm animate-toast-in items-start gap-3 rounded-panel border border-line bg-surface px-4 py-3 text-ink shadow-lift"
+      className="pointer-events-auto flex w-full max-w-sm animate-toast-in items-start gap-3 rounded-[1.125rem] bg-raised px-4 py-3 text-ink shadow-float"
     >
       <WifiSlashIcon aria-hidden className="mt-px size-5 shrink-0 text-ink-2" />
       <p className="text-sm text-pretty">{t.shell.offline}</p>

@@ -11,11 +11,9 @@ import { tasks } from '../../lib/navigation'
 import { useI18n } from '../../providers/I18n'
 import { useColors } from '../../theme/colors'
 import { useActionMenu } from '../../ui/ActionMenu'
-import { ListSkeleton, LoadError } from '../../ui/Bits'
-import { Button, IconButton } from '../../ui/Button'
-import { Icon } from '../../ui/Icon'
-import { Card, Section } from '../../ui/Screen'
-import { Peg } from '../../ui/signature'
+import { Avatar, DateTile, ListSkeleton, LoadError, Mark } from '../../ui/Bits'
+import { Button } from '../../ui/Button'
+import { ActionRow, Card, GroupFooter, QuietCard, QuietRow, Section } from '../../ui/Screen'
 import { DOT, Text } from '../../ui/Text'
 import { useToast } from '../../ui/Toast'
 import { ChildName } from '../today/sections'
@@ -23,14 +21,6 @@ import { CategoryTablet, IncomeTablet, methodName, ROW_INSET, sumOf, TILE, toget
 
 // Rows shown before a list folds; a couple more than this are shown in full
 const FIRST = 5
-
-function Quiet({ children }: { children: string }) {
-  return (
-    <Text variant="sub" tone="ink2" style={styles.quiet}>
-      {children}
-    </Text>
-  )
-}
 
 // ---------------------------------------------------------------------------------------------
 
@@ -40,7 +30,6 @@ function Quiet({ children }: { children: string }) {
  * message); an amount that changes opens the expense form filled in.
  */
 export function MonthlySection({ period, today, expenses, waiting }: { period: Period; today: Date; expenses: Expense[] | undefined; waiting: boolean }) {
-  const c = useColors()
   const { t, fmt, money, date } = useI18n()
   const labels = useLabels()
   const toast = useToast()
@@ -135,59 +124,47 @@ export function MonthlySection({ period, today, expenses, waiting }: { period: P
       ) : !templates.data || !expenses ? (
         <ListSkeleton rows={2} />
       ) : active.length === 0 ? (
-        <View style={styles.emptyMonthly}>
-          <Quiet>{t.finance.monthly.empty}</Quiet>
-          <Button size="sm" icon="add" onPress={() => tasks.recurring()} style={styles.start}>
-            {t.finance.monthly.add}
-          </Button>
-        </View>
+        <Card>
+          <QuietRow>{t.finance.monthly.empty}</QuietRow>
+          <ActionRow icon="add" label={t.finance.monthly.add} onPress={() => tasks.recurring()} />
+        </Card>
       ) : (
-        <>
-          <Card inset={ROW_INSET} style={waiting && styles.dim}>
-            {active.map((row) => {
+        <Card inset={ROW_INSET} style={waiting && styles.dim}>
+          {[
+            ...active.map((row) => {
               const expense = recorded.get(row.id)
               const due = dueDayInPeriod(period, row.day_of_month)
               const late = !expense && !future && (!current || today > due)
+              const amount = row.amount != null ? together(money(row.amount)) : t.finance.monthly.varies
               const detail = expense
                 ? `${fmt(t.finance.monthly.recorded, { date: date(expense.expense_date ?? expense.created_at ?? '', { day: 'numeric', month: 'short' }) })}${DOT}${together(money(expense.amount))}`
-                : [row.amount != null ? together(money(row.amount)) : t.finance.monthly.varies, labels.expenseCategory(row.expense_type), methodName(t, labels, row.payment_method)]
-                    .filter(Boolean)
-                    .join(DOT)
+                : [amount, labels.expenseCategory(row.expense_type), methodName(t, labels, row.payment_method)].filter(Boolean).join(DOT)
               return (
                 <View key={row.id} style={styles.monthlyRow}>
-                  <View
-                    accessibilityElementsHidden
-                    importantForAccessibility="no-hide-descendants"
-                    style={[styles.dayTablet, { backgroundColor: expense ? c.positiveWash : late ? c.actionWash : c.well }]}
-                  >
-                    {expense ? (
-                      <Icon name="check" size={17} color={c.positiveInk} weight="bold" />
-                    ) : (
-                      <Text variant="sub" weight="600" tabular style={{ color: late ? c.actionInk : c.ink2 }}>
-                        {due.getDate()}
-                      </Text>
-                    )}
-                  </View>
-                  {/* The tablet shows the day; it is read out with the words */}
-                  <View
-                    accessible
+                  {/* The row opens what can be done with it; the tile shows the day, read out with the words */}
+                  <Pressable
+                    onPress={() => more(row, expense)}
+                    accessibilityRole="button"
                     accessibilityLabel={[row.title, !expense && fmt(t.finance.monthly.day, { day: row.day_of_month }), late && t.finance.monthly.late, detail].filter(Boolean).join(', ')}
-                    style={styles.flex}
+                    accessibilityHint={fmt(t.finance.monthly.more, { title: row.title })}
+                    style={({ pressed }) => [styles.monthlyWords, pressed && styles.pressed]}
                   >
-                    <Text variant="callout" weight="600" numberOfLines={1}>
-                      {row.title}
-                    </Text>
-                    {/* Lateness leads the line under the name; the yellow tablet already marks the row */}
-                    <Text variant="foot" tone="ink3" numberOfLines={2}>
-                      {late && (
-                        <Text variant="foot" weight="600" tone="actionInk">
-                          {t.finance.monthly.late}
-                          {DOT}
+                    <DateTile day={due.getDate()} under={date(due, { month: 'short' })} late={late} />
+                    <View style={styles.flex}>
+                      <Text weight="500" numberOfLines={1}>
+                        {row.title}
+                      </Text>
+                      {expense ? (
+                        <Mark tone="positive">{detail}</Mark>
+                      ) : late ? (
+                        <Mark tone="action">{`${t.finance.monthly.late}${DOT}${amount}`}</Mark>
+                      ) : (
+                        <Text variant="sub" tone="ink3" numberOfLines={2}>
+                          {detail}
                         </Text>
                       )}
-                      {detail}
-                    </Text>
-                  </View>
+                    </View>
+                  </Pressable>
                   {!expense && (
                     <Button
                       size="sm"
@@ -199,15 +176,13 @@ export function MonthlySection({ period, today, expenses, waiting }: { period: P
                       {t.finance.monthly.record}
                     </Button>
                   )}
-                  <IconButton icon="ellipsis" label={fmt(t.finance.monthly.more, { title: row.title })} variant="plain" size={32} color={c.ink3} onPress={() => more(row, expense)} />
                 </View>
               )
-            })}
-          </Card>
-          <Button variant="plain" size="sm" icon="add" onPress={() => tasks.recurring()} style={styles.more}>
-            {t.finance.monthly.add}
-          </Button>
-        </>
+            }),
+            // Adding one is the last row of the list, as Calendar's "Add Alert"
+            <ActionRow key="add" icon="add" label={t.finance.monthly.add} onPress={() => tasks.recurring()} />
+          ]}
+        </Card>
       )}
     </Section>
   )
@@ -277,11 +252,11 @@ export function ExpectedSection({ todayKey, onLayout }: { todayKey: string; onLa
       ) : !lines ? (
         <ListSkeleton />
       ) : lines.length === 0 ? (
-        <Quiet>{t.finance.expected.empty}</Quiet>
+        <QuietCard>{t.finance.expected.empty}</QuietCard>
       ) : (
-        <>
-          <Card inset={ROW_INSET}>
-            {shown.map((line) => {
+        <Card inset={ROW_INSET}>
+          {[
+            ...shown.map((line) => {
               const overdue = Boolean(line.dueDate && line.dueDate < todayKey)
               const due = line.dueDate ? fmt(overdue ? t.finance.expected.overdue : t.finance.expected.due, { date: together(shortDate(i18n, `${line.dueDate}T00:00:00`)) }) : ''
               const period = line.source === 'package' ? formatPeriod(i18n, line.periodStart, line.periodEnd) : ''
@@ -297,27 +272,23 @@ export function ExpectedSection({ todayKey, onLayout }: { todayKey: string; onLa
               const rest = [what, period && together(period)].filter(Boolean).join(DOT)
               return (
                 <View key={line.key} style={styles.personRow}>
-                  {line.source === 'other' ? (
-                    <IncomeTablet code={line.category} size={TILE} />
-                  ) : (
-                    <Peg seat={{ id: line.registrationId ?? line.key, name: line.student, status: 'scheduled' }} />
-                  )}
+                  {line.source === 'other' ? <IncomeTablet code={line.category} size={TILE} /> : <Avatar name={line.student} size={TILE} />}
                   <View style={styles.flex}>
                     {line.source !== 'other' && line.registrationId ? (
                       <ChildName id={line.registrationId} name={title} />
                     ) : (
-                      <Text variant="callout" weight="600" numberOfLines={1}>
+                      <Text weight="500" numberOfLines={1}>
                         {title}
                       </Text>
                     )}
-                    <Text variant="foot" tone="ink3" numberOfLines={3}>
-                      <Text variant="foot" weight="600" tone="ink2" tabular>
+                    <Text variant="sub" tone="ink3" numberOfLines={3}>
+                      <Text variant="sub" weight="600" tone="ink" tabular>
                         {line.amount > 0 ? together(money(line.amount)) : t.finance.expected.noAmount}
                       </Text>
                       {rest ? `${DOT}${rest}` : ''}
                       {due ? DOT : ''}
                       {due ? (
-                        <Text variant="foot" weight={overdue ? '600' : '400'} tone={overdue ? 'actionInk' : 'ink3'}>
+                        <Text variant="sub" weight={overdue ? '500' : '400'} tone={overdue ? 'amberInk' : 'ink3'}>
                           {due}
                         </Text>
                       ) : null}
@@ -329,14 +300,12 @@ export function ExpectedSection({ todayKey, onLayout }: { todayKey: string; onLa
                   </Button>
                 </View>
               )
-            })}
-          </Card>
-          {lines.length > FIRST + 1 && (
-            <Button variant="plain" size="sm" onPress={() => setUnfolded((on) => !on)} style={styles.more}>
-              {unfolded ? t.common.showLess : plural(t.finance.expected.more, lines.length - FIRST)}
-            </Button>
-          )}
-        </>
+            }),
+            lines.length > FIRST + 1 && (
+              <ActionRow key="more" label={unfolded ? t.common.showLess : plural(t.finance.expected.more, lines.length - FIRST)} onPress={() => setUnfolded((on) => !on)} />
+            )
+          ]}
+        </Card>
       )}
     </Section>
   )
@@ -384,7 +353,16 @@ export function useCardsOnTheWay(today: Date) {
  * Card payments the bank has not credited yet, by the day they should arrive. Card money comes in
  * about a month later, so this is the difference between "money in" and the bank account.
  */
-export function OnTheWaySection({ today, onLayout }: { today: Date; onLayout?: (event: LayoutChangeEvent) => void }) {
+export function OnTheWaySection({
+  today,
+  ofPeriod,
+  onLayout
+}: {
+  today: Date
+  /** How much of it the viewed period's split counts, said when earlier periods' money is on its way too. */
+  ofPeriod?: number | null
+  onLayout?: (event: LayoutChangeEvent) => void
+}) {
   const { t, fmt, plural, money, date, tag } = useI18n()
   const labels = useLabels()
   const { cards, groups, total, days, rate } = useCardsOnTheWay(today)
@@ -394,49 +372,61 @@ export function OnTheWaySection({ today, onLayout }: { today: Date; onLayout?: (
   const who = (line: IncomeLine) => (line.source === 'other' ? line.description || labels.incomeCategory(line.category) : line.student)
 
   return (
-    <Section onLayout={onLayout} title={t.finance.card.title} aside={total > 0 ? money(total) : undefined} description={plural(t.finance.card.note, days)}>
+    <Section
+      onLayout={onLayout}
+      title={t.finance.card.title}
+      aside={total > 0 ? money(total) : undefined}
+      description={
+        ofPeriod != null && total > 0 && ofPeriod !== total
+          ? `${plural(t.finance.card.note, days)} ${fmt(t.finance.balance.bankOfPeriod, { amount: money(ofPeriod) })}.`
+          : plural(t.finance.card.note, days)
+      }
+    >
       {cards.isError ? (
         <LoadError message={t.common.loadFailed} retryLabel={t.common.retry} onRetry={() => void cards.refetch()} />
       ) : !groups ? (
         <ListSkeleton rows={2} />
       ) : groups.length === 0 ? (
-        <Quiet>{t.finance.card.empty}</Quiet>
+        <QuietCard>{t.finance.card.empty}</QuietCard>
       ) : (
         <>
           <Card>
-            {shown.map((group) => {
-              const names = group.lines.slice(0, NAMES).map(who).filter(Boolean)
-              const more = group.lines.length - NAMES
-              return (
-                <View key={group.day.toISOString()} style={styles.cardRow}>
-                  <View style={styles.flex}>
-                    <Text variant="callout" weight="500" numberOfLines={1}>
-                      {isSameDay(group.day, today) ? t.finance.card.arrivesToday : upperFirst(fmt(t.finance.card.arrives, { date: date(group.day, { day: 'numeric', month: 'long' }) }))}
-                    </Text>
-                    <Text variant="foot" tone="ink3" numberOfLines={1}>
-                      {plural(t.finance.card.payments, group.lines.length)}
-                      {DOT}
-                      {names.join(', ')}
-                      {more > 0 ? ` +${more}` : ''}
+            {[
+              ...shown.map((group) => {
+                const names = group.lines.slice(0, NAMES).map(who).filter(Boolean)
+                const more = group.lines.length - NAMES
+                const when = isSameDay(group.day, today) ? t.finance.card.arrivesToday : upperFirst(fmt(t.finance.card.arrives, { date: date(group.day, { day: 'numeric', month: 'long' }) }))
+                const payers = `${names.join(', ')}${more > 0 ? ` +${more}` : ''}`
+                return (
+                  <View
+                    key={group.day.toISOString()}
+                    accessible
+                    accessibilityLabel={[when, plural(t.finance.card.payments, group.lines.length), payers, money(group.amount)].filter(Boolean).join(', ')}
+                    style={styles.cardRow}
+                  >
+                    {/* The tile shows the day; the words say whose money it is and that the day is a guess */}
+                    <DateTile day={group.day.getDate()} under={date(group.day, { month: 'short' })} />
+                    <View style={styles.flex}>
+                      <Text weight="500" numberOfLines={1}>
+                        {payers || plural(t.finance.card.payments, group.lines.length)}
+                      </Text>
+                      <Text variant="sub" tone="ink3" numberOfLines={2}>
+                        {payers ? `${plural(t.finance.card.payments, group.lines.length)}${DOT}` : ''}
+                        {when}
+                      </Text>
+                    </View>
+                    <Text weight="600" tabular numberOfLines={1} style={styles.amount}>
+                      {money(group.amount)}
                     </Text>
                   </View>
-                  <Text variant="callout" weight="600" tabular>
-                    {money(group.amount)}
-                  </Text>
-                </View>
+                )
+              }),
+              groups.length > FIRST + 1 && (
+                <ActionRow key="more" label={unfolded ? t.common.showLess : t.common.showAll} onPress={() => setUnfolded((on) => !on)} />
               )
-            })}
+            ]}
           </Card>
-          {groups.length > FIRST + 1 && (
-            <Button variant="plain" size="sm" onPress={() => setUnfolded((on) => !on)} style={styles.more}>
-              {unfolded ? t.common.showLess : t.common.showAll}
-            </Button>
-          )}
-          {rate > 0 && (
-            <Text variant="foot" tone="ink2" style={styles.note}>
-              {fmt(t.finance.card.commission, { rate: ratePercent, amount: together(money(total * (1 - rate / 100))) })}
-            </Text>
-          )}
+          {rate > 0 && <GroupFooter>{fmt(t.finance.card.commission, { rate: ratePercent, amount: together(money(total * (1 - rate / 100))) })}</GroupFooter>}
         </>
       )}
     </Section>
@@ -479,7 +469,7 @@ export function CategoriesSection({ expenses, waiting, onPick }: { expenses: Exp
       {!expenses ? (
         <ListSkeleton rows={3} />
       ) : groups.length === 0 ? (
-        <Quiet>{t.finance.categories.empty}</Quiet>
+        <QuietCard>{t.finance.categories.empty}</QuietCard>
       ) : (
         <Card inset={ROW_INSET} style={waiting && styles.dim}>
           {groups.map((group) => {
@@ -490,23 +480,23 @@ export function CategoriesSection({ expenses, waiting, onPick }: { expenses: Exp
                 onPress={() => onPick(group.code)}
                 accessibilityRole="button"
                 accessibilityLabel={`${fmt(t.finance.categories.show, { category: name })}: ${money(group.amount)}`}
-                style={({ pressed }) => [styles.categoryRow, pressed && { backgroundColor: c.well }]}
+                style={({ pressed }) => [styles.categoryRow, pressed && { backgroundColor: c.pressed }]}
               >
                 <CategoryTablet code={group.code} size={TILE} />
                 <View style={styles.flex}>
                   <View style={styles.categoryHead}>
-                    <Text variant="callout" weight="500" numberOfLines={1} style={styles.flex}>
+                    <Text weight="500" numberOfLines={1} style={styles.flex}>
                       {name}
                     </Text>
-                    <Text variant="callout" weight="600" tabular>
+                    <Text weight="600" tabular>
                       {money(group.amount)}
                     </Text>
                   </View>
                   <View style={styles.barLine}>
-                    <View style={styles.flex}>
-                      <View style={[styles.bar, { width: `${largest > 0 ? Math.max((group.amount / largest) * 100, 1.5) : 0}%`, backgroundColor: c.seriesOut }]} />
+                    <View style={[styles.flex, styles.rail, { backgroundColor: c.track }]}>
+                      <View style={[styles.bar, { width: `${largest > 0 ? Math.max((group.amount / largest) * 100, 2) : 0}%`, backgroundColor: c.out }]} />
                     </View>
-                    <Text variant="caption" tone="ink3" tabular align="right" style={styles.percent}>
+                    <Text variant="foot" tone="ink3" tabular align="right" style={styles.percent}>
                       {percent(tag, total > 0 ? group.amount / total : 0)}
                     </Text>
                   </View>
@@ -522,20 +512,19 @@ export function CategoriesSection({ expenses, waiting, onPick }: { expenses: Exp
 
 const styles = StyleSheet.create({
   flex: { flex: 1, minWidth: 0 },
-  quiet: { paddingHorizontal: 4 },
   dim: { opacity: 0.6 },
-  more: { alignSelf: 'flex-start', marginTop: 6, marginLeft: 4 },
-  note: { marginTop: 10, paddingHorizontal: 4 },
-  emptyMonthly: { gap: 12 },
-  start: { alignSelf: 'flex-start', marginLeft: 4 },
-  // The tablet keeps 12px before the words, the buttons after them sit 10px apart
-  monthlyRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingLeft: 16, paddingRight: 8, paddingVertical: 12, minHeight: 62 },
-  dayTablet: { width: TILE, height: TILE, borderRadius: 11, alignItems: 'center', justifyContent: 'center', marginRight: 2 },
-  personRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingLeft: 16, paddingRight: 14, paddingVertical: 12, minHeight: 62 },
-  cardRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingLeft: 16, paddingRight: 14, paddingVertical: 12, minHeight: 56 },
-  categoryRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingLeft: 16, paddingRight: 14, paddingVertical: 12, minHeight: 62 },
+  pressed: { opacity: 0.6 },
+  // The date tile keeps 12px before the words, the button sits 10px after them
+  monthlyRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingLeft: 16, paddingRight: 14, paddingVertical: 12, minHeight: 68 },
+  monthlyWords: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  personRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingLeft: 16, paddingRight: 14, paddingVertical: 12, minHeight: 64 },
+  cardRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12, minHeight: 68 },
+  amount: { flexShrink: 0 },
+  categoryRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12, minHeight: 64 },
   categoryHead: { flexDirection: 'row', alignItems: 'baseline', gap: 12 },
   barLine: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 7 },
-  bar: { height: 6, borderTopRightRadius: 3, borderBottomRightRadius: 3 },
+  // The share of the largest type on a rail, so a small bar still reads against the whole
+  rail: { height: 6, borderRadius: 3, overflow: 'hidden' },
+  bar: { height: 6, borderRadius: 3 },
   percent: { width: 40 }
 })

@@ -2,6 +2,7 @@ import type { Seat } from '@hellokido/core/api'
 import { holdsSeat } from '@hellokido/core/rules/attendance.js'
 import { lessonTitle } from '@hellokido/core/view'
 import { useLabels } from '../../data/queries'
+import { typeClass } from '../../ui/signature'
 import { cx } from '../../ui/cx'
 
 /** "İngilizce", or the name of a special event. */
@@ -11,43 +12,37 @@ export function useLessonTitle() {
 }
 
 /**
- * The colour a lesson block carries on the calendar: English sky, sensory pink, special events
- * plain. Lessons that are over turn neutral, so the week reads as done and still to come.
+ * The material a lesson is drawn in: its type's felt and ink (İngilizce sky, Duyusal sun, Özel pink).
+ * Time that is over is shown by the hatch on the board behind it, not by the block, so `past` and
+ * `soft` are kept for callers only.
  */
-export function lessonTone(type: string, past: boolean, soft = false) {
-  if (past) return 'border-line bg-surface-2'
-  // Large cards take a lighter fill, so a day of them does not read as a wall of colour
-  if (type === 'ingilizce')
-    return cx('border-[color-mix(in_oklab,var(--accent)_30%,transparent)]', soft ? 'bg-[color-mix(in_oklab,var(--accent-wash)_55%,var(--surface))]' : 'bg-accent-wash')
-  if (type === 'duyusal')
-    return cx('border-[color-mix(in_oklab,var(--pink)_34%,transparent)]', soft ? 'bg-[color-mix(in_oklab,var(--pink-wash)_55%,var(--surface))]' : 'bg-pink-wash')
-  return 'border-line-strong bg-surface'
+export function lessonTone(type: string, _past?: boolean, _soft?: boolean) {
+  return cx(typeClass(type), 'border-transparent bg-(--t-felt) text-(--t-ink)')
 }
 
-/** The fill alone, for a lesson drawn with a border of its own (a dragged copy). */
+/** The fill alone, for a lesson drawn with a ring of its own (a dragged copy). */
 export function lessonWash(type: string) {
-  if (type === 'ingilizce') return 'bg-accent-wash'
-  if (type === 'duyusal') return 'bg-pink-wash'
-  return 'bg-surface'
+  return cx(typeClass(type), 'bg-(--t-felt) text-(--t-ink)')
 }
 
+/** Attended green, make-up pink, still to come a ring in the ink around it. */
 function dotClass(status: string) {
-  if (status === 'attended') return 'bg-accent-solid'
+  if (status === 'attended') return 'bg-green'
   if (status === 'makeup') return 'bg-pink'
-  return 'bg-surface ring-[1.5px] ring-inset ring-accent'
+  return 'ring-[1.5px] ring-inset ring-current/70'
 }
 
-/** The six sockets in miniature: one dot per child holding a place, open sockets after them. */
+/** The six seats in miniature: one dot per child holding a place, open seats after them. */
 export function MiniSockets({ seats, capacity = 6, className }: { seats: Pick<Seat, 'id' | 'status'>[]; capacity?: number; className?: string }) {
   const holders = seats.filter((seat) => holdsSeat(seat.status))
   const open = Math.max(capacity - holders.length, 0)
   return (
     <span aria-hidden className={cx('inline-flex flex-wrap items-center gap-[0.1875rem]', className)}>
       {holders.map((seat, index) => (
-        <span key={seat.id} className={cx('size-[0.4375rem] rounded-full', dotClass(seat.status), index >= capacity && 'ring-[1.5px] ring-negative')} />
+        <span key={seat.id} className={cx('size-[0.4375rem] rounded-full', dotClass(seat.status), index >= capacity && 'ring-[1.5px] ring-amber')} />
       ))}
       {Array.from({ length: open }, (_, index) => (
-        <span key={`open-${index}`} className="size-[0.4375rem] rounded-full ring-1 ring-inset ring-line-strong" />
+        <span key={`open-${index}`} className="size-[0.4375rem] rounded-full ring-1 ring-inset ring-current/35" />
       ))}
     </span>
   )
@@ -65,8 +60,8 @@ export function SeatNames({ seats, layout = 'column', className }: { seats: Seat
         const holds = holdsSeat(seat.status)
         return (
           <span key={seat.id} className="flex min-w-0 items-center gap-1.5" title={labels.attendance(seat.status)}>
-            <span aria-hidden className={cx('size-1.5 shrink-0 rounded-full', holds ? dotClass(seat.status) : 'bg-line-strong')} />
-            <span className={cx('truncate', !holds && 'text-ink-3 line-through')}>{seat.child.student_name}</span>
+            <span aria-hidden className={cx('size-1.5 shrink-0 rounded-full', holds ? dotClass(seat.status) : 'bg-mute')} />
+            <span className={cx('truncate', !holds && 'line-through opacity-75')}>{seat.child.student_name}</span>
           </span>
         )
       })}

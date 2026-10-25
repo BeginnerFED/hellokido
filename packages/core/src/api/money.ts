@@ -246,8 +246,16 @@ export async function moneySince(firstMonth: Date) {
   ])
   return {
     income: [...ledger, ...entries].map((row) => ({ date: row.payment_date, amount: Number(row.amount) || 0 })),
-    expenses: expenses.map((row) => ({ date: row.expense_date, amount: Number(row.amount) || 0 }))
+    expenses: expenses.map((row) => ({ id: row.id, date: row.expense_date, amount: Number(row.amount) || 0 }))
   }
+}
+
+/** Every salary expense ever (a handful a month): the pay-outs among them cut the money periods. */
+export async function salaryRows() {
+  const rows = await fetchAll<{ id: string; amount: number; expense_date: string }>(() =>
+    db.from('expenses').select('id, amount, expense_date').eq('expense_type', 'maas').order('expense_date').order('id')
+  )
+  return rows.map((row) => ({ id: row.id, date: row.expense_date, amount: Number(row.amount) || 0 }))
 }
 
 // ---------------------------------------------------------------------------------------------

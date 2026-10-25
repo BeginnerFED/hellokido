@@ -29,8 +29,8 @@ export function WhatsAppLink({
   const chat = whatsAppLink(phone, text)
   if (!chat) return null
   return (
-    <IconLink href={chat} target="_blank" rel="noopener noreferrer" label={label} variant="secondary" size="sm" className={className} onPress={onPress}>
-      <WhatsappLogoIcon aria-hidden className="size-4 text-whatsapp" />
+    <IconLink href={chat} target="_blank" rel="noopener noreferrer" label={label} variant="ghost" size="sm" className={className} onPress={onPress}>
+      <WhatsappLogoIcon aria-hidden className="size-[1.125rem]" />
     </IconLink>
   )
 }

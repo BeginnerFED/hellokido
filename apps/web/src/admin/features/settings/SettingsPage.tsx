@@ -4,19 +4,18 @@ import { CircleHalfIcon, MoonIcon, SunIcon } from '@phosphor-icons/react'
 import { LANGUAGE_NAMES, LOCALES, type Locale } from '@hellokido/core/i18n'
 import { useI18n } from '../../providers/I18n'
 import { useTheme, type ThemeChoice } from '../../providers/Theme'
-import { PeriodStartSettings } from '../finance/PeriodStart'
 import { Segmented } from '../../ui/Choice'
 import { Page } from '../../ui/Page'
 import { cx } from '../../ui/cx'
 import { Access } from './Access'
-import { SettingsSection } from './bits'
+import { SettingBody, SettingsSection } from './bits'
 import { CardSettings } from './CardSettings'
 import { CategoryList } from './Categories'
 import { MessageList } from './Messages'
 import { MonthlyList } from './MonthlyList'
 import { PackageList } from './Packages'
 
-const SECTIONS = ['appearance', 'packages', 'messages', 'money-period', 'card', 'monthly', 'expense-categories', 'income-categories', 'access', 'about'] as const
+const SECTIONS = ['appearance', 'packages', 'messages', 'card', 'monthly', 'expense-categories', 'income-categories', 'access', 'about'] as const
 type SectionId = (typeof SECTIONS)[number]
 
 /**
@@ -32,7 +31,6 @@ export default function SettingsPage() {
     appearance: copy.appearance.title,
     packages: copy.packages.title,
     messages: t.messages.title,
-    'money-period': copy.period.title,
     card: copy.card.title,
     monthly: copy.monthly.title,
     'expense-categories': copy.categories.expenseTitle,
@@ -53,8 +51,8 @@ export default function SettingsPage() {
 
   return (
     <Page title={copy.title}>
-      <div className="xl:grid xl:grid-cols-[10.5rem_minmax(0,46rem)] xl:items-start xl:gap-12">
-        <nav aria-label={copy.sections} className="sticky top-9 hidden xl:block">
+      <div className="xl:grid xl:grid-cols-[11.5rem_minmax(0,46rem)] xl:items-start xl:gap-10">
+        <nav aria-label={copy.sections} className="sticky top-[5.25rem] hidden xl:block">
           <ul className="flex flex-col gap-0.5">
             {SECTIONS.map((id) => (
               <li key={id}>
@@ -63,9 +61,9 @@ export default function SettingsPage() {
                   onClick={() => jump(id)}
                   aria-current={current === id ? 'location' : undefined}
                   className={cx(
-                    'flex h-9 w-full items-center rounded-control px-3 text-left text-sm font-medium outline-none transition-colors duration-150',
+                    'flex h-10 w-full items-center rounded-full px-3.5 text-left text-[0.9375rem] font-medium outline-none transition-colors duration-150',
                     'focus-visible:ring-2 focus-visible:ring-focus',
-                    current === id ? 'bg-hover text-ink' : 'text-ink-2 hover:bg-hover hover:text-ink'
+                    current === id ? 'bg-felt text-ink' : 'text-ink-2 hover:bg-felt hover:text-ink'
                   )}
                 >
                   <span className="truncate">{titles[id]}</span>
@@ -75,7 +73,7 @@ export default function SettingsPage() {
           </ul>
         </nav>
 
-        <div className="flex max-w-[46rem] flex-col gap-5 pb-12 lg:gap-6">
+        <div className="flex max-w-[46rem] flex-col gap-4 pb-12 lg:gap-5">
           <SettingsSection id="appearance" title={titles.appearance} body={copy.appearance.body}>
             <Appearance />
           </SettingsSection>
@@ -84,9 +82,6 @@ export default function SettingsPage() {
           </SettingsSection>
           <SettingsSection id="messages" title={titles.messages} body={t.messages.body}>
             <MessageList />
-          </SettingsSection>
-          <SettingsSection id="money-period" title={titles['money-period']} body={copy.period.body}>
-            <PeriodStartSettings />
           </SettingsSection>
           <SettingsSection id="card" title={titles.card} body={copy.card.body}>
             <CardSettings />
@@ -169,7 +164,7 @@ function Appearance() {
   const { choice, setChoice } = useTheme()
   const icon = 'size-4 max-sm:hidden'
   return (
-    <div className="flex max-w-[28rem] flex-col gap-4">
+    <SettingBody className="flex max-w-[30rem] flex-col gap-4">
       <Segmented<ThemeChoice>
         label={t.settings.appearance.theme}
         value={choice}
@@ -186,16 +181,18 @@ function Appearance() {
         onChange={setLocale}
         options={LOCALES.map((id) => ({ id, label: LANGUAGE_NAMES[id] }))}
       />
-    </div>
+    </SettingBody>
   )
 }
 
 function About() {
   const { t, date } = useI18n()
   return (
-    <dl className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
-      <dt className="text-ink-2">{t.settings.about.updated}</dt>
-      <dd className="font-medium text-ink tabular">{date(parseISO(__BUILD_DATE__))}</dd>
-    </dl>
+    <SettingBody>
+      <dl className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-[0.9375rem]">
+        <dt className="text-ink-2">{t.settings.about.updated}</dt>
+        <dd className="font-medium text-ink">{date(parseISO(__BUILD_DATE__))}</dd>
+      </dl>
+    </SettingBody>
   )
 }

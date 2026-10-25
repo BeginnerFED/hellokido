@@ -11,7 +11,7 @@ import { useActionMenu, type MenuItem } from '../../ui/ActionMenu'
 import { LoadError, Mark, Skeleton } from '../../ui/Bits'
 import { Button } from '../../ui/Button'
 import { Icon } from '../../ui/Icon'
-import { Card, Section } from '../../ui/Screen'
+import { ActionRow, Card, Section } from '../../ui/Screen'
 import { DOT, DotLine, Text, together } from '../../ui/Text'
 import { useToast } from '../../ui/Toast'
 
@@ -175,7 +175,7 @@ export function ChildPayments({ registration }: { registration: Registration }) 
         />
       ) : !data || !entries.data ? (
         // Shaped like the card that follows: a title with its amount, a line under it
-        <View style={[styles.waiting, { backgroundColor: c.surface, borderColor: c.line }]}>
+        <View style={[styles.waiting, { backgroundColor: c.felt }]}>
           {[0, 1].map((key) => (
             <View key={key} style={styles.waitingRow}>
               <View style={styles.waitingTop}>
@@ -195,7 +195,7 @@ export function ChildPayments({ registration }: { registration: Registration }) 
                 line.state === 'pending' ? (
                   <Mark tone="action">{labels.paymentStatus('beklemede')}</Mark>
                 ) : line.state === 'paid' && line.paid !== '' ? (
-                  <Text variant="foot" tone="ink3" tabular numberOfLines={1}>
+                  <Text variant="sub" tone="ink3" tabular numberOfLines={1}>
                     {line.paid}
                   </Text>
                 ) : null
@@ -207,14 +207,14 @@ export function ChildPayments({ registration }: { registration: Registration }) 
                         {line.title}
                       </Text>
                       {/* An amount is never broken between its figures and its ₺ */}
-                      <Text variant="body" weight={line.state === 'paid' ? '600' : '400'} tone={line.state === 'paid' ? 'ink' : 'ink3'} tabular numberOfLines={1}>
+                      <Text variant="body" weight="600" tone={line.state === 'paid' ? 'ink' : 'ink3'} tabular numberOfLines={1}>
                         {amountText}
                       </Text>
                     </View>
                     {/* A fee with no description, due day or payment day has no second line, not an empty one */}
                     {(line.meta.length > 0 || side) && (
                       <View style={styles.bottom}>
-                        <DotLine variant="foot" tone="ink3" parts={line.meta} style={styles.flex} />
+                        <DotLine variant="sub" tone="ink3" parts={line.meta} style={styles.flex} />
                         {side}
                       </View>
                     )}
@@ -235,7 +235,7 @@ export function ChildPayments({ registration }: { registration: Registration }) 
                   accessibilityRole="button"
                   accessibilityHint={t.mobile.paymentActions}
                   disabled={busy}
-                  style={({ pressed }) => [styles.line, pressed && { backgroundColor: c.well }]}
+                  style={({ pressed }) => [styles.line, pressed && { backgroundColor: c.pressed }]}
                 >
                   {body}
                 </Pressable>
@@ -245,12 +245,10 @@ export function ChildPayments({ registration }: { registration: Registration }) 
                 </View>
               )
             })}
+            {lines.length > shown && (
+              <ActionRow label={plural(t.children.detail.showMorePayments, Math.min(STEP, lines.length - shown))} onPress={() => setShown((count) => count + STEP)} />
+            )}
           </Card>
-          {lines.length > shown && (
-            <Button variant="plain" size="sm" onPress={() => setShown((count) => count + STEP)} style={styles.more}>
-              {plural(t.children.detail.showMorePayments, Math.min(STEP, lines.length - shown))}
-            </Button>
-          )}
         </>
       )}
     </Section>
@@ -259,13 +257,12 @@ export function ChildPayments({ registration }: { registration: Registration }) 
 
 const styles = StyleSheet.create({
   flex: { flex: 1, minWidth: 0 },
-  waiting: { borderRadius: 18, borderWidth: 1, paddingVertical: 2 },
+  waiting: { borderRadius: 26, paddingVertical: 2 },
   waitingRow: { paddingHorizontal: 16, paddingVertical: 12, gap: 8 },
   waitingTop: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
   line: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingLeft: 16, paddingRight: 14, paddingVertical: 12, minHeight: 56 },
   top: { flexDirection: 'row', alignItems: 'baseline', gap: 12 },
   bottom: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginTop: 2 },
   collect: { alignSelf: 'flex-start', marginTop: 10 },
-  more: { alignSelf: 'flex-start', marginTop: 6, marginLeft: 4 },
   noActions: { width: 20 }
 })

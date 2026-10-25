@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { PlusIcon, TrashIcon } from '@phosphor-icons/react'
+import { TrashIcon } from '@phosphor-icons/react'
 import { addCategory, deleteCategory, updateCategory, type ExpenseCategory, type IncomeCategory } from '@hellokido/core/api'
 import { useCatalog, useLabels, useRefresh } from '../../data/queries'
 import { useI18n } from '../../providers/I18n'
@@ -11,8 +11,8 @@ import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { FormRule } from '../../ui/Notice'
 import { Sheet, SheetActions, SheetFooter } from '../../ui/Sheet'
 import { useSheet } from '../../ui/useSheet'
-import { CategoryTablet, IncomeTablet, ListSkeleton } from '../finance/bits'
-import { NameFields, SettingList, SettingRow } from './bits'
+import { CategoryTablet, IncomeTablet } from '../finance/bits'
+import { NameFields, SettingAddRow, SettingBody, SettingList, SettingRow, SettingSkeleton } from './bits'
 import { filledNames, localName, namesOf, sameName, type Names } from './rules'
 
 export type CategoryKind = 'expense' | 'income'
@@ -21,6 +21,8 @@ type Category = ExpenseCategory | IncomeCategory
 const TABLES = { expense: 'expense_categories', income: 'income_categories' } as const
 // "Other" keeps sort order 999 so it stays last; a new category goes right before it
 const LAST = 999
+// The category's picture as a round piece on the felt, like the other rows of the page
+const PIECE = 'size-9! rounded-full! bg-piece! text-ink-2!'
 
 const listOf = (catalog: ReturnType<typeof useCatalog>['data'], kind: CategoryKind): Category[] =>
   (kind === 'expense' ? catalog?.expenseCategories : catalog?.incomeCategories) ?? []
@@ -32,8 +34,13 @@ export function CategoryList({ kind }: { kind: CategoryKind }) {
   const catalog = useCatalog()
   const sheet = useSheet<Category | null>()
 
-  if (catalog.isError) return <LoadError message={t.common.loadFailed} retryLabel={t.common.retry} onRetry={() => void catalog.refetch()} />
-  if (!catalog.data) return <ListSkeleton rows={4} />
+  if (catalog.isError)
+    return (
+      <SettingBody>
+        <LoadError message={t.common.loadFailed} retryLabel={t.common.retry} onRetry={() => void catalog.refetch()} />
+      </SettingBody>
+    )
+  if (!catalog.data) return <SettingSkeleton rows={4} />
 
   const name = (code: string) => (kind === 'expense' ? labels.expenseCategory(code) : labels.incomeCategory(code))
 
@@ -43,17 +50,15 @@ export function CategoryList({ kind }: { kind: CategoryKind }) {
         {listOf(catalog.data, kind).map((row) => (
           <SettingRow
             key={row.code}
-            lead={kind === 'expense' ? <CategoryTablet code={row.code} /> : <IncomeTablet code={row.code} />}
+            lead={kind === 'expense' ? <CategoryTablet code={row.code} className={PIECE} /> : <IncomeTablet code={row.code} className={PIECE} />}
             title={name(row.code)}
             muted={!row.is_active}
             mark={!row.is_active && <Mark tone="neutral">{t.settings.hidden}</Mark>}
             onPress={() => sheet.open(row)}
           />
         ))}
+        <SettingAddRow onPress={() => sheet.open(null)}>{t.settings.categories.add}</SettingAddRow>
       </SettingList>
-      <Button variant="ghost" size="sm" className="mt-2 -ml-3" icon={<PlusIcon aria-hidden weight="bold" className="size-4" />} onPress={() => sheet.open(null)}>
-        {t.settings.categories.add}
-      </Button>
       {sheet.isOpen || sheet.key > 0 ? (
         <CategorySheet key={sheet.key} kind={kind} isOpen={sheet.isOpen} onOpenChange={sheet.setOpen} category={sheet.payload} />
       ) : null}
@@ -205,7 +210,7 @@ function CategoryForm({
             )
           }
         >
-          <Button variant="primary" isDisabled={!valid} isPending={busy} onPress={() => void save()} className="max-md:flex-1">
+          <Button variant="primary" isDisabled={!valid || (category !== null && !dirty)} isPending={busy} onPress={() => void save()} className="max-md:flex-1">
             {t.common.save}
           </Button>
         </SheetActions>

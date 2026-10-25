@@ -1,24 +1,16 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useId, useMemo, useState, type ReactNode } from 'react'
 import { addDays, differenceInCalendarDays } from 'date-fns'
 import { Link } from 'react-aria-components'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { CheckIcon, WhatsappLogoIcon } from '@phosphor-icons/react'
-import {
-  setAttendance,
-  unmarkedSeats,
-  type AttendanceStatus,
-  type Lesson,
-  type Registration,
-  type UnmarkedSeat
-} from '@hellokido/core/api'
-import { localDateKey } from '@hellokido/core/rules/dates.js'
+import { useQueryClient } from '@tanstack/react-query'
+import { BellSimpleIcon, CheckIcon, ClipboardTextIcon, WhatsappLogoIcon } from '@phosphor-icons/react'
+import { setAttendance, type AttendanceStatus, type Lesson, type Registration, type Seat, type UnmarkedSeat } from '@hellokido/core/api'
 import { whatsAppLink } from '@hellokido/core/rules/phone.js'
 import { useMessageWriter, useRecentReminders, useReminderLog, useSeatReminders } from '../../data/messages'
-import { keys, useActiveUsage, useLabels, usePendingIncome, useRegistrations } from '../../data/queries'
+import { keys, useActiveUsage, useLabels } from '../../data/queries'
 import { useI18n } from '../../providers/I18n'
 import { useToast } from '../../providers/Toasts'
 import { useActions } from '../../shell/Actions'
-import { Avatar, LoadError, Mark, Skeleton } from '../../ui/Bits'
+import { Avatar, IconDisc, LoadError, Mark, Skeleton } from '../../ui/Bits'
 import { Button, ButtonLink } from '../../ui/Button'
 import { CardTabs } from '../../ui/Figures'
 import { Band, Card, CardLink } from '../../ui/Page'
@@ -26,20 +18,20 @@ import { WhatsAppLink } from '../../ui/PhoneActions'
 import { LessonShape } from '../../ui/signature'
 import { cx } from '../../ui/cx'
 import { endText, formatPeriod, shortDate } from '../children/ChildBits'
-import { daysLeft, isEnding, isPaymentDue } from '../children/rules'
 import { AttendancePicker } from '../lessons/AttendancePicker'
 import { useLessonTitle } from '../lessons/LessonBits'
+import type { useWaiting } from './data'
 
-/** A child's name that opens their page. */
+/** A child's name that opens their page; takes the colour of the text around it. */
 export function ChildLink({ id, name, className }: { id: string; name: string; className?: string }) {
   return (
     <Link
       href={`/children/${id}`}
       className={cx(
-        'relative min-w-0 rounded-[0.25rem] text-[0.90625rem] font-medium text-ink no-underline outline-none',
+        'relative min-w-0 rounded-[0.25rem] text-[0.96875rem] leading-[1.3125rem] font-medium no-underline outline-none',
         // A one-line name is a thin target; a fingertip gets the strip above and below it too
         'pointer-coarse:after:absolute pointer-coarse:after:-inset-x-1 pointer-coarse:after:-inset-y-2.5',
-        'data-hovered:underline data-hovered:decoration-line-strong data-hovered:underline-offset-[3px] data-focus-visible:ring-2 data-focus-visible:ring-focus',
+        'data-hovered:underline data-hovered:decoration-1 data-hovered:underline-offset-[3px] data-focus-visible:ring-2 data-focus-visible:ring-focus',
         className
       )}
     >
@@ -49,14 +41,14 @@ export function ChildLink({ id, name, className }: { id: string; name: string; c
   )
 }
 
-/** A row of a card: hairline under it, the card's side padding. */
+/** A row of a felt card: 22 side padding, a line between rows. */
 export function CardRow({ children, className }: { children: ReactNode; className?: string }) {
-  return <li className={cx('flex items-center gap-3 border-b border-line px-4 py-3 last:border-b-0 sm:px-5', className)}>{children}</li>
+  return <li className={cx('flex items-center gap-3 border-t border-line px-4 py-[0.6875rem] first:border-t-0 sm:px-[1.375rem]', className)}>{children}</li>
 }
 
 export function ListSkeleton({ rows = 3 }: { rows?: number }) {
   return (
-    <div className="flex flex-col gap-2 px-4 py-4 sm:px-5">
+    <div className="flex flex-col gap-2 px-4 py-4 sm:px-[1.375rem]">
       {Array.from({ length: rows }, (_, index) => (
         <Skeleton key={index} className="h-11" />
       ))}
@@ -67,11 +59,11 @@ export function ListSkeleton({ rows = 3 }: { rows?: number }) {
 /** The "all done" state inside a card. */
 export function CardDone({ title, body }: { title: ReactNode; body?: ReactNode }) {
   return (
-    <div className="flex flex-col items-center gap-2.5 px-5 py-12 text-center">
-      <span aria-hidden className="grid size-10 place-items-center rounded-tile border border-positive-line text-positive-ink">
+    <div className="flex flex-col items-center gap-2.5 px-5 py-10 text-center">
+      <span aria-hidden className="grid size-10 place-items-center rounded-full bg-piece text-green-ink">
         <CheckIcon weight="bold" className="size-[1.125rem]" />
       </span>
-      <p className="text-[0.90625rem] font-semibold">{title}</p>
+      <p className="text-[0.96875rem] font-semibold">{title}</p>
       {body && <p className="max-w-sm text-[0.84375rem] text-ink-3 text-pretty">{body}</p>}
     </div>
   )
@@ -79,78 +71,195 @@ export function CardDone({ title, body }: { title: ReactNode; body?: ReactNode }
 
 /** A quiet line inside a card when a list is empty. */
 export function CardEmpty({ children }: { children: ReactNode }) {
-  return <p className="px-4 py-8 text-center text-sm text-ink-3 sm:px-5">{children}</p>
+  return <p className="px-4 py-8 text-center text-[0.9375rem] text-ink-3 sm:px-[1.375rem]">{children}</p>
 }
 
 // ---------------------------------------------------------------------------------------------
 
-// The page's figures and its cards count from the same queries
+// Ended packages shown before the rest fold away; a couple more than this are shown in full
+const ENDED_FIRST = 5
 
-/** Attendance nobody marked in the last 30 days. */
-export function useUnmarked(dayKey: string) {
-  const key = [...keys.unmarked, dayKey]
-  return { key, query: useQuery({ queryKey: key, queryFn: () => unmarkedSeats() }) }
+export type WorkTab = 'all' | 'attendance' | 'pay' | 'renew'
+
+type Waiting = ReturnType<typeof useWaiting>
+
+/** "Ege Arslan ve Lina Koç", or the first three and "+2". */
+function useNames() {
+  const { tag } = useI18n()
+  return (names: string[]) => {
+    const list = new Intl.ListFormat(tag, { style: 'long', type: 'conjunction' })
+    return names.length <= 3 ? list.format(names) : `${names.slice(0, 3).join(', ')} +${names.length - 3}`
+  }
 }
-
-/** Unpaid packages and expected fees of active children; free participation never waits for money. */
-export function usePaymentsDue() {
-  const registrations = useRegistrations()
-  const pending = usePendingIncome()
-  const byId = useMemo(() => new Map((registrations.data ?? []).map((row) => [row.id, row])), [registrations.data])
-  const packages = useMemo(
-    () =>
-      (registrations.data ?? [])
-        .filter(isPaymentDue)
-        .sort((a, b) => new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime()),
-    [registrations.data]
-  )
-  const fees = useMemo(
-    () => (pending.data ?? []).filter((line) => line.source === 'child' && line.registrationId && byId.get(line.registrationId)?.is_active === true),
-    [pending.data, byId]
-  )
-  const families = useMemo(() => new Set([...packages.map((row) => row.id), ...fees.map((line) => line.registrationId)]).size, [packages, fees])
-  return { registrations, byId, packages, fees, families, total: packages.length + fees.length }
-}
-
-/** Packages that ended or end within a week, with the days left (negative once ended). */
-export function useEndingPackages(now: Date) {
-  const registrations = useRegistrations()
-  const rows = useMemo(
-    () => (registrations.data ?? []).filter((row) => isEnding(row, now)).map((child) => ({ child, days: daysLeft(child, now) ?? 0 })),
-    [registrations.data, now]
-  )
-  return { registrations, rows }
-}
-
-// ---------------------------------------------------------------------------------------------
 
 /**
- * Attendance nobody marked in the last 30 days, grouped by lesson. Each answer removes its row,
- * so the list empties itself as the work gets done.
+ * Everything waiting for the admin in one card: missing attendance (grouped by lesson, entered in
+ * place), payments due and packages to renew. Each row carries its own action.
  */
-export function UnmarkedList({ dayKey }: { dayKey: string }) {
-  const i18n = useI18n()
-  const { t, fmt, date } = i18n
-  const labels = useLabels()
+export function WaitingCard({
+  waiting,
+  tab,
+  onTab,
+  saving,
+  onMarkToday,
+  className
+}: {
+  waiting: Waiting
+  tab: WorkTab
+  onTab: (tab: WorkTab) => void
+  /** Seats of today's lessons being saved, and the page's own optimistic answer for them. */
+  saving: Set<string>
+  onMarkToday: (seat: Seat, status: AttendanceStatus) => void
+  className?: string
+}) {
+  const { t, plural, money } = useI18n()
+  const { counts, total, payments, ending } = waiting
+  const show = (which: Exclude<WorkTab, 'all'>) => tab === 'all' || tab === which
+
+  const payTotal = payments.packages.reduce((sum, child) => sum + (Number(child.payment_amount) || 0), 0) + payments.fees.reduce((sum, line) => sum + line.amount, 0)
+  const soon = ending.rows.filter((row) => row.days >= 0).sort((a, b) => a.days - b.days)
+  const ended = ending.rows.filter((row) => row.days < 0).sort((a, b) => b.days - a.days)
+
+  const loading = !waiting.ready
+  const loadError = waiting.unmarked.query.isError || payments.registrations.isError
+  const empty =
+    tab === 'all' ? total === 0 : tab === 'attendance' ? counts.attendance === 0 : tab === 'pay' ? counts.pay === 0 : counts.renew === 0
+
+  return (
+    <Card
+      id="work"
+      className={cx('outline-none', className)}
+      title={t.today.board.waitingTitle}
+      aside={waiting.ready ? plural(t.today.board.jobs, total) : undefined}
+      bodyClassName="flex flex-col"
+      footer={
+        tab === 'pay' && counts.pay > 0 ? (
+          <>
+            <span>{plural(t.today.work.payFoot, payments.families)}</span>
+            <CardLink href="/finance">{t.today.work.toFinance}</CardLink>
+          </>
+        ) : tab === 'renew' && counts.renew > 0 ? (
+          <>
+            <span>{t.today.work.renewFoot}</span>
+            <CardLink href="/children">{t.today.work.toChildren}</CardLink>
+          </>
+        ) : undefined
+      }
+    >
+      <div className="pb-2 sm:px-[1.375rem]">
+        <CardTabs<WorkTab>
+          fill
+          className="max-sm:px-4"
+          label={t.today.work.which}
+          value={tab}
+          onChange={onTab}
+          options={[
+            // The card's header already carries the total
+            { id: 'all', label: t.today.web.all },
+            { id: 'attendance', label: t.today.overview.attendance, count: counts.attendance, countTone: counts.attendance > 0 ? 'action' : 'muted' },
+            { id: 'pay', label: t.today.work.pay, count: counts.pay },
+            { id: 'renew', label: t.today.work.renew, count: counts.renew }
+          ]}
+        />
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto pb-2 lg:max-h-[40rem]">
+        {loadError ? (
+          <div className="p-4 sm:px-[1.375rem]">
+            <LoadError
+              message={t.common.loadFailed}
+              retryLabel={t.common.retry}
+              onRetry={() => {
+                void waiting.unmarked.query.refetch()
+                void payments.registrations.refetch()
+              }}
+            />
+          </div>
+        ) : loading ? (
+          <ListSkeleton rows={4} />
+        ) : empty ? (
+          tab === 'attendance' ? (
+            <CardDone title={t.today.lessonsCard.allDone} body={t.today.lessonsCard.allDoneBody} />
+          ) : tab === 'pay' ? (
+            <CardEmpty>{t.today.payments.empty}</CardEmpty>
+          ) : tab === 'renew' ? (
+            <CardEmpty>{t.today.ending.empty}</CardEmpty>
+          ) : (
+            <CardDone title={t.today.nothingWaiting} />
+          )
+        ) : (
+          <>
+            {show('attendance') && counts.attendance > 0 && <AttendanceGroup waiting={waiting} saving={saving} onMarkToday={onMarkToday} />}
+            {show('pay') && counts.pay > 0 && (
+              <Group label={t.today.overview.payments} aside={payTotal > 0 ? money(payTotal) : undefined}>
+                <PaymentRows waiting={waiting} />
+              </Group>
+            )}
+            {show('renew') && soon.length > 0 && (
+              <Group label={t.today.web.soonGroup} aside={t.today.web.withinWeek}>
+                <RenewRows rows={soon} now={waiting.now} dayKey={waiting.dayKey} />
+              </Group>
+            )}
+            {show('renew') && ended.length > 0 && (
+              <Group label={t.today.web.endedGroup} aside={String(ended.length)}>
+                <RenewRows rows={ended} now={waiting.now} dayKey={waiting.dayKey} fold />
+              </Group>
+            )}
+          </>
+        )}
+      </div>
+    </Card>
+  )
+}
+
+function Group({ label, aside, children }: { label: ReactNode; aside?: ReactNode; children: ReactNode }) {
+  return (
+    <div>
+      <Band sticky className="justify-between">
+        <span>{label}</span>
+        {aside && <span className="font-medium text-ink-3 tabular">{aside}</span>}
+      </Band>
+      {children}
+    </div>
+  )
+}
+
+/** Missing attendance, one row per lesson; "Gir" opens the children of that lesson in place. */
+function AttendanceGroup({ waiting, saving, onMarkToday }: { waiting: Waiting; saving: Set<string>; onMarkToday: (seat: Seat, status: AttendanceStatus) => void }) {
+  const { t, fmt, plural, date } = useI18n()
+  const title = useLessonTitle()
+  const names = useNames()
   const toast = useToast()
   const client = useQueryClient()
-  const title = useLessonTitle()
-  const { key, query } = useUnmarked(dayKey)
-  const [saving, setSaving] = useState<Set<string>>(() => new Set())
+  const [open, setOpen] = useState<Set<string>>(() => new Set())
+  const [busy, setBusy] = useState<Set<string>>(() => new Set())
+  const { key } = waiting.unmarked
 
-  const groups = useMemo(() => {
-    const list: { lesson: UnmarkedSeat['events']; rows: UnmarkedSeat[] }[] = []
-    for (const row of query.data ?? []) {
-      const last = list[list.length - 1]
-      if (last && last.lesson.id === row.events.id) last.rows.push(row)
-      else list.push({ lesson: row.events, rows: [row] })
+  // Today's ended lessons first (newest first), then the past days' lessons, newest first
+  const lessons = useMemo(() => {
+    const past: { id: string; lesson: UnmarkedSeat['events']; rows: { id: string; registrationId: string; child: { id: string; student_name: string; is_active: boolean | null }; past?: UnmarkedSeat; seat?: Seat }[] }[] = []
+    for (const item of [...waiting.earlier].reverse()) {
+      past.push({
+        id: item.lesson.id,
+        lesson: item.lesson,
+        rows: item.seats.map((seat) => ({ id: seat.id, registrationId: seat.registration_id, child: seat.child, seat }))
+      })
     }
-    return list
-  }, [query.data])
+    const byLesson = new Map<string, (typeof past)[number]>()
+    for (const row of [...(waiting.unmarked.query.data ?? [])].sort((a, b) => b.events.event_date.localeCompare(a.events.event_date))) {
+      let group = byLesson.get(row.events.id)
+      if (!group) {
+        group = { id: row.events.id, lesson: row.events, rows: [] }
+        byLesson.set(row.events.id, group)
+        past.push(group)
+      }
+      group.rows.push({ id: row.id, registrationId: row.registration_id, child: row.child, past: row })
+    }
+    return past
+  }, [waiting.earlier, waiting.unmarked.query.data])
 
-  const mark = async (row: UnmarkedSeat, status: AttendanceStatus) => {
-    if (saving.has(row.id)) return
-    setSaving((set) => new Set(set).add(row.id))
+  const markPast = async (row: UnmarkedSeat, status: AttendanceStatus) => {
+    if (busy.has(row.id)) return
+    setBusy((set) => new Set(set).add(row.id))
     try {
       await setAttendance(row.id, status)
       client.setQueryData<UnmarkedSeat[]>(key, (list) => list?.filter((item) => item.id !== row.id))
@@ -160,7 +269,7 @@ export function UnmarkedList({ dayKey }: { dayKey: string }) {
     } catch {
       toast({ tone: 'error', title: t.children.detail.statusFailed })
     } finally {
-      setSaving((set) => {
+      setBusy((set) => {
         const next = new Set(set)
         next.delete(row.id)
         return next
@@ -168,60 +277,245 @@ export function UnmarkedList({ dayKey }: { dayKey: string }) {
     }
   }
 
-  if (query.isError) return <div className="p-4 sm:p-5"><LoadError message={t.common.loadFailed} retryLabel={t.common.retry} onRetry={() => void query.refetch()} /></div>
-  if (query.isPending) return <ListSkeleton rows={4} />
-  if (groups.length === 0) return <CardDone title={t.today.lessonsCard.allDone} body={t.today.lessonsCard.allDoneBody} />
+  const toggle = (id: string) =>
+    setOpen((current) => {
+      const next = new Set(current)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
 
   return (
-    <div>
-      <Band className="hidden gap-x-5 lg:flex">
-        <span className="min-w-0 flex-[1.6_1_15rem]">{t.today.lessonsCard.child}</span>
-        <span className="min-w-0 flex-[2.1_1_20rem]">{t.today.lessonsCard.parent}</span>
-        <span className="w-[17rem] shrink-0">{t.today.lessonsCard.attendance}</span>
-      </Band>
-      {groups.map((group) => (
-        <div key={group.lesson.id}>
-          <Band className="text-[0.84375rem] text-ink">
-            <LessonShape type={group.lesson.event_type} />
-            <span className="min-w-0 flex-1 truncate font-semibold">
-              {date(group.lesson.event_date, { weekday: 'short', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })} · {title(group.lesson)} ·{' '}
-              {labels.ageGroup(group.lesson.age_group)}
-            </span>
-            <span className="text-[0.8125rem] text-ink-3 tabular">{group.rows.length}</span>
-          </Band>
-          <ul>
+    <Group label={t.today.strip.unmarkedShort} aside={plural(t.today.board.inLessons, lessons.length)}>
+      <ul>
+        {lessons.map((group) => (
+          <AttendanceLesson
+            key={group.id}
+            heading={`${date(group.lesson.event_date, { weekday: 'long', hour: '2-digit', minute: '2-digit' })}, ${title(group.lesson)}`}
+            sub={fmt(t.today.web.notMarked, { names: names(group.rows.map((row) => row.child.student_name)) })}
+            isOpen={open.has(group.id)}
+            onToggle={() => toggle(group.id)}
+          >
             {group.rows.map((row) => (
-              <li key={row.id} className="flex flex-wrap items-center gap-x-5 gap-y-2.5 border-b border-line px-4 py-[0.6875rem] sm:px-5">
-                <div className="flex min-w-0 flex-[1.6_1_15rem] items-center gap-3">
-                  <Avatar name={row.child.student_name} />
-                  <p className="flex min-w-0 items-center gap-2">
-                    <ChildLink id={row.child.id} name={row.child.student_name} />
-                    {row.child.is_active !== true && <Mark tone="neutral">{t.today.archived}</Mark>}
-                  </p>
-                </div>
-                <span className="min-w-0 flex-[2.1_1_20rem] truncate text-sm text-ink-2 max-lg:hidden">{row.child.parent_name}</span>
+              <li key={row.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 py-2">
+                <Avatar name={row.child.student_name} size="sm" />
+                <span className="flex min-w-0 flex-[1_1_8rem] items-center gap-2">
+                  <ChildLink id={row.child.id} name={row.child.student_name} />
+                  {row.child.is_active !== true && <Mark tone="neutral">{t.today.archived}</Mark>}
+                </span>
                 <AttendancePicker
-                  status={row.status}
-                  onChange={(status) => void mark(row, status)}
-                  isDisabled={saving.has(row.id)}
+                  status={row.past?.status ?? row.seat?.status ?? 'scheduled'}
+                  onChange={(status) => (row.past ? void markPast(row.past, status) : row.seat && onMarkToday(row.seat, status))}
+                  isDisabled={busy.has(row.id) || saving.has(row.id)}
                   label={fmt(t.children.detail.lessonStatus, { name: row.child.student_name })}
-                  className="w-full shrink-0 sm:w-[17rem]"
+                  className="w-full sm:w-[14.5rem]"
                 />
               </li>
             ))}
-          </ul>
+          </AttendanceLesson>
+        ))}
+      </ul>
+    </Group>
+  )
+}
+
+function AttendanceLesson({
+  heading,
+  sub,
+  isOpen,
+  onToggle,
+  children
+}: {
+  heading: string
+  sub: string
+  isOpen: boolean
+  onToggle: () => void
+  children: ReactNode
+}) {
+  const { t } = useI18n()
+  const listId = useId()
+  return (
+    <li className="border-t border-line px-4 py-[0.6875rem] first:border-t-0 sm:px-[1.375rem]">
+      <div className="flex items-center gap-3">
+        <IconDisc alert>
+          <ClipboardTextIcon className="size-[1.125rem]" />
+        </IconDisc>
+        <div className="min-w-0 flex-1">
+          {/* A phone-wide row gives the lesson and its names a second line rather than an ellipsis */}
+          <p className="text-[0.96875rem] leading-[1.3125rem] font-medium first-letter:uppercase max-sm:line-clamp-2 sm:truncate">{heading}</p>
+          <p className="text-[0.84375rem] leading-[1.125rem] text-ink-3 max-sm:line-clamp-2 sm:truncate">{sub}</p>
         </div>
-      ))}
-    </div>
+        <Button size="sm" variant="secondary" aria-expanded={isOpen} aria-controls={listId} onPress={onToggle} className="shrink-0 max-lg:h-10">
+          {isOpen ? t.common.close : t.today.board.enter}
+        </Button>
+      </div>
+      {isOpen && (
+        <ul id={listId} className="mt-1.5 pl-12 max-sm:pl-0">
+          {children}
+        </ul>
+      )}
+    </li>
+  )
+}
+
+function useRemindedText(now: Date) {
+  const { t, plural } = useI18n()
+  // "Reminded yesterday" next to a family, so nobody is chased twice in a day
+  return (sentAt: string | undefined) => {
+    if (!sentAt) return null
+    const days = differenceInCalendarDays(now, new Date(sentAt))
+    return days <= 0 ? t.messages.reminded.today : days === 1 ? t.messages.reminded.yesterday : plural(t.messages.reminded.days, days)
+  }
+}
+
+/** A child's row: avatar, name, a concrete sub-line, a mark, WhatsApp and one action. */
+function WorkRow({
+  child,
+  meta,
+  mark,
+  remind,
+  action,
+  now
+}: {
+  child: Registration
+  meta: ReactNode
+  mark?: ReactNode
+  remind: { kind: 'payment' | 'package_end'; text: string; templateId: string | null; label: string; sentAt?: string }
+  action: { label: string; onPress: () => void }
+  now: Date
+}) {
+  const { log } = useReminderLog()
+  const reminded = useRemindedText(now)(remind.sentAt)
+  return (
+    <CardRow className="flex-wrap sm:flex-nowrap">
+      <Avatar name={child.student_name} />
+      <div className="min-w-0 flex-1 basis-40">
+        <ChildLink id={child.id} name={child.student_name} className="block" />
+        <p className="truncate text-[0.84375rem] leading-[1.125rem] text-ink-3">
+          {meta}
+          {reminded && (
+            <span className="text-green-ink">
+              {', '}
+              {reminded}
+            </span>
+          )}
+        </p>
+      </div>
+      <div className="flex shrink-0 items-center gap-2 max-sm:w-full max-sm:pl-12">
+        {mark}
+        <span className="flex-1 sm:hidden" />
+        <WhatsAppLink
+          phone={child.parent_phone}
+          text={remind.text}
+          label={remind.label}
+          className="max-lg:size-10"
+          onPress={() => log({ kind: remind.kind, registrationId: child.id, templateId: remind.templateId })}
+        />
+        <Button size="sm" variant="secondary" className="shrink-0 max-lg:h-10" onPress={action.onPress}>
+          {action.label}
+        </Button>
+      </div>
+    </CardRow>
+  )
+}
+
+function PaymentRows({ waiting }: { waiting: Waiting }) {
+  const i18n = useI18n()
+  const { t, fmt, money } = i18n
+  const labels = useLabels()
+  const { startTask } = useActions()
+  const write = useMessageWriter()
+  const { payments, now, dayKey } = waiting
+  const paid = useRecentReminders('payment', dayKey).byChild
+  return (
+    <ul>
+      {payments.packages.map((child) => {
+        const amount = Number(child.payment_amount) > 0 ? money(Number(child.payment_amount)) : null
+        return (
+          <WorkRow
+            key={child.id}
+            now={now}
+            child={child}
+            meta={[labels.packageName(child.package_type), amount ?? formatPeriod(i18n, child.package_start_date, child.package_end_date)].join(', ')}
+            remind={{
+              kind: 'payment',
+              ...write('payment', { parentName: child.parent_name, childName: child.student_name, packageCode: child.package_type, endDate: child.package_end_date, amount, now }),
+              label: fmt(t.today.payments.remindLabel, { name: child.student_name }),
+              sentAt: paid.get(child.id)?.sent_at
+            }}
+            action={{ label: t.today.payments.collect, onPress: () => startTask('payment', { registrationId: child.id, choice: 'collect' }) }}
+          />
+        )
+      })}
+      {payments.fees.map((line) => {
+        const child = payments.byId.get(line.registrationId!)!
+        return (
+          <WorkRow
+            key={line.key}
+            now={now}
+            child={child}
+            meta={`${line.description || t.children.detail.fee}, ${money(line.amount)}`}
+            mark={line.dueDate ? <Mark tone="action">{fmt(t.today.work.dueOn, { date: shortDate(i18n, `${line.dueDate}T00:00:00`) })}</Mark> : undefined}
+            remind={{
+              kind: 'payment',
+              ...write('payment', { parentName: child.parent_name, childName: child.student_name, packageCode: child.package_type, endDate: child.package_end_date, amount: money(line.amount), now }),
+              label: fmt(t.today.payments.remindLabel, { name: child.student_name }),
+              sentAt: paid.get(child.id)?.sent_at
+            }}
+            action={{ label: t.today.payments.collect, onPress: () => startTask('payment', { registrationId: child.id, choice: 'collect', entryId: line.id }) }}
+          />
+        )
+      })}
+    </ul>
+  )
+}
+
+function RenewRows({ rows, now, dayKey, fold }: { rows: { child: Registration; days: number }[]; now: Date; dayKey: string; fold?: boolean }) {
+  const i18n = useI18n()
+  const { t, fmt, plural } = i18n
+  const labels = useLabels()
+  const { startTask } = useActions()
+  const write = useMessageWriter()
+  const ends = useRecentReminders('package_end', dayKey).byChild
+  const [unfolded, setUnfolded] = useState(false)
+  const shown = !fold || unfolded || rows.length <= ENDED_FIRST + 2 ? rows : rows.slice(0, ENDED_FIRST)
+  return (
+    <>
+      <ul>
+        {shown.map(({ child, days }) => (
+          <WorkRow
+            key={child.id}
+            now={now}
+            child={child}
+            meta={labels.packageName(child.package_type)}
+            mark={<Mark tone="action">{endText(i18n, days)}</Mark>}
+            remind={{
+              kind: 'package_end',
+              ...write('package_end', { parentName: child.parent_name, childName: child.student_name, packageCode: child.package_type, endDate: child.package_end_date, now }),
+              label: fmt(t.today.ending.remindLabel, { name: child.student_name }),
+              sentAt: ends.get(child.id)?.sent_at
+            }}
+            action={{ label: t.today.ending.renew, onPress: () => startTask('payment', { registrationId: child.id, choice: 'renew' }) }}
+          />
+        ))}
+      </ul>
+      {shown.length < rows.length && (
+        <div className="px-2.5 py-1.5 sm:px-3.5">
+          <Button variant="ghost" size="sm" onPress={() => setUnfolded(true)}>
+            {plural(t.today.ending.showMore, rows.length - shown.length)}
+          </Button>
+        </div>
+      )}
+    </>
   )
 }
 
 // ---------------------------------------------------------------------------------------------
 
 /**
- * Tomorrow's lessons with a WhatsApp reminder for every family. Sent ones are recorded in the
- * shared log, so both admins see the same ticks on every device; "Send the next one" opens the
- * next family's chat each time it is pressed.
+ * Tomorrow's reminders: one line with the progress and "Send the next one" (it opens the next
+ * family's chat each time), then each lesson's families with their own reminder. Sent ones are
+ * recorded in the shared log, so both admins see the same ticks on every device.
  */
 export function TomorrowCard({
   lessons,
@@ -293,71 +587,70 @@ export function TomorrowCard({
     else settle(seatId)
   }
 
-  const children = new Set(lessons.flatMap((lesson) => lesson.seats.map((seat) => seat.registration_id))).size
-  const tomorrow = addDays(now, 1)
-  const day = date(tomorrow, { weekday: 'long', day: 'numeric', month: 'long' })
+  const families = new Set(lessons.flatMap((lesson) => lesson.seats.map((seat) => seat.registration_id))).size
+  const day = date(addDays(now, 1), { weekday: 'long', day: 'numeric', month: 'long' })
+  const line =
+    lessons.length > 0
+      ? [
+          fmt(t.today.web.tomorrowLine, { day, lessons: plural(t.today.lessonCount, lessons.length), parents: plural(t.today.web.parents, families) }),
+          next ? fmt(t.today.web.nextFamily, { name: `${next.seat.child.parent_name ?? ''} (${next.seat.child.student_name})`.trim() }) : allSent ? t.messages.inOrder.done : null
+        ]
+          .filter(Boolean)
+          .join('; ')
+      : `${day}: ${t.today.tomorrow.empty}`
 
   return (
-    <Card
-      id="tomorrow"
-      className={className}
-      title={t.today.tomorrow.title}
-      description={lessons.length > 0 ? `${day} · ${plural(t.today.lessonCount, lessons.length)}, ${plural(t.today.childCount, children)}` : day}
-      aside={
-        reminders.length > 0 && (
-          <Mark tone={allSent ? 'positive' : 'neutral'} className={allSent ? undefined : 'text-ink-2'}>
+    <section id="tomorrow" aria-labelledby="tomorrow-title" className={cx('on-felt overflow-hidden rounded-tile bg-felt', className)}>
+      <div className="flex flex-wrap items-center gap-x-3.5 gap-y-2.5 px-4 py-3.5 sm:px-[1.125rem]">
+        <IconDisc>
+          <BellSimpleIcon className="size-[1.125rem]" />
+        </IconDisc>
+        <div className="min-w-0 flex-[1_1_14rem]">
+          <h2 id="tomorrow-title" className="truncate text-[0.96875rem] leading-[1.3125rem] font-medium">
+            {lessons.length > 0 ? t.today.board.tomorrowReminders : t.today.tomorrow.title}
+          </h2>
+          <p className="text-[0.84375rem] leading-[1.125rem] text-ink-3 first-letter:uppercase">{line}</p>
+        </div>
+        {reminders.length > 0 && (
+          <span className={cx('text-[0.8125rem] font-medium whitespace-nowrap tabular', allSent ? 'text-green-ink' : 'text-ink-3')}>
             {fmt(t.today.tomorrow.progress, { sent, total: reminders.length })}
-          </Mark>
-        )
-      }
-      bodyClassName="overflow-y-auto"
-      footer={
-        <>
-          {next && next.chat ? (
-            <span className="flex min-w-0 items-center gap-3">
-              <ButtonLink
-                href={next.chat}
-                target="_blank"
-                rel="noopener noreferrer"
-                size="sm"
-                variant="primary"
-                aria-label={fmt(t.messages.inOrder.label, { name: next.seat.child.student_name })}
-                onPress={() => send(next)}
-                icon={<WhatsappLogoIcon aria-hidden className="size-4" />}
-                className="shrink-0 max-lg:h-10"
-              >
-                {t.messages.inOrder.button}
-              </ButtonLink>
-              <span className="truncate">{fmt(t.messages.inOrder.next, { name: next.seat.child.student_name })}</span>
-            </span>
-          ) : (
-            <span>{allSent ? t.messages.inOrder.done : t.today.tomorrow.foot}</span>
-          )}
-          <CardLink href="/calendar">{t.shell.nav.calendar}</CardLink>
-        </>
-      }
-    >
+          </span>
+        )}
+        {next && next.chat && (
+          <ButtonLink
+            href={next.chat}
+            target="_blank"
+            rel="noopener noreferrer"
+            size="sm"
+            variant="primary"
+            aria-label={fmt(t.messages.inOrder.label, { name: next.seat.child.student_name })}
+            onPress={() => send(next)}
+            icon={<WhatsappLogoIcon aria-hidden className="size-4" />}
+            className="shrink-0 max-lg:h-10"
+          >
+            {t.messages.inOrder.button}
+          </ButtonLink>
+        )}
+      </div>
       {isError ? (
-        <div className="p-4 sm:p-5">
+        <div className="px-4 pb-4 sm:px-[1.125rem]">
           <LoadError message={t.today.lessonsFailed} retryLabel={t.common.retry} onRetry={onRetry} />
         </div>
       ) : isPending ? (
-        <ListSkeleton rows={4} />
-      ) : lessons.length === 0 ? (
-        <CardEmpty>{t.today.tomorrow.empty}</CardEmpty>
+        <ListSkeleton rows={2} />
       ) : (
         lessons.map((lesson) => (
-          <div key={lesson.id}>
-            <Band sticky className="font-semibold text-ink-2">
+          <div key={lesson.id} className="border-t border-line">
+            <Band className="pb-1.5">
               <span className="text-ink tabular">{date(lesson.event_date, { hour: '2-digit', minute: '2-digit' })}</span>
               <LessonShape type={lesson.event_type} />
               <span className="min-w-0 flex-1 truncate">
-                {title(lesson)} · {labels.ageGroup(lesson.age_group)}
+                {title(lesson)}, {labels.ageGroup(lesson.age_group)}
               </span>
-              <span className="tabular">{lesson.seats.length}</span>
+              <span className="font-medium text-ink-3 tabular">{lesson.seats.length}</span>
             </Band>
             {lesson.seats.length === 0 ? (
-              <p className="border-b border-line px-4 py-3 text-sm text-ink-3 sm:px-5">{t.today.emptyLesson}</p>
+              <p className="px-4 pb-3 text-[0.84375rem] text-ink-3 sm:px-[1.375rem]">{t.today.emptyLesson}</p>
             ) : (
               <ul>
                 {lesson.seats.map((seat) => {
@@ -365,11 +658,11 @@ export function TomorrowCard({
                   const item = bySeatId.get(seat.id)
                   const done = isSent(seat.id)
                   return (
-                    <CardRow key={seat.id} className="last:border-b">
+                    <CardRow key={seat.id}>
                       <Avatar name={child.student_name} />
                       <div className="min-w-0 flex-1">
                         <ChildLink id={child.id} name={child.student_name} className="block" />
-                        <p className="mt-px truncate text-[0.8125rem] text-ink-3">{fmt(t.today.lessonsCard.parentOf, { name: child.parent_name })}</p>
+                        <p className="truncate text-[0.84375rem] leading-[1.125rem] text-ink-3">{fmt(t.today.lessonsCard.parentOf, { name: child.parent_name })}</p>
                       </div>
                       {seat.status !== 'scheduled' ? (
                         <Mark tone="neutral">{labels.attendance(seat.status)}</Mark>
@@ -379,8 +672,8 @@ export function TomorrowCard({
                           variant="ghost"
                           aria-label={`${t.today.tomorrow.sent}. ${t.messages.undo}`}
                           onPress={() => takeBack(seat.id)}
-                          className="shrink-0 text-ink-3 max-lg:h-10"
-                          icon={<CheckIcon aria-hidden weight="bold" className="size-4 text-whatsapp" />}
+                          className="shrink-0 max-lg:h-10"
+                          icon={<CheckIcon aria-hidden weight="bold" className="size-4 text-green-ink" />}
                         >
                           {t.today.tomorrow.sent}
                         </Button>
@@ -393,7 +686,7 @@ export function TomorrowCard({
                           aria-label={fmt(t.today.tomorrow.remindLabel, { name: child.student_name })}
                           onPress={() => send(item)}
                           className="shrink-0 max-lg:h-10"
-                          icon={<WhatsappLogoIcon aria-hidden className="size-4 text-whatsapp" />}
+                          icon={<WhatsappLogoIcon aria-hidden className="size-4" />}
                         >
                           {t.today.tomorrow.remind}
                         </ButtonLink>
@@ -406,223 +699,6 @@ export function TomorrowCard({
           </div>
         ))
       )}
-    </Card>
-  )
-}
-
-// ---------------------------------------------------------------------------------------------
-
-// Ended packages shown before the rest fold away; a couple more than this are shown in full
-const ENDED_FIRST = 5
-
-export type WorkTab = 'pay' | 'renew'
-
-/** Payments due and packages to renew, one card with two views. */
-export function WorkCard({ now, tab, onTab, className }: { now: Date; tab: WorkTab; onTab: (tab: WorkTab) => void; className?: string }) {
-  const i18n = useI18n()
-  const { t, fmt, money, plural } = i18n
-  const labels = useLabels()
-  const { startTask } = useActions()
-  const payments = usePaymentsDue()
-  const ending = useEndingPackages(now)
-  const [unfolded, setUnfolded] = useState(false)
-  const write = useMessageWriter()
-  const { log } = useReminderLog()
-  const dayKey = localDateKey(now) as string
-  const paid = useRecentReminders('payment', dayKey).byChild
-  const ends = useRecentReminders('package_end', dayKey).byChild
-
-  // "Reminded yesterday" next to a family, so nobody is chased twice in a day
-  const remindedText = (sentAt: string | undefined) => {
-    if (!sentAt) return null
-    const days = differenceInCalendarDays(now, new Date(sentAt))
-    return days <= 0 ? t.messages.reminded.today : days === 1 ? t.messages.reminded.yesterday : plural(t.messages.reminded.days, days)
-  }
-
-  // The soonest end first; ended ones from the latest, as the oldest are often children who left
-  const soon = ending.rows.filter((row) => row.days >= 0).sort((a, b) => a.days - b.days)
-  const ended = ending.rows.filter((row) => row.days < 0).sort((a, b) => b.days - a.days)
-  const endedShown = unfolded || ended.length <= ENDED_FIRST + 2 ? ended : ended.slice(0, ENDED_FIRST)
-
-  const row = (
-    child: Registration,
-    key: string,
-    meta: ReactNode,
-    chip: ReactNode,
-    remind: { kind: 'payment' | 'package_end'; text: string; templateId: string | null; label: string; sentAt?: string },
-    action: { label: string; onPress: () => void }
-  ) => (
-    <CardRow key={key} className="flex-wrap sm:flex-nowrap">
-      <Avatar name={child.student_name} />
-      <div className="min-w-0 flex-1 basis-40">
-        <ChildLink id={child.id} name={child.student_name} className="block" />
-        <p className="mt-px truncate text-[0.8125rem] text-ink-3">
-          {meta}
-          {remind.sentAt && (
-            <span className="text-positive-ink">
-              {' · '}
-              {remindedText(remind.sentAt)}
-            </span>
-          )}
-        </p>
-      </div>
-      <div className="flex shrink-0 items-center gap-2 max-sm:w-full max-sm:pl-12">
-        {chip}
-        <span className="flex-1 sm:hidden" />
-        <WhatsAppLink
-          phone={child.parent_phone}
-          text={remind.text}
-          label={remind.label}
-          className="max-lg:size-10"
-          onPress={() => log({ kind: remind.kind, registrationId: child.id, templateId: remind.templateId })}
-        />
-        <Button size="sm" variant="secondary" className="shrink-0 max-lg:h-10" onPress={action.onPress}>
-          {action.label}
-        </Button>
-      </div>
-    </CardRow>
-  )
-
-  const loading = tab === 'pay' ? payments.registrations : ending.registrations
-  const list =
-    tab === 'pay' ? (
-      payments.total === 0 ? (
-        <CardEmpty>{t.today.payments.empty}</CardEmpty>
-      ) : (
-        <ul>
-          {payments.packages.map((child) =>
-            row(
-              child,
-              child.id,
-              `${labels.packageName(child.package_type)} · ${formatPeriod(i18n, child.package_start_date, child.package_end_date)}`,
-              <Mark tone="action">{t.today.work.package}</Mark>,
-              {
-                kind: 'payment',
-                ...write('payment', {
-                  parentName: child.parent_name,
-                  childName: child.student_name,
-                  packageCode: child.package_type,
-                  endDate: child.package_end_date,
-                  amount: Number(child.payment_amount) > 0 ? money(Number(child.payment_amount)) : null,
-                  now
-                }),
-                label: fmt(t.today.payments.remindLabel, { name: child.student_name }),
-                sentAt: paid.get(child.id)?.sent_at
-              },
-              { label: t.today.payments.collect, onPress: () => startTask('payment', { registrationId: child.id, choice: 'collect' }) }
-            )
-          )}
-          {payments.fees.map((line) => {
-            const child = payments.byId.get(line.registrationId!)!
-            return row(
-              child,
-              line.key,
-              `${line.description || t.children.detail.fee} · ${fmt(t.today.payments.expected, { amount: money(line.amount) })}`,
-              <Mark tone="action">
-                {line.dueDate ? fmt(t.today.work.dueOn, { date: shortDate(i18n, `${line.dueDate}T00:00:00`) }) : t.children.detail.fee}
-              </Mark>,
-              {
-                kind: 'payment',
-                ...write('payment', {
-                  parentName: child.parent_name,
-                  childName: child.student_name,
-                  packageCode: child.package_type,
-                  endDate: child.package_end_date,
-                  amount: money(line.amount),
-                  now
-                }),
-                label: fmt(t.today.payments.remindLabel, { name: child.student_name }),
-                sentAt: paid.get(child.id)?.sent_at
-              },
-              { label: t.today.payments.collect, onPress: () => startTask('payment', { registrationId: child.id, choice: 'collect', entryId: line.id }) }
-            )
-          })}
-        </ul>
-      )
-    ) : ending.rows.length === 0 ? (
-      <CardEmpty>{t.today.ending.empty}</CardEmpty>
-    ) : (
-      <>
-        {[
-          { id: 'soon', label: t.today.ending.soon, rows: soon, all: soon.length },
-          { id: 'ended', label: t.today.ending.ended, rows: endedShown, all: ended.length }
-        ]
-          .filter((group) => group.all > 0)
-          .map((group) => (
-            <div key={group.id}>
-              <Band sticky className="justify-between font-semibold text-ink-2">
-                <span>{group.label}</span>
-                <span className="tabular">{group.all}</span>
-              </Band>
-              <ul>
-                {group.rows.map(({ child, days }) =>
-                  row(
-                    child,
-                    child.id,
-                    `${labels.packageName(child.package_type)} · ${formatPeriod(i18n, child.package_start_date, child.package_end_date)}`,
-                    <Mark tone={days < 0 ? 'negative' : 'action'}>{endText(i18n, days)}</Mark>,
-                    {
-                      kind: 'package_end',
-                      ...write('package_end', {
-                        parentName: child.parent_name,
-                        childName: child.student_name,
-                        packageCode: child.package_type,
-                        endDate: child.package_end_date,
-                        now
-                      }),
-                      label: fmt(t.today.ending.remindLabel, { name: child.student_name }),
-                      sentAt: ends.get(child.id)?.sent_at
-                    },
-                    { label: t.today.ending.renew, onPress: () => startTask('payment', { registrationId: child.id, choice: 'renew' }) }
-                  )
-                )}
-              </ul>
-              {group.id === 'ended' && endedShown.length < ended.length && (
-                <div className="px-2 py-2 sm:px-3">
-                  <Button variant="ghost" size="sm" onPress={() => setUnfolded(true)}>
-                    {plural(t.today.ending.showMore, ended.length - endedShown.length)}
-                  </Button>
-                </div>
-              )}
-            </div>
-          ))}
-      </>
-    )
-
-  return (
-    <Card
-      id="work"
-      className={className}
-      title={t.today.work.title}
-      description={tab === 'pay' ? t.today.work.payBody : t.today.work.renewBody}
-      aside={
-        <CardTabs<WorkTab>
-          label={t.today.work.which}
-          value={tab}
-          onChange={onTab}
-          options={[
-            { id: 'pay', label: t.today.work.pay, count: payments.total },
-            { id: 'renew', label: t.today.work.renew, count: ending.rows.length }
-          ]}
-        />
-      }
-      bodyClassName="overflow-y-auto"
-      footer={
-        <>
-          <span>{tab === 'pay' ? (payments.families > 0 ? plural(t.today.work.payFoot, payments.families) : t.today.payments.empty) : t.today.work.renewFoot}</span>
-          <CardLink href={tab === 'pay' ? '/finance' : '/children'}>{tab === 'pay' ? t.today.work.toFinance : t.today.work.toChildren}</CardLink>
-        </>
-      }
-    >
-      {loading.isError ? (
-        <div className="p-4 sm:p-5">
-          <LoadError message={t.common.loadFailed} retryLabel={t.common.retry} onRetry={() => void loading.refetch()} />
-        </div>
-      ) : !loading.data ? (
-        <ListSkeleton />
-      ) : (
-        list
-      )}
-    </Card>
+    </section>
   )
 }
