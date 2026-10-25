@@ -7,6 +7,8 @@ import { useLabels } from '../../data/queries'
 import { useI18n } from '../../providers/I18n'
 import { EmptyState, Mark, Skeleton } from '../../ui/Bits'
 import { Button } from '../../ui/Button'
+import { MonthCalendar, fromCalendarDate, toCalendarDate } from '../../ui/DateField'
+import { Card } from '../../ui/Page'
 import { LessonShape, SeatDots, typeClass, typeTone } from '../../ui/signature'
 import { cx } from '../../ui/cx'
 import { SeatNames, useLessonTitle } from '../lessons/LessonBits'
@@ -141,6 +143,62 @@ export function DayAgenda({
         </>
       )}
     </section>
+  )
+}
+
+/**
+ * The column beside a day on wide screens: a month to jump to any day from, and the day in
+ * numbers (lessons, seats taken and free, attendance still to mark).
+ */
+export function DayRail({
+  day,
+  lessons,
+  now,
+  isPending,
+  onSelect
+}: {
+  day: Date
+  lessons: Lesson[]
+  now: Date
+  isPending: boolean
+  onSelect: (day: Date) => void
+}) {
+  const { t } = useI18n()
+  const list = useMemo(() => byDay(lessons).get(dayKey(day)) ?? [], [lessons, day])
+  const sum = (count: (lesson: Lesson) => number) => list.reduce((total, lesson) => total + count(lesson), 0)
+  const unmarked = sum((lesson) => unmarkedIn(lesson, now))
+  const rows = [
+    { key: 'lessons', label: t.calendar.dayRail.lessons, value: list.length },
+    { key: 'booked', label: t.calendar.dayRail.booked, value: sum(seatsTaken) },
+    { key: 'free', label: t.calendar.dayRail.free, value: sum((lesson) => Math.max(SEATS_SHOWN - seatsTaken(lesson), 0)) },
+    ...(unmarked > 0 ? [{ key: 'unmarked', label: t.calendar.dayRail.unmarked, value: unmarked }] : [])
+  ]
+
+  return (
+    <aside aria-label={t.calendar.dayRail.summary} className="flex flex-col gap-4">
+      <Card bodyClassName="flex justify-center px-4 py-4">
+        <MonthCalendar
+          aria-label={t.calendar.dayRail.pickDay}
+          value={toCalendarDate(day)}
+          onChange={(value) => {
+            const next = fromCalendarDate(value)
+            if (next) onSelect(next)
+          }}
+        />
+      </Card>
+      <Card title={t.calendar.dayRail.summary} bodyClassName="px-4 pb-2 sm:px-[1.375rem]">
+        <dl>
+          {rows.map((row) => (
+            <div key={row.key} className="flex items-baseline justify-between gap-3 border-t border-line py-2.5 first:border-t-0">
+              <dt className={cx('text-[0.9375rem]', row.key === 'unmarked' ? 'font-medium text-amber-ink' : 'text-ink-2')}>{row.label}</dt>
+              <dd className={cx('text-[1.0625rem] font-semibold tabular', row.key === 'unmarked' && 'text-amber-ink')}>
+                {isPending ? <Skeleton className="h-5 w-6" /> : row.value}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </Card>
+    </aside>
   )
 }
 

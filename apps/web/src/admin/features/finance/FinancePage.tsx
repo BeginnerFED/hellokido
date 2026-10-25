@@ -158,6 +158,8 @@ export default function FinancePage() {
       filter={filter}
       onFilter={setFilter}
       visible={visible}
+      fill={wide}
+      className={wide ? 'h-full' : undefined}
     />
   )
   const monthly = cycle && (
@@ -181,10 +183,14 @@ export default function FinancePage() {
       {wide ? (
         <>
           <div className="mt-[1.125rem]">{overview}</div>
-          <div className="mt-5 grid grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)] items-start gap-5">
+          {/* Both columns end on one line: the moves fill what is left beside the right column and
+              scroll inside, so a busy period no longer stretches the page far below everything else */}
+          <div className="mt-5 grid grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)] gap-5">
             <div className="flex min-w-0 flex-col gap-5">
               {chart}
-              {moves}
+              <div className="relative min-h-[34rem] flex-1">
+                <div className="absolute inset-0 flex flex-col">{moves}</div>
+              </div>
             </div>
             <div className="flex min-w-0 flex-col gap-5">
               {monthly}

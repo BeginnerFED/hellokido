@@ -18,7 +18,7 @@ import { useWideLayout } from '../../ui/useMediaQuery'
 import { cx } from '../../ui/cx'
 import { useClock } from '../today/clock'
 import { CopyWeekSheet } from './CopyWeekSheet'
-import { DayAgenda, WeekStrip } from './DayAgenda'
+import { DayAgenda, DayRail, WeekStrip } from './DayAgenda'
 import { dateRange } from './labels'
 import { MonthDots, MonthGrid } from './MonthGrid'
 import { dayKey, daysOf, rangeOf, weekKey, weekStart, type CalendarView } from './model'
@@ -200,7 +200,7 @@ export default function CalendarPage() {
       {lessons.isError ? (
         <LoadError message={t.calendar.loadFailed} retryLabel={t.common.retry} onRetry={() => void lessons.refetch()} />
       ) : lessons.isPending ? (
-        <Skeleton className={cx('rounded-panel', view === 'day' ? 'h-72 max-w-3xl' : 'h-[36rem]')} />
+        <Skeleton className={cx('rounded-panel', view === 'day' ? 'h-72' : 'h-[36rem]')} />
       ) : (
         <div aria-busy={waiting} className={cx('transition-opacity duration-200', waiting && 'opacity-60')}>
           {view === 'week' && (
@@ -222,9 +222,17 @@ export default function CalendarPage() {
             </div>
           )}
           {view === 'day' && (
-            <div className="flex max-w-3xl flex-col gap-5">
-              <WeekStrip days={daysOf(monday)} selected={anchor} lessons={list} now={now} onSelect={(day) => go({ date: day })} />
-              <DayAgenda day={anchor} lessons={list} now={now} isPending={waiting} onOpen={open} onCreate={createOn} />
+            // Wide screens fill the space beside the day with a month to jump from and the day in numbers
+            <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_19.5rem]">
+              <div className="flex min-w-0 flex-col gap-5">
+                <WeekStrip days={daysOf(monday)} selected={anchor} lessons={list} now={now} onSelect={(day) => go({ date: day })} />
+                <DayAgenda day={anchor} lessons={list} now={now} isPending={waiting} onOpen={open} onCreate={createOn} />
+              </div>
+              {wide && (
+                <div className="max-xl:hidden">
+                  <DayRail day={anchor} lessons={list} now={now} isPending={waiting} onSelect={(day) => go({ date: day })} />
+                </div>
+              )}
             </div>
           )}
           {view === 'month' &&

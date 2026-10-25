@@ -14,7 +14,9 @@ import {
 } from '@hellokido/core/i18n'
 import { formatMoney } from '@hellokido/core/rules/money.js'
 
-const STORAGE_KEY = 'language'
+// Our own name: other sites on the same github.io address also save a plain "language", and the
+// panel opened in English for them. Earlier choices under that name are dropped on purpose.
+const STORAGE_KEY = 'hk-language'
 
 /** The saved interface language (also read outside the provider, e.g. by the error screen). */
 export function readSavedLocale(): Locale {

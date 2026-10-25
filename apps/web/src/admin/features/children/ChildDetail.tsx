@@ -158,7 +158,8 @@ export function ChildDetail({ registration, showName }: { registration: Registra
       )}
 
       <div className="flex flex-col gap-4">
-        <div className="grid items-start gap-4 @2xl:grid-cols-[minmax(0,1fr)_minmax(0,1.08fr)]">
+        {/* Side by side the two cards share one height, so no hole opens under the shorter one */}
+        <div className="grid gap-4 @2xl:grid-cols-[minmax(0,1fr)_minmax(0,1.08fr)]">
           <PackageCard
             registration={registration}
             usage={usage}
@@ -286,7 +287,7 @@ function PackageCard({
           )}
         </span>
       }
-      bodyClassName="px-4 pb-5 sm:px-[1.375rem]"
+      bodyClassName="flex flex-col px-4 pb-5 sm:px-[1.375rem]"
     >
       {failed ? (
         <LoadError message={t.children.phone.usageFailed} retryLabel={t.common.retry} onRetry={onRetry} />
@@ -328,6 +329,9 @@ function PackageCard({
           <ActLine>{plural(t.children.detail.unmarked, usage.unmarkedPast)}</ActLine>
         </div>
       )}
+
+      {/* The next step sits at the foot, level with the lessons card's own foot beside it */}
+      {(pending || renewable) && <div aria-hidden className="mt-auto" />}
 
       {pending && (
         <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-line pt-3.5">

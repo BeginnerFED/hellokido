@@ -220,7 +220,7 @@ const tr = {
   phone: {
     lessonsUnit: { one: 'ders', other: 'ders' },
     leftUnit: { one: 'ders kaldı', other: 'ders kaldı' },
-    parentOf: 'veli {name}',
+    parentOf: 'velisi {name}',
     endsIn: { one: 'Paketi {count} gün sonra bitiyor', other: 'Paketi {count} gün sonra bitiyor' },
     endsToday: 'Paketi bugün bitiyor',
     ended: { one: 'Paketi {count} gün önce bitti', other: 'Paketi {count} gün önce bitti' },

@@ -50,7 +50,7 @@
           }
           var dark = choice === 'dark' || (choice === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
           if (dark) document.documentElement.classList.add('dark');
-          var lang = localStorage.getItem('language');
+          var lang = localStorage.getItem('hk-language');
           if (lang === 'tr' || lang === 'en' || lang === 'uk') document.documentElement.lang = lang;
         } catch (e) { /* storage unavailable */ }
       })();

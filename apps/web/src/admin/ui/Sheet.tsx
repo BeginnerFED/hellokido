@@ -103,7 +103,8 @@ export function Sheet({
             size === 'md' ? 'md:w-[min(31.25rem,calc(100vw-1.5rem))]' : 'md:w-[min(42rem,calc(100vw-1.5rem))]'
           )}
         >
-          <Dialog className="flex min-h-0 flex-1 flex-col outline-none">
+          {/* Passes the panel's rounding down, so the footer's own fill keeps the bottom corners round */}
+          <Dialog className="flex min-h-0 flex-1 flex-col rounded-[inherit] outline-none">
             <div aria-hidden className="mx-auto mt-2 h-1 w-9 shrink-0 rounded-full bg-line-strong md:hidden" />
             <header className="flex shrink-0 items-start gap-3 px-5 pt-3 pb-3.5 md:px-6 md:pt-6">
               <div className="min-w-0 flex-1 pt-0.5">

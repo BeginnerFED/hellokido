@@ -16,8 +16,6 @@ const NATIVE = [
   'ExpoBackgroundNotificationTasksModule',
   'ExpoBadgeModule',
   'ExpoNotificationCategoriesModule',
-  'ExpoNotificationChannelGroupManager',
-  'ExpoNotificationChannelManager',
   'ExpoNotificationPermissionsModule',
   'ExpoNotificationPresenter',
   'ExpoNotificationScheduler',
@@ -25,7 +23,8 @@ const NATIVE = [
   'ExpoNotificationsHandlerModule',
   'ExpoPushTokenManager',
   'NotificationsServerRegistrationModule',
-  ...(Platform.OS === 'android' ? ['ExpoTopicSubscriptionModule'] : [])
+  // Channels and topics exist only on Android; asking for them on the iPhone left it never signed up
+  ...(Platform.OS === 'android' ? ['ExpoNotificationChannelGroupManager', 'ExpoNotificationChannelManager', 'ExpoTopicSubscriptionModule'] : [])
 ]
 
 let loading: Promise<NotificationsModule | null> | null = null

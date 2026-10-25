@@ -123,7 +123,8 @@ export function MovesSection({
   onFilter,
   visible,
   id,
-  className
+  className,
+  fill = false
 }: {
   income: IncomeLine[] | undefined
   expenses: Expense[] | undefined
@@ -135,6 +136,8 @@ export function MovesSection({
   visible: VisibleRange
   id?: string
   className?: string
+  /** Fill the given height and scroll inside it, so the list never sets the page's length */
+  fill?: boolean
 }) {
   const i18n = useI18n()
   const { t, plural, money, date } = i18n
@@ -143,6 +146,8 @@ export function MovesSection({
   const wide = useWideLayout()
   const first = wide ? 40 : 12
   const [limit, setLimit] = useState(first)
+  // A filled card scrolls inside, so it holds the whole period; a page that grows shows it in steps
+  const cap = fill ? Infinity : limit
 
   const moves = useMemo(() => {
     if (!income || !expenses) return null
@@ -184,7 +189,7 @@ export function MovesSection({
   const totalOut = shown.reduce((sum, move) => sum + (move.kind === 'out' ? move.amount : 0), 0)
 
   const days: { key: string; day: Date; moves: Move[] }[] = []
-  for (const move of shown.slice(0, limit)) {
+  for (const move of shown.slice(0, cap)) {
     const key = format(move.at, 'yyyy-MM-dd')
     const last = days[days.length - 1]
     if (last?.key === key) last.moves.push(move)
@@ -198,14 +203,15 @@ export function MovesSection({
       title={t.finance.moves.title}
       aside={moves && <span className="text-[0.8125rem] text-ink-3 tabular">{plural(t.finance.moves.count, filtered ? shown.length : moves.length)}</span>}
       className={className}
+      bodyClassName={cx(fill && 'flex flex-col')}
       footer={
         moves &&
-        shown.length > limit && (
+        shown.length > cap && (
           <CardLink onPress={() => setLimit((count) => count + 60)}>{plural(t.finance.moves.showMore, Math.min(60, shown.length - limit))}</CardLink>
         )
       }
     >
-      <div className="flex flex-col gap-3 px-4 pt-0.5 pb-3 sm:px-[1.375rem]">
+      <div className="flex shrink-0 flex-col gap-3 px-4 pt-0.5 pb-3 sm:px-[1.375rem]">
         <div className="flex flex-wrap items-center gap-2">
           <Segmented<MoveKind>
             aria-label={t.finance.moves.kindLabel}
@@ -284,13 +290,16 @@ export function MovesSection({
             }
           />
         ) : (
-          <div aria-busy={waiting} className={cx('pb-2 transition-opacity duration-200', waiting && 'opacity-60')}>
+          <div
+            aria-busy={waiting}
+            className={cx('pb-2 transition-opacity duration-200', fill && 'min-h-0 flex-1 overflow-y-auto overscroll-contain', waiting && 'opacity-60')}
+          >
             {days.map((group) => {
               const day = date(group.day, isSameYear(group.day, now) ? { weekday: 'long', day: 'numeric', month: 'long' } : { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
               const net = group.moves.reduce((sum, move) => sum + (move.kind === 'in' ? move.amount : -move.amount), 0)
               return (
                 <section key={group.key} aria-labelledby={`day-${group.key}`} className="border-t border-line pt-1.5">
-                  <Band className="justify-between">
+                  <Band sticky={fill} className="justify-between">
                     <h3 id={`day-${group.key}`} className="first-letter:uppercase">
                       {day}
                     </h3>

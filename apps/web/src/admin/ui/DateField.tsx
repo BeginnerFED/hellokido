@@ -15,7 +15,8 @@ import {
   Group,
   Heading,
   Label,
-  Popover
+  Popover,
+  type CalendarProps
 } from 'react-aria-components'
 import { CalendarDate } from '@internationalized/date'
 import { CalendarBlankIcon, CaretLeftIcon, CaretRightIcon } from '@phosphor-icons/react'
@@ -128,10 +129,11 @@ export function DateField({
   )
 }
 
-function MonthCalendar() {
+/** A month to pick a day from: inside a date field's popover, or on its own with a value. */
+export function MonthCalendar(props: Pick<CalendarProps<CalendarDate>, 'value' | 'onChange' | 'aria-label'>) {
   const { t } = useI18n()
   return (
-    <AriaCalendar className="w-[17.5rem]">
+    <AriaCalendar {...props} className="w-[17.5rem]">
       <header className="flex items-center gap-1 pb-2">
         <AriaButton
           slot="previous"

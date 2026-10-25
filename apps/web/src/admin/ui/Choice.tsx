@@ -235,15 +235,18 @@ export function Chips<K extends string>({ options, selected, onChange, multiple,
           id={option.id}
           isDisabled={option.isDisabled}
           className={cx(
-            // Filter chips are outlined pills; a chosen one turns sky felt
+            // Filter chips are outlined pills; a chosen one turns sky felt inside a strong accent
+            // outline with a tick, so it stands out from the rest even at a glance
             'group relative inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-[0.84375rem] font-medium whitespace-nowrap text-ink outline-none',
             'shadow-[inset_0_0_0_1.5px_var(--line)]',
             'pointer-coarse:after:absolute pointer-coarse:after:inset-x-0 pointer-coarse:after:-inset-y-1.5',
             'transition-[background-color,color,box-shadow] duration-150 data-hovered:shadow-[inset_0_0_0_1.5px_var(--line-strong)] data-disabled:opacity-45',
-            'data-selected:bg-sky-felt data-selected:text-sky-ink data-selected:shadow-none',
+            'data-selected:bg-sky-felt data-selected:pl-2.5 data-selected:text-sky-ink data-selected:shadow-[inset_0_0_0_1.5px_var(--accent-ink)]',
+            'data-selected:data-hovered:shadow-[inset_0_0_0_1.5px_var(--accent-ink)]',
             'data-focus-visible:ring-2 data-focus-visible:ring-focus'
           )}
         >
+          <CheckIcon aria-hidden weight="bold" className="hidden size-3.5 shrink-0 group-data-selected:block" />
           {option.icon}
           {option.label}
           {option.badge !== undefined && (
@@ -281,7 +284,7 @@ export function ChipSelect<K extends string>({ options, value, onChange, neutral
           'pointer-coarse:after:absolute pointer-coarse:after:inset-x-0 pointer-coarse:after:-inset-y-1.5',
           'transition-[background-color,color,box-shadow] duration-150 data-focus-visible:ring-2 data-focus-visible:ring-focus',
           on
-            ? 'bg-sky-felt text-sky-ink'
+            ? 'bg-sky-felt text-sky-ink shadow-[inset_0_0_0_1.5px_var(--accent-ink)]'
             : 'text-ink shadow-[inset_0_0_0_1.5px_var(--line)] data-hovered:shadow-[inset_0_0_0_1.5px_var(--line-strong)]'
         )}
       >

@@ -409,11 +409,11 @@ A cool white-and-felt board with one HelloKido blue for action, three logo colou
 
 ## Layout
 
-**Web shell.** From 1024px a floating felt sidebar (236px, inset 12px from the window, 26px round; collapsed to a 72px icon rail) holds the logo alone at the top (150×86, light and dark files), the nav, then Ayarlar and the account block at the foot. The page has a 68px top bar with no band and no hairline: a 38px felt circle for the sidebar toggle, crumbs at 13.5 ink-3 with the last crumb in ink, and a 340px felt search pill with a raised "Ctrl K" key. Below 1024px the sidebar becomes a floating glass tab bar (page at 72% with a real backdrop blur, `--float` shadow, 58px tall, inset 12px) with a "More" sheet.
+**Web shell.** From 1024px a floating felt sidebar (236px, inset 12px from the window, 26px round; collapsed to a 72px icon rail) holds the logo alone at the top (150×86, light and dark files), the nav, then Ayarlar and the account block at the foot. The page has a 68px top bar closed by a 1px line hairline so it reads as its own band (no fill, 28px clear below it to the title): a 38px felt circle for the sidebar toggle, crumbs at 13.5 ink-3 with the last crumb in ink, and a 340px felt search pill with a raised "Ctrl K" key. Below 1024px the sidebar becomes a floating glass tab bar (page at 72% with a real backdrop blur, `--float` shadow, 58px tall, inset 12px) with a "More" sheet.
 
-**Page frame.** Content is centred at 82rem (92rem for wide pages) with 16 / 24px side padding, 36 / 40px on desktop. The header holds the title and summary at the left, and the toolbar at the right in this order: quiet buttons, segmented controls, then one primary. Cards sit 14–20px apart in weighted grids (Today 1.5fr : 1fr; Finance 1.3fr : 1fr : 1fr and 1.55fr : 1fr; Children a 372px list beside a detail column with no outer card).
+**Page frame.** Content is centred at 82rem (92rem for wide pages) with 16 / 24px side padding, 36 / 40px on desktop. The header holds the title and summary at the left, and the toolbar at the right in this order: quiet buttons, segmented controls, then one primary. Cards sit 14–20px apart in weighted grids (Today 1.5fr : 1fr; Finance 1.3fr : 1fr : 1fr and 1.55fr : 1fr; Children a 372px list beside a detail column with no outer card). Cards side by side in one row share its height, and a card's next step sits at its foot, so no hole opens under the shorter one. A list that would outgrow its neighbours (Finance moves) fills the height left beside the right column (34rem at least) and scrolls inside with sticky day bands. From 1280px the Calendar day view has a 19.5rem right column: a month to jump from and the day in numbers.
 
-**Phone.** Tab roots hide the system bar and draw an in-content header: a 30pt title, one 15pt ink-2 line, 44pt glass round buttons at the right. Pushed pages keep the native transparent header. Screen gutter 16, 22 between sections, section head 10 above its card. Rows are 54–64pt with 16pt side padding; rules between rows start at 16pt and run across the content.
+**Phone.** Tab roots draw an in-content header: a 30pt title, one 15pt ink-2 line. On iPhone their buttons and menus live in the native transparent bar and the content starts below that bar (on short-notch phones a title under the bar faded and its buttons could not be pressed); Android hides the system bar and keeps 44pt round buttons at the right of the title. Pushed pages keep the native transparent header. Screen gutter 16, 22 between sections, section head 10 above its card. Rows are 54–64pt with 16pt side padding; rules between rows start at 16pt and run across the content.
 
 **Breakpoints.** 640px (16px inputs end), 768px (sheets move from the bottom to the right), 1024px (sidebar and top bar replace the tab bar; md buttons drop from 44 to 40px).
 
@@ -436,7 +436,7 @@ The board is matte. Felt cards and tiles have no border and no shadow; depth com
 
 ## Shapes
 
-Soft rectangles for containers, pills and circles for everything you press or that stands for a person. Radii nest: sheet 28 → card and sidebar 26 → figure tile 22 → menu 18 → field and selected list row 16 → calendar block 12. Buttons, chips, segmented tracks, marks' pills, search, avatars and beads are full pills or circles. Phone adds type tiles 20, notices 20, date tiles 14 and the compact picker pill 10. Lines are 1px rules inside cards; outlines appear only on filter chips (1.5px inset line), planned beads and empty seats (1.5px mute ring), and a postponed seat (dashed).
+Soft rectangles for containers, pills and circles for everything you press or that stands for a person. Radii nest: sheet 28 → card and sidebar 26 → figure tile 22 → menu 18 → field and selected list row 16 → calendar block 12. Buttons, chips, segmented tracks, marks' pills, search, avatars and beads are full pills or circles. Phone adds type tiles 20, notices 20, date tiles 14 and the compact picker pill 10. Lines are 1px rules inside cards; outlines appear only on filter chips (1.5px inset line, accent ink when chosen), planned beads and empty seats (1.5px mute ring), and a postponed seat (dashed).
 
 **Lesson shapes.** İngilizce a circle, Duyusal a rounded square, Özel a diamond (a square turned 45°), 10px in text, 6 under the phone's week days, 18 (web) / 22 (phone) on tiles. Shape plus colour, so types read without colour.
 
@@ -454,7 +454,7 @@ Soft rectangles for containers, pills and circles for everything you press or th
 - **Focus:** 2px blue ring, 2px offset.
 
 ### Chips and Marks
-- **Filter chips (web):** 32px outlined pills (1.5px inset line), ink words, a 600 count; selected turns sky felt with sky ink and no outline. **Phone chips:** 34pt felt pills in a sideways strip; selected sky felt.
+- **Filter chips (web):** 32px outlined pills (1.5px inset line), ink words, a 600 count; selected turns sky felt with sky ink inside a 1.5px accent-ink outline and a leading tick (sky felt alone barely showed on felt). **Phone chips:** 34pt felt pills in a sideways strip; selected sky felt.
 - **Mark:** a 7px dot and 13/500 words in the status ink, no outline, no fill. Tones: action (amber), positive (green), neutral (ink-3 with a mute dot), plus accent, pink and negative.
 - **Live mark:** "Şimdi, 48 dk kaldı": a 30px raised pill with an 8px pink dot in a 3px 22% pink ring; in dark on a lesson card it takes the card's track.
 

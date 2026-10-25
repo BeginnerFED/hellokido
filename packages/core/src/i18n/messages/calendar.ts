@@ -30,6 +30,15 @@ const tr = {
   addLessonDay: 'Bu güne ders ekle',
   moreLessons: '+{count} ders',
   now: 'Şimdi',
+  /** The column beside a day on wide screens: a month to jump from, and the day in numbers. */
+  dayRail: {
+    pickDay: 'Gün seç',
+    summary: 'Günün özeti',
+    lessons: 'Ders',
+    booked: 'Dolu yer',
+    free: 'Boş yer',
+    unmarked: 'Yoklama bekleyen'
+  },
   theme: {
     label: 'Haftanın konusu',
     none: 'Henüz konu yok',
@@ -175,6 +184,14 @@ const en: Widen<typeof tr> = {
   addLessonDay: 'Add a lesson this day',
   moreLessons: '+{count} more',
   now: 'Now',
+  dayRail: {
+    pickDay: 'Pick a day',
+    summary: 'The day in numbers',
+    lessons: 'Lessons',
+    booked: 'Seats taken',
+    free: 'Free seats',
+    unmarked: 'Attendance to mark'
+  },
   theme: {
     label: 'Theme of the week',
     none: 'No theme yet',
@@ -324,6 +341,14 @@ const uk: Widen<typeof tr> = {
   addLessonDay: 'Додати заняття на цей день',
   moreLessons: '+{count} ще',
   now: 'Зараз',
+  dayRail: {
+    pickDay: 'Виберіть день',
+    summary: 'День у цифрах',
+    lessons: 'Заняття',
+    booked: 'Зайняті місця',
+    free: 'Вільні місця',
+    unmarked: 'Без відмітки'
+  },
   theme: {
     label: 'Тема тижня',
     none: 'Теми ще немає',

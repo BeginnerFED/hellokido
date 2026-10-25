@@ -39,7 +39,8 @@ const tr = {
     allDone: 'Geçmiş yoklamaların hepsi girildi',
     allDoneBody: 'Kalan dersler çocukların sayfalarında güncellendi.',
     inCalendar: 'Takvimde aç',
-    parentOf: 'Veli {name}'
+    // "Velisi", not "Veli": Veli is also a first name, and "Veli Seyhan" read as one person
+    parentOf: 'Velisi {name}'
   },
   work: {
     title: 'Ödemeler ve paketler',

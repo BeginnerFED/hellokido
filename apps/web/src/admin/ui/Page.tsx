@@ -54,7 +54,7 @@ export function Page({ title, summary, toolbar, back, action, crumb, children, w
         className={cx(
           'sticky top-0 z-20 -mx-4 bg-page px-4 pt-[max(0.5rem,env(safe-area-inset-top))] pb-2 transition-shadow duration-200 sm:-mx-6 sm:px-6',
           stuck && 'shadow-[0_1px_0_var(--line)]',
-          'lg:static lg:mx-0 lg:bg-transparent lg:px-0 lg:pt-2.5 lg:pb-[1.375rem] lg:shadow-none'
+          'lg:static lg:mx-0 lg:bg-transparent lg:px-0 lg:pt-7 lg:pb-[1.375rem] lg:shadow-none'
         )}
       >
         <div className="flex min-h-11 flex-wrap items-center gap-x-6 gap-y-3 lg:items-end">
@@ -91,7 +91,7 @@ export function Page({ title, summary, toolbar, back, action, crumb, children, w
   )
 }
 
-/** Desktop only: the rail toggle, where you are and search. No band and no hairline. */
+/** Desktop only: the rail toggle, where you are and search, closed by a hairline so it reads as its own band. */
 function TopBar({ title, back }: { title: ReactNode; back?: { href: string; label: string } }) {
   const { t } = useI18n()
   const actions = useActions()
@@ -103,7 +103,7 @@ function TopBar({ title, back }: { title: ReactNode; back?: { href: string; labe
   const showSection = sectionLabel && !back && typeof title === 'string' ? sectionLabel !== title : false
   const crumbLink = 'shrink-0 rounded-[0.25rem] text-ink-3 no-underline outline-none data-hovered:text-ink data-focus-visible:ring-2 data-focus-visible:ring-focus'
   return (
-    <div className="sticky top-0 z-20 hidden h-[4.25rem] items-center gap-3.5 bg-page lg:flex">
+    <div className="sticky top-0 z-20 hidden h-[4.25rem] items-center gap-3.5 border-b border-line bg-page lg:flex">
       <IconButton label={collapsed ? t.shell.nav.expand : t.shell.nav.collapse} variant="quiet" onPress={toggleRail} className="size-[2.375rem]!">
         <SidebarSimpleIcon aria-hidden className="size-[1.0625rem]" />
       </IconButton>

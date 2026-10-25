@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { AccessibilityInfo, Platform, Pressable, ScrollView, StyleSheet, useWindowDimensions, View, type ScrollViewInstance, type ViewInstance } from 'react-native'
 import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated'
 import { router, type Href } from 'expo-router'
-import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as Haptics from 'expo-haptics'
 import { addDays, addMinutes, differenceInMinutes } from 'date-fns'
@@ -18,7 +17,7 @@ import { useActionMenu } from '../../ui/ActionMenu'
 import { AttendancePicker } from '../../ui/AttendancePicker'
 import { Avatar, EmptyState, firstNameOf, ListSkeleton, LiveMark, LoadError, Mark, Skeleton, TodoRow } from '../../ui/Bits'
 import { Button } from '../../ui/Button'
-import { Card, QuietCard, RoundButton, Screen, Section } from '../../ui/Screen'
+import { Card, QuietCard, RoundButton, Screen, Section, useTabHeader } from '../../ui/Screen'
 import { LessonShape, ProgressTrack } from '../../ui/signature'
 import { Text, together } from '../../ui/Text'
 import { useToast } from '../../ui/Toast'
@@ -48,7 +47,6 @@ export function TodayScreen() {
   const client = useQueryClient()
   const { now, dayKey } = useClock()
   const menu = useActionMenu()
-  const insets = useSafeAreaInsets()
   const scroll = useRef<ScrollViewInstance>(null)
   const [open, setOpen] = useState<Set<Open>>(() => new Set())
   const pendingJump = useRef<Open | null>(null)
@@ -156,8 +154,8 @@ export function TodayScreen() {
     const content = scroll.current?.getInnerViewRef()
     if (!target || !content) return
     const still = await AccessibilityInfo.isReduceMotionEnabled().catch(() => false)
-    // Its head lands just under the status bar
-    target.measureLayout(content, (_x, y) => scroll.current?.scrollTo({ y: Math.max(y - insets.top - 6, 0), animated: !still }))
+    // Its head lands just under the status bar (and the iPhone's bar)
+    target.measureLayout(content, (_x, y) => scroll.current?.scrollTo({ y: Math.max(y - cover - 6, 0), animated: !still }))
   }
   // Each list sits in a place of its own, measured against the page once it has opened
   const places = useRef<Partial<Record<Open, ViewInstance | null>>>({})
@@ -270,6 +268,9 @@ export function TodayScreen() {
     { label: t.shell.quickAdd.note, icon: 'note' as const, onPress: () => tasks.note() },
     { label: t.shell.quickAdd.waitlist, icon: 'waitlist' as const, onPress: () => tasks.waitlist() }
   ]
+  // The iPhone opens "+" from its own bar, as its own dropdown; Android keeps the round button
+  const bar = { options: headerMenus([{ label: t.shell.quickAdd.title, icon: 'add', items: quickAdd }]) }
+  const { cover } = useTabHeader(bar)
 
   return (
     <>
@@ -279,8 +280,7 @@ export function TodayScreen() {
         onRefresh={refresh}
         title={title}
         subtitle={summary}
-        // The iPhone opens "+" from its own bar, as its own dropdown; Android keeps the round button
-        bar={{ options: headerMenus([{ label: t.shell.quickAdd.title, icon: 'add', items: quickAdd }]), buttons: 1 }}
+        bar={bar}
         actions={Platform.OS === 'ios' ? undefined : <RoundButton icon="add" label={t.shell.quickAdd.title} onPress={() => menu.open(t.shell.quickAdd.title, quickAdd)} />}
         gap={0}
       >
