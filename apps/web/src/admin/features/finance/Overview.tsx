@@ -124,7 +124,7 @@ export function Overview({ income, expenses, isError, waiting, onRetry, today, o
       ? null
       : [
           { id: 'bank', label: t.finance.balance.inBank, amount: place.bank - way, color: 'bg-sky' },
-          { id: 'way', label: t.finance.balance.bank, amount: way, color: 'bg-sky-track' },
+          { id: 'way', label: t.finance.balance.bank, amount: way, color: 'on-the-way' },
           { id: 'cash', label: t.finance.methodShort.nakit, amount: place.cash, color: 'bg-cash' }
         ]
   // A part below zero cannot be drawn as a length; the words below still say it
@@ -244,7 +244,7 @@ export function Overview({ income, expenses, isError, waiting, onRetry, today, o
       />
       <Figure
         label={t.finance.balance.bank}
-        dot="bg-sky-track"
+        dot="on-the-way"
         value={onTheWay ? money(onTheWay.amount) : <Skeleton className="my-0.5 h-7 w-24" />}
         hint={onTheWay && (onTheWay.amount > 0 ? plural(t.finance.card.payments, onTheWay.count) : t.finance.balance.bankNone)}
         hint2={

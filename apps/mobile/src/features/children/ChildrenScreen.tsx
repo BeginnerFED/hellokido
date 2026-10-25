@@ -8,7 +8,7 @@ import { phoneDigits, whatsAppLink } from '@hellokido/core/rules/phone.js'
 import { byName, daysLeft, ENDING_WINDOW_DAYS, isEnding, isFree, isPaymentDue, isRunningLow, matchesChild, remainingText } from '@hellokido/core/view'
 import { useTemplates } from '../../data/messages'
 import { useActiveUsage, useCatalog, useChildLessons, useChildUsage, useLabels, useRegistrations } from '../../data/queries'
-import { tasks, useOpenChild } from '../../lib/navigation'
+import { headerButton, tasks, useOpenChild } from '../../lib/navigation'
 import { useI18n } from '../../providers/I18n'
 import { useColors } from '../../theme/colors'
 import { useActionMenu, type MenuItem } from '../../ui/ActionMenu'
@@ -16,7 +16,7 @@ import { Avatar, AVATAR_INSET, EmptyState, firstNameOf, ListSkeleton, LoadError,
 import { Button } from '../../ui/Button'
 import { Chip, SearchField, Segmented } from '../../ui/Fields'
 import { OfflineNotice } from '../../ui/OfflineNotice'
-import { Card, RoundButton, ScreenHeader, usePullRefresh } from '../../ui/Screen'
+import { Card, RoundButton, ScreenHeader, usePullRefresh, useTabHeader } from '../../ui/Screen'
 import { closeSwipedRow, SwipeRow, type RowAction } from '../../ui/SwipeRow'
 import { DOT, Text } from '../../ui/Text'
 import { usePackageOptions } from '../payment/fields'
@@ -42,6 +42,8 @@ export function ChildrenScreen() {
   const c = useColors()
   const insets = useSafeAreaInsets()
   const { t, plural } = useI18n()
+  // "+" in the iPhone's own bar, as on the other tabs; Android keeps the round button
+  const head = useTabHeader({ options: headerButton(c, t.children.newRegistration, 'add', () => tasks.registration()), buttons: 1 })
   const labels = useLabels()
   const client = useQueryClient()
   const menu = useActionMenu()
@@ -150,7 +152,8 @@ export function ChildrenScreen() {
       <ScreenHeader
         title={t.children.title}
         subtitle={rows ? plural(t.children.summary.active, activeCount) : undefined}
-        actions={<RoundButton icon="add" label={t.children.newRegistration} onPress={() => tasks.registration()} />}
+        actions={head.native ? undefined : <RoundButton icon="add" label={t.children.newRegistration} onPress={() => tasks.registration()} />}
+        head={head}
       />
       <View style={styles.tools}>
         <OfflineNotice />
@@ -236,7 +239,7 @@ export function ChildrenScreen() {
 
   return (
     <View style={[styles.flex, { backgroundColor: c.page }]}>
-      <Stack.Screen options={{ headerShown: false }} />
+      <Stack.Screen options={head.options} />
       {menu.element}
       {messaging && <MessagePicker key={messaging.id} registration={messaging} activeUsage={usage?.[messaging.id]} onReady={offerMessages} />}
       <FlatList
@@ -250,6 +253,7 @@ export function ChildrenScreen() {
         ListEmptyComponent={empty}
         onScrollBeginDrag={closeSwipedRow}
         contentInsetAdjustmentBehavior="automatic"
+        contentInset={head.contentInset}
         keyboardDismissMode="on-drag"
         keyboardShouldPersistTaps="handled"
         initialNumToRender={14}

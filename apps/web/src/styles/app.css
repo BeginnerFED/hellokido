@@ -454,6 +454,12 @@
   background-image: repeating-linear-gradient(135deg, transparent 0 6px, color-mix(in srgb, var(--ink) 6%, transparent) 6px 7px);
 }
 
+/* Card money on its way to the bank: the bank's blue in stripes, bank money that has not landed yet */
+@utility on-the-way {
+  background-color: var(--sky-track);
+  background-image: repeating-linear-gradient(135deg, var(--sky) 0 2px, transparent 2px 5px);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

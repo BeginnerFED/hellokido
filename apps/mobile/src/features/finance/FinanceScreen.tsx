@@ -18,10 +18,10 @@ import { upperFirst } from '@hellokido/core/rules/text.js'
 import { arrivalOf, boundsOf, cycleOf, isCycle, isOpen, leftByPlace, PARTNERS, samePeriod, stepPeriod, totalsOf, type Period, type Totals } from '@hellokido/core/view'
 import { keys, useCatalog, useLabels } from '../../data/queries'
 import { useClock } from '../../lib/clock'
-import { tasks } from '../../lib/navigation'
+import { headerMenus, tasks } from '../../lib/navigation'
 import { useI18n } from '../../providers/I18n'
 import { useColors } from '../../theme/colors'
-import { useActionMenu } from '../../ui/ActionMenu'
+import { useActionMenu, type MenuItem } from '../../ui/ActionMenu'
 import { LoadError, Skeleton, StatTile } from '../../ui/Bits'
 import { IconButton } from '../../ui/Button'
 import { Icon } from '../../ui/Icon'
@@ -125,17 +125,28 @@ export function FinanceScreen() {
     { label: t.finance.monthly.add, icon: 'calendar' as const, onPress: () => tasks.recurring() }
   ]
 
-  const otherPeriods = () => {
-    if (!rule) return
-    const preset = matchPreset(period, today, rule)
-    menu.open(undefined, [
-      ...(preset === 'thisPeriod' ? [] : [{ label: presetName(t, 'thisPeriod', rule), onPress: () => go(current) }]),
-      ...(['lastPeriod', 'last14', 'today'] as const)
-        .filter((id) => id !== preset)
-        .map((id) => ({ label: presetName(t, id, rule), onPress: () => go(presetPeriod(id, today, rule)) })),
-      { label: t.finance.period.custom, onPress: tasks.financePeriod }
-    ])
+  // The iPhone's menu ticks the period on screen; Android's sheet leaves it out
+  const preset = rule ? matchPreset(period, today, rule) : null
+  const periodChoices: MenuItem[] = rule
+    ? [
+        ...(['thisPeriod', 'lastPeriod', 'last14', 'today'] as const).map((id) => ({
+          label: presetName(t, id, rule),
+          selected: id === preset,
+          onPress: () => go(id === 'thisPeriod' ? current : presetPeriod(id, today, rule))
+        })),
+        { label: t.finance.period.custom, onPress: tasks.financePeriod }
+      ]
+    : []
+  const otherPeriods = () => menu.open(undefined, periodChoices.filter((choice) => !choice.selected))
+  // The iPhone opens both from its own bar as its own dropdowns: "+" at the edge, the period beside it
+  const bar = {
+    options: headerMenus([
+      { label: t.common.add, icon: 'add', items: add },
+      ...(rule ? [{ label: t.finance.period.otherPeriod, icon: 'calendar' as const, items: periodChoices }] : [])
+    ]),
+    buttons: rule ? 2 : 1
   }
+  const fromBar = Platform.OS === 'ios'
 
   const shownIncome = failed || !ready ? undefined : income.data
   const settle = catalog.isPending ? null : cards.days
@@ -155,7 +166,8 @@ export function FinanceScreen() {
         scrollRef={scroll}
         onRefresh={refresh}
         title={t.shell.nav.finance}
-        actions={<RoundButton icon="add" label={t.common.add} onPress={() => menu.open(undefined, add)} />}
+        bar={bar}
+        actions={fromBar ? undefined : <RoundButton icon="add" label={t.common.add} onPress={() => menu.open(undefined, add)} />}
       >
         {/* The period and its figures read as one block; the sections below keep the usual room apart */}
         <View style={styles.head}>
@@ -163,20 +175,29 @@ export function FinanceScreen() {
             <IconButton icon="chevronLeft" label={t.finance.period.previous} variant="felt" size={40} disabled={!ready} onPress={() => step(-1)} />
             {ready ? (
               <View style={styles.middle}>
-                <Pressable
-                  onPress={otherPeriods}
-                  accessibilityRole="button"
-                  accessibilityLabel={`${periodName(i18n, period)}. ${t.finance.period.otherPeriod}`}
-                  accessibilityLiveRegion="polite"
-                  hitSlop={8}
-                  style={({ pressed }) => [styles.pick, pressed && styles.pressed]}
-                >
-                  {/* A long custom range ("10 Eki 2025 – 9 Kas 2026") shrinks a little before it is cut */}
-                  <Text variant="headline" tabular numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={[styles.periodName, styles.shrink]}>
-                    {periodName(i18n, period)}
-                  </Text>
-                  <Icon name="chevronDown" size={14} color={c.ink2} weight="semibold" />
-                </Pressable>
+                {fromBar ? (
+                  // On the iPhone the period is chosen from the bar, so here it is only named
+                  <View accessible accessibilityLabel={periodName(i18n, period)} style={styles.pick}>
+                    <Text variant="headline" tabular numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={[styles.periodName, styles.shrink]}>
+                      {periodName(i18n, period)}
+                    </Text>
+                  </View>
+                ) : (
+                  <Pressable
+                    onPress={otherPeriods}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${periodName(i18n, period)}. ${t.finance.period.otherPeriod}`}
+                    accessibilityLiveRegion="polite"
+                    hitSlop={8}
+                    style={({ pressed }) => [styles.pick, pressed && styles.pressed]}
+                  >
+                    {/* A long custom range ("10 Eki 2025 – 9 Kas 2026") shrinks a little before it is cut */}
+                    <Text variant="headline" tabular numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={[styles.periodName, styles.shrink]}>
+                      {periodName(i18n, period)}
+                    </Text>
+                    <Icon name="chevronDown" size={14} color={c.ink2} weight="semibold" />
+                  </Pressable>
+                )}
                 {isCurrent ? (
                   <Text variant="sub" tone="ink3" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85}>
                     {lastPayday
@@ -296,6 +317,19 @@ function Line({ line, height, width }: { line: number; height: number; width: Di
   )
 }
 
+const STRIPES = Array.from({ length: 100 }, (_, index) => index)
+
+/** Card money on its way to the bank: the bank's blue in stripes, bank money that has not landed yet. */
+function Stripes({ color }: { color: string }) {
+  return (
+    <View pointerEvents="none" style={styles.stripes}>
+      {STRIPES.map((index) => (
+        <View key={index} style={[styles.stripe, { left: index * 5, backgroundColor: color }]} />
+      ))}
+    </View>
+  )
+}
+
 /**
  * The period's summary: a felt card with what is left of it (in the period still running, what
  * the partners will share, with where that money is now and each partner's part; in a closed one,
@@ -384,7 +418,7 @@ function Overview({ income, expenses, isError, waiting, onRetry, before, today, 
       ? null
       : [
           { id: 'bank', label: t.finance.balance.inBank, amount: place.bank - onTheWay, color: c.sky },
-          { id: 'way', label: t.finance.balance.bank, amount: onTheWay, color: c.skyTrack },
+          { id: 'way', label: t.finance.balance.bank, amount: onTheWay, color: c.skyTrack, stripes: c.sky },
           { id: 'cash', label: t.finance.methodShort.nakit, amount: place.cash, color: c.cash }
         ]
   // A part below zero cannot be drawn as a length; the words below still say it
@@ -439,7 +473,9 @@ function Overview({ income, expenses, isError, waiting, onRetry, before, today, 
                     {parts
                       .filter((part) => part.amount > 0)
                       .map((part) => (
-                        <View key={part.id} style={[styles.moneyPart, { flexGrow: part.amount, backgroundColor: part.color }]} />
+                        <View key={part.id} style={[styles.moneyPart, { flexGrow: part.amount, backgroundColor: part.color }]}>
+                          {part.stripes && <Stripes color={part.stripes} />}
+                        </View>
                       ))}
                   </View>
                 )}
@@ -449,7 +485,7 @@ function Overview({ income, expenses, isError, waiting, onRetry, before, today, 
                     const body = (
                       <>
                         <View style={styles.legendHead}>
-                          <View style={[styles.legendKey, { backgroundColor: part.color }]} />
+                          <View style={[styles.legendKey, { backgroundColor: part.color }]}>{part.stripes && <Stripes color={part.stripes} />}</View>
                           <Text variant="foot" tone="ink3" numberOfLines={2} style={styles.shrink}>
                             {part.label}
                           </Text>
@@ -572,11 +608,13 @@ const styles = StyleSheet.create({
   heroHint: { marginTop: 2 },
   // One row of parts, each as long as its amount
   moneyBar: { flexDirection: 'row', gap: 3, height: 12, marginTop: 16 },
-  moneyPart: { flexBasis: 0, borderRadius: 4 },
+  moneyPart: { flexBasis: 0, borderRadius: 4, overflow: 'hidden' },
+  stripes: { position: 'absolute', top: 0, bottom: 0, left: -16, right: 0, transform: [{ skewX: '-45deg' }] },
+  stripe: { position: 'absolute', top: 0, bottom: 0, width: 2 },
   legend: { flexDirection: 'row', gap: 8, marginTop: 12 },
   legendCell: { flex: 1, minWidth: 0 },
   legendHead: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  legendKey: { width: 9, height: 9, borderRadius: 3 },
+  legendKey: { width: 9, height: 9, borderRadius: 3, overflow: 'hidden' },
   legendAmount: { fontSize: 16, lineHeight: 21, marginTop: 3 },
   // The foot of the card under a rule: each partner's part, or how the money came in
   foot: { marginTop: 14, paddingTop: 14, borderTopWidth: 1 },

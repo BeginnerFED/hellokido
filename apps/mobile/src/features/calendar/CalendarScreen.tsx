@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { StyleSheet, View } from 'react-native'
+import { Platform, StyleSheet, View } from 'react-native'
 import Animated, { FadeIn, useReducedMotion } from 'react-native-reanimated'
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import { addDays, addMonths, isSameMonth, isSameWeek } from 'date-fns'
@@ -8,8 +8,9 @@ import { upperFirst } from '@hellokido/core/rules/text.js'
 import { byDay, dayKey, daysOf, rangeOf, weekKey, weekStart } from '@hellokido/core/view'
 import { keys } from '../../data/queries'
 import { useClock } from '../../lib/clock'
-import { tasks, useOpenLesson } from '../../lib/navigation'
+import { headerButton, tasks, useOpenLesson } from '../../lib/navigation'
 import { useI18n } from '../../providers/I18n'
+import { useColors } from '../../theme/colors'
 import { useActionMenu } from '../../ui/ActionMenu'
 import { EmptyState, LoadError, Skeleton } from '../../ui/Bits'
 import { Button } from '../../ui/Button'
@@ -25,6 +26,7 @@ type Mode = 'day' | 'month'
  * view shows which days have lessons and the theme of each week.
  */
 export function CalendarScreen() {
+  const c = useColors()
   const i18n = useI18n()
   const { t, plural, date } = i18n
   const client = useQueryClient()
@@ -76,6 +78,8 @@ export function CalendarScreen() {
         onRefresh={refresh}
         gap={0}
         title={t.calendar.title}
+        // "+" in the iPhone's own bar, as on the other tabs; Android keeps the round button
+        bar={{ options: headerButton(c, t.calendar.newLesson, 'add', () => createOn(selected)), buttons: 1 }}
         actions={
           <>
             <Segmented<Mode>
@@ -88,7 +92,7 @@ export function CalendarScreen() {
               onChange={setMode}
               style={styles.modes}
             />
-            <RoundButton icon="add" label={t.calendar.newLesson} onPress={() => createOn(selected)} />
+            {Platform.OS !== 'ios' && <RoundButton icon="add" label={t.calendar.newLesson} onPress={() => createOn(selected)} />}
           </>
         }
       >

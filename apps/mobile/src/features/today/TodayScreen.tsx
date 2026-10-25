@@ -1,5 +1,6 @@
-import { useMemo, useRef, useState } from 'react'
-import { AccessibilityInfo, Pressable, StyleSheet, useWindowDimensions, View, type ScrollViewInstance, type ViewInstance } from 'react-native'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { AccessibilityInfo, Platform, Pressable, ScrollView, StyleSheet, useWindowDimensions, View, type ScrollViewInstance, type ViewInstance } from 'react-native'
+import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated'
 import { router, type Href } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -10,7 +11,7 @@ import { holdsSeat } from '@hellokido/core/rules/attendance.js'
 import { endText, isPaymentDue, LESSON_MINUTES, remainingText } from '@hellokido/core/view'
 import { keys, useLabels, useUsageOf } from '../../data/queries'
 import { useClock } from '../../lib/clock'
-import { tasks, useOpenLesson } from '../../lib/navigation'
+import { headerMenus, tasks, useOpenLesson } from '../../lib/navigation'
 import { useI18n } from '../../providers/I18n'
 import { tint, typeTone, useColors } from '../../theme/colors'
 import { useActionMenu } from '../../ui/ActionMenu'
@@ -36,9 +37,9 @@ const names = (list: string[], max = 3) => {
 }
 
 /**
- * The working day as a felt board: the running lesson (or the next one; after the last, the last
- * one) as a card in its type's colour with attendance in one tap, the rest of the day as tiles, and
- * what waits for the admin as one card of jobs, each opening its list.
+ * The working day as a felt board: every lesson of the day as a card in its type's colour with
+ * attendance in one tap, in a row that opens on the running lesson (or the next one; after the last,
+ * the last one), and what waits for the admin as one card of jobs, each opening its list.
  */
 export function TodayScreen() {
   const { t, plural, fmt, date } = useI18n()
@@ -117,7 +118,6 @@ export function TodayScreen() {
     lastOf((lesson) => lesson.seats.length > 0) ??
     todays[todays.length - 1]
   const phase: Phase = running ? 'running' : upcoming ? 'next' : 'done'
-  const later = hero ? todays.filter((lesson) => lesson.id !== hero.id && new Date(lesson.event_date) > new Date(hero.event_date) && lessonEnd(lesson) > now) : []
   // Lessons of today that have ended (other than the hero), whose missing attendance waits below
   const earlier = todays.filter((lesson) => lesson.id !== hero?.id && lessonEnd(lesson) <= now)
 
@@ -279,13 +279,15 @@ export function TodayScreen() {
         onRefresh={refresh}
         title={title}
         subtitle={summary}
-        actions={<RoundButton icon="add" label={t.shell.quickAdd.title} onPress={() => menu.open(t.shell.quickAdd.title, quickAdd)} />}
+        // The iPhone opens "+" from its own bar, as its own dropdown; Android keeps the round button
+        bar={{ options: headerMenus([{ label: t.shell.quickAdd.title, icon: 'add', items: quickAdd }]), buttons: 1 }}
+        actions={Platform.OS === 'ios' ? undefined : <RoundButton icon="add" label={t.shell.quickAdd.title} onPress={() => menu.open(t.shell.quickAdd.title, quickAdd)} />}
         gap={0}
       >
         {lessons.isError ? (
           <LoadError message={t.today.lessonsFailed} retryLabel={t.common.retry} onRetry={() => void lessons.refetch()} />
         ) : lessons.isPending ? (
-          <View style={styles.tiles}>
+          <View style={styles.skeleton}>
             <Skeleton height={300} radius={26} />
           </View>
         ) : !hero ? (
@@ -302,21 +304,7 @@ export function TodayScreen() {
             />
           </Card>
         ) : (
-          <>
-            <HeroLesson lesson={hero} phase={phase} now={now} usage={usage} saving={saving} onMark={(seat, status) => void mark(seat, status)} />
-            {later.length > 0 && (
-              <View style={styles.tiles}>
-                {pairs(later).map((pair) => (
-                  <View key={pair[0].id} style={styles.pair}>
-                    {pair.map((lesson) => (
-                      <NextTile key={lesson.id} lesson={lesson} />
-                    ))}
-                    {pair.length === 1 && <View style={styles.flex} />}
-                  </View>
-                ))}
-              </View>
-            )}
-          </>
+          <DayCarousel lessons={todays} hero={hero} next={upcoming} now={now} usage={usage} saving={saving} onMark={(seat, status) => void mark(seat, status)} />
         )}
 
         <Section title={t.today.board.waitingTitle} aside={jobs.length > 0 ? plural(t.today.board.jobs, jobs.length) : undefined} style={styles.waiting}>
@@ -361,12 +349,127 @@ export function TodayScreen() {
   )
 }
 
-type Phase = 'running' | 'next' | 'done'
+type Phase = 'running' | 'next' | 'later' | 'done'
 
-function pairs<T>(list: T[]): T[][] {
-  const out: T[][] = []
-  for (let i = 0; i < list.length; i += 2) out.push(list.slice(i, i + 2))
-  return out
+const GAP = 10
+// The card in the middle of the row leaves this much of each neighbour in sight
+const PEEK = 18
+// After a swipe of their own, the row stays where the admin left it for this long
+const LEFT_ALONE = 2 * 60_000
+
+/**
+ * The whole day as a row of felt cards to swipe, as the App Store shows its stories: it opens on the
+ * lesson of the moment, with the earlier ones to the left and the later ones to the right. Once a
+ * swipe settles the row takes the height of the card in view, so what follows never leaves a gap.
+ */
+function DayCarousel({
+  lessons,
+  hero,
+  next,
+  now,
+  usage,
+  saving,
+  onMark
+}: {
+  lessons: Lesson[]
+  hero: Lesson
+  next: Lesson | undefined
+  now: Date
+  usage: UsageMap | undefined
+  saving: Set<string>
+  onMark: (seat: Seat, status: AttendanceStatus) => void
+}) {
+  const width = useWindowDimensions().width
+  const still = useReducedMotion()
+  const row = useRef<ScrollViewInstance>(null)
+  const count = lessons.length
+  const card = count === 1 ? width - 32 : width - 2 * (PEEK + GAP)
+  const step = card + GAP
+  const end = Math.max(0, 32 + count * step - GAP - width)
+  // The first card keeps the page's edge, the last one too; those between sit in the middle
+  const offsets = lessons.map((_, index) => Math.min(end, Math.max(0, 16 + index * step - (width - card) / 2)))
+  const heroIndex = Math.max(0, lessons.findIndex((lesson) => lesson.id === hero.id))
+
+  // The height changes only once the row is still: on Android a new height mid-swipe stops the snap halfway
+  const height = useSharedValue(0)
+  const frame = useAnimatedStyle(() => (height.get() > 0 ? { height: height.get() } : {}))
+  const measured = useRef<number[]>([])
+  const current = useRef(heroIndex)
+  const fit = (animated: boolean) => {
+    const list = measured.current
+    if (list.length !== count || list.includes(0)) return
+    const target = list[Math.min(current.current, count - 1)]
+    height.set(animated && !still && height.get() > 0 ? withTiming(target, { duration: 240, easing: Easing.out(Easing.cubic) }) : target)
+  }
+  const nearest = (x: number) => offsets.reduce((best, offset, index) => (Math.abs(offset - x) < Math.abs(offsets[best] - x) ? index : best), 0)
+  const settle = (x: number) => {
+    current.current = nearest(x)
+    fit(true)
+  }
+
+  const shown = useRef<string | null>(null)
+  const touched = useRef(0)
+  const show = (animated: boolean) => {
+    shown.current = hero.id
+    current.current = heroIndex
+    row.current?.scrollTo({ x: offsets[heroIndex], animated })
+    if (!animated) fit(false)
+    else setTimeout(() => fit(true), 400)
+  }
+  // As the day moves on the row follows the lesson of the moment, unless the admin is looking elsewhere
+  useEffect(() => {
+    if (shown.current !== null && shown.current !== hero.id && Date.now() - touched.current > LEFT_ALONE) show(!still)
+  }, [hero.id])
+
+  const phaseOf = (lesson: Lesson): Phase =>
+    lessonEnd(lesson) <= now ? 'done' : new Date(lesson.event_date) <= now ? 'running' : lesson.id === next?.id ? 'next' : 'later'
+
+  return (
+    <Animated.View style={[styles.carousel, frame]}>
+      <ScrollView
+        ref={row}
+        horizontal
+        scrollEnabled={count > 1}
+        showsHorizontalScrollIndicator={false}
+        // A tap on the iPhone's status bar still takes the page to its top
+        scrollsToTop={false}
+        contentInsetAdjustmentBehavior="never"
+        snapToOffsets={offsets}
+        decelerationRate="fast"
+        disableIntervalMomentum
+        onScrollBeginDrag={() => {
+          touched.current = Date.now()
+        }}
+        onScrollEndDrag={(event) => {
+          // Let go right on a card, the row has no glide left to wait for
+          const x = event.nativeEvent.contentOffset.x
+          const index = nearest(x)
+          if (Math.abs(offsets[index] - x) < 1) settle(x)
+        }}
+        onMomentumScrollEnd={(event) => settle(event.nativeEvent.contentOffset.x)}
+        onContentSizeChange={() => {
+          if (shown.current === null) show(false)
+        }}
+        // The row keeps the tallest card's height and the frame around it clips
+        style={styles.carouselScroll}
+        contentContainerStyle={styles.carouselRow}
+      >
+        {lessons.map((lesson, index) => (
+          <View
+            key={lesson.id}
+            style={{ width: card }}
+            onLayout={(event) => {
+              const own = event.nativeEvent.layout.height
+              measured.current = Array.from({ length: count }, (_, at) => (at === index ? own : (measured.current[at] ?? 0)))
+              fit(true)
+            }}
+          >
+            <HeroLesson lesson={lesson} phase={phaseOf(lesson)} now={now} usage={usage} saving={saving} onMark={onMark} />
+          </View>
+        ))}
+      </ScrollView>
+    </Animated.View>
+  )
 }
 
 /**
@@ -410,7 +513,7 @@ function HeroLesson({ lesson, phase, now, usage, saving, onMark }: { lesson: Les
             {time}
           </Text>
           <LiveMark live={phase === 'running'} type={lesson.event_type}>
-            {phase === 'running' ? t.today.now : phase === 'next' ? t.today.board.next : t.today.board.done}
+            {phase === 'running' ? t.today.now : phase === 'next' ? t.today.board.next : phase === 'later' ? t.today.board.later : t.today.board.done}
           </LiveMark>
         </View>
         <View style={styles.heroType}>
@@ -474,7 +577,7 @@ function HeroLesson({ lesson, phase, now, usage, saving, onMark }: { lesson: Les
                     ) : isPaymentDue(child) ? (
                       <Mark tone="action">{t.children.pendingPayment}</Mark>
                     ) : (
-                      <Text variant="sub" numberOfLines={2} style={{ color: low ? c.amberInk : tone.ink, opacity: low ? 1 : 0.82 }}>
+                      <Text variant="sub" numberOfLines={2} style={[styles.left, { color: low ? c.amberInk : tone.ink, opacity: low ? 1 : 0.82 }]}>
                         {left ? remainingText(i18n, left) : ' '}
                       </Text>
                     )}
@@ -497,40 +600,6 @@ function HeroLesson({ lesson, phase, now, usage, saving, onMark }: { lesson: Les
   )
 }
 
-/** A later lesson of the day as a felt tile in its type: the time, the type and its age group and seats. */
-function NextTile({ lesson }: { lesson: Lesson }) {
-  const c = useColors()
-  const { t, fmt, date } = useI18n()
-  const labels = useLabels()
-  const title = useLessonTitle()
-  const openLesson = useOpenLesson()
-  const tone = typeTone(c, lesson.event_type)
-  const time = date(lesson.event_date, { hour: '2-digit', minute: '2-digit' })
-  const taken = lesson.seats.filter((seat) => holdsSeat(seat.status)).length
-  const meta = [labels.ageGroup(lesson.age_group), fmt(t.today.lessonsCard.seatsShort, { count: taken, capacity: SEATS_SHOWN })].filter(Boolean).join(', ')
-  return (
-    <Pressable
-      onPress={() => openLesson(lesson.id)}
-      accessibilityRole="button"
-      accessibilityLabel={`${time}, ${title(lesson)}, ${meta}`}
-      style={({ pressed }) => [styles.tile, { backgroundColor: tone.felt }, pressed && { transform: [{ scale: 0.98 }] }]}
-    >
-      <Text variant="figure" tabular style={{ color: tone.ink }}>
-        {time}
-      </Text>
-      <View style={styles.tileName}>
-        <LessonShape type={lesson.event_type} />
-        <Text weight="600" numberOfLines={1} style={[styles.tileTitle, { color: tone.ink }]}>
-          {title(lesson)}
-        </Text>
-      </View>
-      <Text numberOfLines={1} style={[styles.tileMeta, { color: tone.ink }]}>
-        {meta}
-      </Text>
-    </Pressable>
-  )
-}
-
 const styles = StyleSheet.create({
   flex: { flex: 1, minWidth: 0 },
   shrink: { flexShrink: 1 },
@@ -549,12 +618,13 @@ const styles = StyleSheet.create({
   attRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 },
   attRowStacked: { flexDirection: 'column', alignItems: 'stretch' },
   attWho: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  tiles: { marginTop: 10, gap: 10 },
-  pair: { flexDirection: 'row', gap: 10 },
-  tile: { flex: 1, minWidth: 0, borderRadius: 22, paddingTop: 14, paddingHorizontal: 15, paddingBottom: 15 },
-  tileName: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 6 },
-  tileTitle: { fontSize: 15, lineHeight: 20, flexShrink: 1 },
-  tileMeta: { fontSize: 13, lineHeight: 17, marginTop: 2, opacity: 0.88 },
+  // What is left of the package, a step under the name
+  left: { fontSize: 12.5, lineHeight: 16 },
+  skeleton: { marginTop: 10 },
+  // The row runs to the screen's edges, so the neighbouring cards show there
+  carousel: { marginHorizontal: -16, overflow: 'hidden' },
+  carouselScroll: { flexGrow: 0, flexShrink: 0 },
+  carouselRow: { paddingHorizontal: 16, gap: GAP, alignItems: 'flex-start' },
   waiting: { marginTop: 22 },
   todoCard: { paddingVertical: 2 },
   place: { marginTop: 22 }

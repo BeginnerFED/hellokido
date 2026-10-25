@@ -126,17 +126,16 @@ export function Mark({ tone, children }: { tone: MarkTone; children: ReactNode }
 }
 
 /**
- * A small raised pill on a lesson's card: "Şimdi" with the pink live dot while it runs, or a plain
- * word ("Bitti", "Sıradaki"). In the dark it takes the type's track.
+ * Where a lesson stands, as words on its card: "Şimdi" led by the pink live dot while it runs, or a
+ * plain word ("Bitti", "Sıradaki"). Bare text in the card's ink, so it never reads as a button.
  */
 export function LiveMark({ children, live, type }: { children: string; live?: boolean; type?: string }) {
   const c = useColors()
   const tone = type ? typeTone(c, type) : null
-  const dark = tone?.dark ?? false
   return (
-    <View style={[styles.live, { backgroundColor: dark && tone ? tone.track : c.raised, paddingLeft: live ? 9 : 11 }]}>
+    <View style={styles.live}>
       {live && <View style={[styles.liveDot, { backgroundColor: c.pink, boxShadow: `0 0 0 3px ${c.pink}38` }]} />}
-      <Text weight="500" numberOfLines={1} maxFontSizeMultiplier={1.2} style={[styles.liveText, { color: dark && tone ? tone.ink : c.ink }]}>
+      <Text weight={live ? '600' : '500'} numberOfLines={1} maxFontSizeMultiplier={1.2} style={[styles.liveText, { color: tone?.ink ?? c.ink2 }, !live && styles.liveQuiet]}>
         {children}
       </Text>
     </View>
@@ -375,9 +374,10 @@ const styles = StyleSheet.create({
   mark: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1, minWidth: 0 },
   markDot: { width: 7, height: 7, borderRadius: 4 },
   markText: { fontSize: 13, lineHeight: 17, flexShrink: 1 },
-  live: { height: 28, borderRadius: 14, paddingRight: 11, flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 0 },
+  live: { height: 28, flexDirection: 'row', alignItems: 'center', gap: 7, flexShrink: 0 },
   liveDot: { width: 8, height: 8, borderRadius: 4 },
-  liveText: { fontSize: 13.5, lineHeight: 17 },
+  liveText: { fontSize: 14, lineHeight: 18 },
+  liveQuiet: { opacity: 0.75 },
   notice: { borderRadius: 20, paddingHorizontal: 16, paddingVertical: 12, flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   noticeDot: { width: 7, height: 7, borderRadius: 4, marginTop: 6 },
   empty: { alignItems: 'center', paddingHorizontal: 24, paddingVertical: 28 },

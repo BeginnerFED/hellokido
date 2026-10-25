@@ -68,27 +68,32 @@ export function headerMenu(
   openOnAndroid: (items: MenuItem[]) => void,
   icon: IconName = 'add'
 ): NativeStackNavigationOptions {
-  if (Platform.OS === 'ios') {
-    return {
-      unstable_headerRightItems: () => [
-        {
-          type: 'menu',
-          label,
-          icon: { type: 'sfSymbol', name: symbolOf(icon).ios },
-          menu: {
-            items: items.map((item) => ({
-              type: 'action' as const,
-              label: item.label,
-              icon: item.icon ? { type: 'sfSymbol' as const, name: symbolOf(item.icon).ios } : undefined,
-              destructive: item.destructive,
-              onPress: item.onPress
-            }))
-          }
-        }
-      ]
-    }
-  }
+  if (Platform.OS === 'ios') return headerMenus([{ label, icon, items }])
   return { headerRight: () => <IconButton icon={icon} label={label} variant="plain" size={40} color={c.accentInk} onPress={() => openOnAndroid(items)} /> }
+}
+
+export type BarMenu = { label: string; icon: IconName; items: MenuItem[] }
+
+/** iPhone only: menus in the navigation bar, the first at the right edge; the current choice is ticked. */
+export function headerMenus(menus: BarMenu[]): NativeStackNavigationOptions {
+  return {
+    unstable_headerRightItems: () =>
+      menus.map(({ label, icon, items }) => ({
+        type: 'menu' as const,
+        label,
+        icon: { type: 'sfSymbol' as const, name: symbolOf(icon).ios },
+        menu: {
+          items: items.map((item) => ({
+            type: 'action' as const,
+            label: item.label,
+            icon: item.icon ? { type: 'sfSymbol' as const, name: symbolOf(item.icon).ios } : undefined,
+            destructive: item.destructive,
+            state: item.selected ? ('on' as const) : undefined,
+            onPress: item.onPress
+          }))
+        }
+      }))
+  }
 }
 
 export function headerButton(c: Colors, label: string, icon: IconName, onPress: () => void): NativeStackNavigationOptions {

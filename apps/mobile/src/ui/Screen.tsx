@@ -1,4 +1,5 @@
 import { Children, createContext, Fragment, isValidElement, useCallback, useContext, useState, type ReactNode, type Ref } from 'react'
+import { HeaderHeightContext } from 'expo-router/react-navigation'
 import {
   ActivityIndicator,
   Platform,
@@ -14,7 +15,7 @@ import {
   type StyleProp,
   type ViewStyle
 } from 'react-native'
-import { Stack } from 'expo-router'
+import { Stack, type NativeStackNavigationOptions } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { typeTone, useColors, type TileTone } from '../theme/colors'
 import { IconButton } from './Button'
@@ -50,26 +51,62 @@ type ScreenProps = {
   subtitle?: ReactNode
   /** Round buttons at the right of the title (`RoundButton`), or a small segmented control. */
   actions?: ReactNode
+  /** The iPhone's own bar buttons that stand in for the round ones (`headerMenus`, `headerButton`). */
+  bar?: TabBar
   onScroll?: (event: NativeSyntheticEvent<NativeScrollEvent>) => void
+}
+
+/** A tab root's buttons in the iPhone's own bar, and how many there are. */
+export type TabBar = { options: NativeStackNavigationOptions; buttons: number }
+
+// The room a bar button takes at the right of the title row, and the bar's own height
+const BAR_BUTTON = 52
+const BAR_HEIGHT = 44
+const TITLE_LINE = 36
+
+/**
+ * A tab root's header. On the iPhone, a `bar` puts its buttons in the system bar, clear over the
+ * page, so a menu opens as the phone's own dropdown; the page then slides up under the bar so the
+ * title row and the buttons share one line, and the title keeps clear of them. Without a bar, and
+ * on Android, the system bar stays hidden and the page draws its round buttons.
+ */
+export function useTabHeader(bar: TabBar | undefined) {
+  const insets = useSafeAreaInsets()
+  const height = useContext(HeaderHeightContext)
+  const native = Platform.OS === 'ios' && bar !== undefined
+  // How far the bar reaches below the safe area's top, where the page would otherwise start
+  const under = native && height !== undefined ? Math.max(0, height - insets.top) : 0
+  return {
+    native,
+    options: native
+      ? { headerShown: true, headerTransparent: true, headerStyle: { backgroundColor: 'transparent' }, title: '', ...bar.options }
+      : { headerShown: false },
+    contentInset: native ? { top: -under } : undefined,
+    // The title's first line centred on the bar's buttons
+    top: native ? Math.min(10, Math.max(0, under - (BAR_HEIGHT + TITLE_LINE) / 2)) : undefined,
+    reserve: native ? bar.buttons * BAR_BUTTON : 0
+  }
 }
 
 /**
  * A page: plain paper that scrolls, with pull to refresh when it has data to read again. A tab
  * root passes `title` and draws its header in the page; a pushed page keeps the system bar.
  */
-export function Screen({ children, onRefresh, scrollRef, gap = 22, title, subtitle, actions, onScroll }: ScreenProps) {
+export function Screen({ children, onRefresh, scrollRef, gap = 22, title, subtitle, actions, bar, onScroll }: ScreenProps) {
   const c = useColors()
   const insets = useSafeAreaInsets()
   const pull = usePullRefresh(onRefresh ?? (async () => undefined))
   const own = title !== undefined
+  const head = useTabHeader(bar)
   // The iPhone keeps the page under the status bar by itself; Android's page starts at the very top
   const top = own && Platform.OS === 'android' ? insets.top : 0
   return (
     <View style={[styles.flex, { backgroundColor: c.page }]}>
-      {own && <Stack.Screen options={{ headerShown: false }} />}
+      {own && <Stack.Screen options={head.options} />}
       <ScrollView
         ref={scrollRef}
         contentInsetAdjustmentBehavior="automatic"
+        contentInset={own ? head.contentInset : undefined}
         keyboardDismissMode="on-drag"
         // A button pressed while the keyboard is up (a search's clear) works on the first tap
         keyboardShouldPersistTaps="handled"
@@ -91,7 +128,7 @@ export function Screen({ children, onRefresh, scrollRef, gap = 22, title, subtit
           ) : undefined
         }
       >
-        {own && <ScreenHeader title={title} subtitle={subtitle} actions={actions} />}
+        {own && <ScreenHeader title={title} subtitle={subtitle} actions={actions} head={head} />}
         <View style={{ gap }}>
           <OfflineNotice />
           {children}
@@ -103,12 +140,26 @@ export function Screen({ children, onRefresh, scrollRef, gap = 22, title, subtit
   )
 }
 
-/** A tab root's header in the page: the title (30pt), one line under it, round buttons at the right. */
-export function ScreenHeader({ title, subtitle, actions }: { title: string; subtitle?: ReactNode; actions?: ReactNode }) {
+/**
+ * A tab root's header in the page: the title (30pt), one line under it, round buttons at the right.
+ * With the iPhone's bar (`head` from `useTabHeader`), what stays in the page keeps clear of its buttons.
+ */
+export function ScreenHeader({
+  title,
+  subtitle,
+  actions,
+  head
+}: {
+  title: string
+  subtitle?: ReactNode
+  actions?: ReactNode
+  head?: ReturnType<typeof useTabHeader>
+}) {
+  const reserve = head?.reserve ?? 0
   return (
-    <View style={styles.header}>
+    <View style={[styles.header, head?.top !== undefined && { paddingTop: head.top }]}>
       <View style={styles.headerWords}>
-        <Text variant="title" accessibilityRole="header" numberOfLines={2}>
+        <Text variant="title" accessibilityRole="header" numberOfLines={2} style={actions === undefined && reserve > 0 ? { marginRight: reserve } : undefined}>
           {title}
         </Text>
         {subtitle !== undefined &&
@@ -121,7 +172,7 @@ export function ScreenHeader({ title, subtitle, actions }: { title: string; subt
             subtitle
           ))}
       </View>
-      {actions !== undefined && <View style={styles.headerActions}>{actions}</View>}
+      {actions !== undefined && <View style={[styles.headerActions, reserve > 0 && { marginRight: reserve }]}>{actions}</View>}
     </View>
   )
 }
