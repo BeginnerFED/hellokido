@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" media="(prefers-color-scheme: light)" />
+    <link rel="icon" type="image/svg+xml" href="/favicon-dark.svg" media="(prefers-color-scheme: dark)" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)" />
+    <title>Hello Kido</title>
+    <link rel="preconnect" href="https://fonts.cdnfonts.com" crossorigin />
+    <script>
+      (function () {
+        var loc = window.location;
+        // A "#/takvim" link whose # got mangled on the way (e.g. ?fbclid=…%23/takvim) must open
+        // the public calendar, not the admin sign-in. (Broken paths are caught by 404.html.)
+        if (!loc.hash && /takvim/i.test(loc.pathname + loc.search)) {
+          loc.replace(loc.origin + '%BASE_URL%#/takvim');
+          return;
+        }
+        // The public calendar keeps its own look: always light, its own font, no theme colour.
+        if (/takvim/i.test(loc.hash)) {
+          document.documentElement.classList.add('hk-public-root');
+          var metas = document.querySelectorAll('meta[name="theme-color"]');
+          for (var i = 0; i < metas.length; i++) metas[i].parentNode.removeChild(metas[i]);
+          var font = document.createElement('link');
+          font.id = 'hk-public-font';
+          font.rel = 'stylesheet';
+          font.href = 'https://fonts.cdnfonts.com/css/euclid-circular-a';
+          document.head.appendChild(font);
+          return;
+        }
+        // Apply the admin theme before the first paint so a dark choice never flashes white.
+        try {
+          var choice = localStorage.getItem('hk-theme');
+          if (!choice) {
+            var legacy = localStorage.getItem('theme');
+            choice = legacy === 'true' ? 'dark' : legacy === 'false' ? 'light' : 'system';
+          }
+          var dark = choice === 'dark' || (choice === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          if (dark) document.documentElement.classList.add('dark');
+          var lang = localStorage.getItem('language');
+          if (lang === 'tr' || lang === 'en' || lang === 'uk') document.documentElement.lang = lang;
+        } catch (e) { /* storage unavailable */ }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

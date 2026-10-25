@@ -1,0 +1,24 @@
+{
+  "name": "@hellokido/core",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Shared rules, data access and translations for the HelloKido web panel and iPhone app",
+  "exports": {
+    "./i18n": "./src/i18n/index.ts",
+    "./db": "./src/db/types.ts",
+    "./api": "./src/api/index.ts",
+    "./view": "./src/view/index.ts",
+    "./*": "./src/*"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.118.0",
+    "date-fns": "^4.4.0"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  }
+}

@@ -1,0 +1,448 @@
+@import "tailwindcss";
+
+/* Euclid Circular A, the type of the Vizion Menu panel, from the same font service as the public
+   calendar. The files stay out of the repository, which is public. */
+@font-face {
+  font-family: "Euclid Circular A";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("https://fonts.cdnfonts.com/s/60248/Euclid%20Circular%20A%20Regular.woff") format("woff");
+}
+@font-face {
+  font-family: "Euclid Circular A";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("https://fonts.cdnfonts.com/s/60248/Euclid%20Circular%20A%20Medium.woff") format("woff");
+}
+@font-face {
+  font-family: "Euclid Circular A";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("https://fonts.cdnfonts.com/s/60248/Euclid%20Circular%20A%20SemiBold.woff") format("woff");
+}
+
+/* Theme switches with the .dark class on <html> (set before first paint in index.html). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * HelloKido ramps from the logo. Components use the semantic roles below, not these; the ramps
+ * stay for the few places that need a step of a hue.
+ */
+@theme {
+  --font-sans: "Euclid Circular A", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  --color-sky-50: oklch(0.975 0.012 224);
+  --color-sky-100: oklch(0.95 0.028 225);
+  --color-sky-200: oklch(0.9 0.058 226);
+  --color-sky-300: oklch(0.83 0.095 226);
+  --color-sky-400: oklch(0.758 0.122 226);
+  --color-sky-500: oklch(0.68 0.135 233);
+  --color-sky-600: oklch(0.59 0.136 240);
+  --color-sky-700: oklch(0.5 0.12 243);
+  --color-sky-800: oklch(0.41 0.095 245);
+  --color-sky-900: oklch(0.33 0.07 247);
+
+  --color-pink-50: oklch(0.977 0.011 355);
+  --color-pink-100: oklch(0.952 0.026 356);
+  --color-pink-200: oklch(0.9 0.058 357);
+  --color-pink-300: oklch(0.83 0.094 358);
+  --color-pink-400: oklch(0.766 0.122 359);
+  --color-pink-500: oklch(0.69 0.145 0);
+  --color-pink-600: oklch(0.6 0.155 2);
+  --color-pink-700: oklch(0.51 0.14 4);
+  --color-pink-800: oklch(0.42 0.11 5);
+  --color-pink-900: oklch(0.34 0.08 6);
+
+  --color-yellow-50: oklch(0.985 0.03 98);
+  --color-yellow-100: oklch(0.965 0.06 97);
+  --color-yellow-200: oklch(0.935 0.11 96);
+  --color-yellow-300: oklch(0.9 0.15 95);
+  --color-yellow-400: oklch(0.862 0.172 94);
+  --color-yellow-500: oklch(0.78 0.16 85);
+  --color-yellow-600: oklch(0.68 0.14 75);
+  --color-yellow-700: oklch(0.56 0.12 68);
+  --color-yellow-800: oklch(0.46 0.1 62);
+  --color-yellow-900: oklch(0.37 0.08 58);
+
+  --color-green-50: oklch(0.975 0.016 160);
+  --color-green-100: oklch(0.95 0.036 160);
+  --color-green-200: oklch(0.9 0.07 160);
+  --color-green-300: oklch(0.83 0.1 160);
+  --color-green-400: oklch(0.76 0.12 159);
+  --color-green-500: oklch(0.67 0.13 158);
+  --color-green-600: oklch(0.57 0.12 156);
+  --color-green-700: oklch(0.48 0.1 155);
+  --color-green-800: oklch(0.4 0.08 155);
+  --color-green-900: oklch(0.32 0.06 155);
+
+  --color-red-50: oklch(0.975 0.013 25);
+  --color-red-100: oklch(0.95 0.03 25);
+  --color-red-200: oklch(0.9 0.065 25);
+  --color-red-300: oklch(0.82 0.11 25);
+  --color-red-400: oklch(0.72 0.15 26);
+  --color-red-500: oklch(0.64 0.18 27);
+  --color-red-600: oklch(0.56 0.18 27);
+  --color-red-700: oklch(0.48 0.16 27);
+  --color-red-800: oklch(0.4 0.13 27);
+  --color-red-900: oklch(0.32 0.1 27);
+
+  --color-slate-25: oklch(0.985 0.004 240);
+  --color-slate-50: oklch(0.972 0.007 238);
+  --color-slate-100: oklch(0.95 0.01 238);
+  --color-slate-200: oklch(0.91 0.013 240);
+  --color-slate-300: oklch(0.85 0.016 242);
+  --color-slate-400: oklch(0.72 0.02 245);
+  --color-slate-500: oklch(0.58 0.024 247);
+  --color-slate-600: oklch(0.48 0.027 248);
+  --color-slate-700: oklch(0.39 0.03 249);
+  --color-slate-800: oklch(0.31 0.032 250);
+  --color-slate-900: oklch(0.25 0.033 251);
+  --color-slate-950: oklch(0.2 0.03 252);
+
+  --radius-tablet: 0.5rem;
+  --radius-control: 0.625rem;
+  --radius-tile: 0.625rem;
+  --radius-panel: 1rem;
+  --radius-sheet: 1.25rem;
+
+  /* The selected piece of a pill track */
+  --shadow-piece: 0 1px 2px rgb(0 0 0 / 0.08), 0 0 0 1px rgb(0 0 0 / 0.05);
+  /* Popovers, menus, sheets and toasts */
+  --shadow-lift: 0 1px 2px rgb(0 0 0 / 0.05), 0 12px 32px -8px rgb(0 0 0 / 0.16);
+
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+
+  /* Sheets slide from the side on wide screens and rise from the bottom on phones */
+  --animate-sheet-in-right: sheet-in-right 280ms var(--ease-out-expo);
+  --animate-sheet-out-right: sheet-out-right 180ms var(--ease-standard) forwards;
+  --animate-sheet-in-up: sheet-in-up 320ms var(--ease-out-expo);
+  --animate-sheet-out-down: sheet-out-down 200ms var(--ease-standard) forwards;
+  --animate-fade-in: fade-in 200ms var(--ease-standard);
+  --animate-fade-out: fade-out 160ms var(--ease-standard) forwards;
+  --animate-pop-in: pop-in 180ms var(--ease-out-expo);
+  --animate-pop-out: pop-out 120ms var(--ease-standard) forwards;
+  --animate-peg-in: peg-in 260ms var(--ease-out-expo);
+  --animate-toast-in: toast-in 260ms var(--ease-out-expo);
+  --animate-shimmer: shimmer 1.6s linear infinite;
+
+  @keyframes sheet-in-right {
+    from {
+      transform: translateX(100%);
+    }
+  }
+  @keyframes sheet-out-right {
+    to {
+      transform: translateX(100%);
+    }
+  }
+  @keyframes sheet-in-up {
+    from {
+      transform: translateY(100%);
+    }
+  }
+  @keyframes sheet-out-down {
+    to {
+      transform: translateY(100%);
+    }
+  }
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+  }
+  @keyframes fade-out {
+    to {
+      opacity: 0;
+    }
+  }
+  @keyframes pop-in {
+    from {
+      opacity: 0;
+      transform: translateY(-4px) scale(0.98);
+    }
+  }
+  @keyframes pop-out {
+    to {
+      opacity: 0;
+      transform: scale(0.98);
+    }
+  }
+  @keyframes peg-in {
+    from {
+      transform: scale(0.6);
+      opacity: 0.4;
+    }
+  }
+  @keyframes toast-in {
+    from {
+      opacity: 0;
+      transform: translateY(12px) scale(0.98);
+    }
+  }
+  @keyframes shimmer {
+    from {
+      background-position: 100% 0;
+    }
+    to {
+      background-position: -100% 0;
+    }
+  }
+}
+
+/*
+ * Semantic roles, after the Vizion Menu panel: a white canvas, neutral greys, hairlines instead of
+ * shadows, and HelloKido blue as the one voice. Each status has a dot colour, an ink for its text,
+ * a line for its outlined chip and a wash for a notice.
+ */
+:root {
+  color-scheme: light;
+  --ground: #ffffff;
+  --rail: #ffffff;
+  --rail-line: #e5e5e5;
+  --surface: #ffffff;
+  /* Column heads, group bands and the search field */
+  --surface-2: #fafafa;
+  /* Pill tracks */
+  --well: #f5f5f5;
+  /* The active and hovered nav item */
+  --hover: #f4f4f5;
+  --line: #e5e5e5;
+  --line-strong: #d4d4d4;
+  --track: #f0f0f0;
+  --ink: #0a0a0a;
+  --ink-2: #525252;
+  /* 4.7:1 on white, 4.5:1 on the grey bands */
+  --ink-3: #737373;
+  /* Never text that has to be read: the empty part of a count, a resting dot */
+  --ink-4: #a3a3a3;
+  --accent: #0086c6;
+  --accent-ink: #00679b;
+  --accent-line: #b6d9ee;
+  --accent-wash: #f0f7fb;
+  --accent-wash-2: #e1eff8;
+  --on-accent: #ffffff;
+  /* Filled buttons: white on it is 4.9:1 */
+  --accent-solid: #0077b3;
+  --action: #f59e0b;
+  --on-action: #451a03;
+  --action-wash: #fffbeb;
+  --action-ink: #92400e;
+  --action-line: #f3d58a;
+  --positive: #22a55a;
+  --positive-ink: #15803d;
+  --positive-wash: #f0fdf4;
+  --positive-line: #bbe5c8;
+  --negative: #dc2626;
+  --negative-ink: #b91c1c;
+  --negative-wash: #fef2f2;
+  --negative-line: #f5c2c2;
+  --on-negative: #ffffff;
+  --pink: #db5a8a;
+  --pink-ink: #a3305c;
+  --pink-wash: #fdf2f6;
+  --pink-line: #f2c4d5;
+  --whatsapp: #16a34a;
+  /* Lesson types as dots */
+  --type-duyusal: #e0a100;
+  --type-ingilizce: #0086c6;
+  --type-ozel: #db5a8a;
+  --focus: #0086c6;
+  --scrim: rgb(10 10 10 / 0.4);
+  /* Chart series: money in and money out. Checked together for colour blindness in both themes. */
+  --series-in: #0086c6;
+  --series-out: #e0752d;
+}
+
+.dark {
+  color-scheme: dark;
+  --ground: #0a0a0a;
+  --rail: #0a0a0a;
+  --rail-line: #262626;
+  --surface: #111111;
+  --surface-2: #161616;
+  --well: #1c1c1c;
+  --hover: #1f1f1f;
+  --line: #262626;
+  --line-strong: #3a3a3a;
+  --track: #262626;
+  --ink: #fafafa;
+  --ink-2: #d4d4d4;
+  --ink-3: #a3a3a3;
+  --ink-4: #737373;
+  --accent: #38a8e0;
+  --accent-ink: #7cc6ec;
+  --accent-line: #1f4e6b;
+  --accent-wash: #0b2231;
+  --accent-wash-2: #10304a;
+  --on-accent: #ffffff;
+  --accent-solid: #0077b3;
+  --action: #f5a623;
+  --on-action: #1c1003;
+  --action-wash: #2a1d05;
+  --action-ink: #fcd27a;
+  --action-line: #6b4a10;
+  --positive: #34c172;
+  --positive-ink: #7ddca4;
+  --positive-wash: #0c2416;
+  --positive-line: #1d5634;
+  --negative: #ef4444;
+  --negative-ink: #fca5a5;
+  --negative-wash: #2c1010;
+  --negative-line: #6b2222;
+  --on-negative: #ffffff;
+  --pink: #ec7fa6;
+  --pink-ink: #f6afc8;
+  --pink-wash: #2b1019;
+  --pink-line: #6b2a43;
+  --whatsapp: #34c172;
+  --type-duyusal: #f0b429;
+  --type-ingilizce: #38a8e0;
+  --type-ozel: #ec7fa6;
+  --focus: #38a8e0;
+  --scrim: rgb(0 0 0 / 0.6);
+  --series-in: #38a8e0;
+  --series-out: #e9864a;
+}
+
+@theme inline {
+  --color-ground: var(--ground);
+  --color-rail: var(--rail);
+  --color-rail-line: var(--rail-line);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-well: var(--well);
+  --color-hover: var(--hover);
+  --color-track: var(--track);
+  --color-ink-4: var(--ink-4);
+  --color-accent-line: var(--accent-line);
+  --color-action-line: var(--action-line);
+  --color-positive-line: var(--positive-line);
+  --color-negative-line: var(--negative-line);
+  --color-pink-line: var(--pink-line);
+  --color-whatsapp: var(--whatsapp);
+  --color-type-duyusal: var(--type-duyusal);
+  --color-type-ingilizce: var(--type-ingilizce);
+  --color-type-ozel: var(--type-ozel);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-wash: var(--accent-wash);
+  --color-accent-wash-2: var(--accent-wash-2);
+  --color-on-accent: var(--on-accent);
+  --color-accent-solid: var(--accent-solid);
+  --color-on-action: var(--on-action);
+  --color-action: var(--action);
+  --color-action-wash: var(--action-wash);
+  --color-action-ink: var(--action-ink);
+  --color-positive: var(--positive);
+  --color-positive-ink: var(--positive-ink);
+  --color-positive-wash: var(--positive-wash);
+  --color-negative: var(--negative);
+  --color-negative-ink: var(--negative-ink);
+  --color-negative-wash: var(--negative-wash);
+  --color-on-negative: var(--on-negative);
+  --color-pink: var(--pink);
+  --color-pink-ink: var(--pink-ink);
+  --color-pink-wash: var(--pink-wash);
+  --color-focus: var(--focus);
+  --color-scrim: var(--scrim);
+  --color-series-in: var(--series-in);
+  --color-series-out: var(--series-out);
+}
+
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    font-size: 100%;
+    background: var(--ground);
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: "kern";
+  }
+
+  body {
+    min-height: 100dvh;
+    font-size: 0.875rem;
+    line-height: 1.45;
+  }
+
+  :root:not(.hk-public-root) ::selection {
+    background: #cfe7f5;
+    color: #0a0a0a;
+  }
+
+  .dark ::selection {
+    background: #1f4e6b;
+    color: #fafafa;
+  }
+
+  input,
+  textarea {
+    caret-color: var(--accent);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--line-strong) transparent;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--line-strong);
+    border: 3px solid transparent;
+    background-clip: padding-box;
+    border-radius: 999px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  a {
+    text-underline-offset: 0.18em;
+  }
+
+  /* iOS zooms into inputs under 16px; phones always get 16px controls */
+  @media (max-width: 640px) {
+    input,
+    select,
+    textarea {
+      font-size: 1rem;
+    }
+  }
+}
+
+@utility tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -48,16 +48,18 @@ jobs:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
 
+      # Yeni panel apps/web içinde; kökteki eski uygulama artık yayınlanmıyor
       - name: Build
-        run: npm run build
+        run: npm run build --workspace @hellokido/web
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
 
       # Herkese açık pakete gizli bir anahtar girdiyse yayınlama
+      # (supabase-js kendi içinde `sb_secret_` önekini yazı olarak taşır; anahtarın kendisi aranır)
       - name: Refuse to publish secrets
         run: |
-          if grep -rIlE 'sk-or-v1-|sb_secret_|service_role' dist; then echo "::error::A secret key was found in the build output"; exit 1; fi
+          if grep -rIlE 'sk-or-v1-|sb_secret_[A-Za-z0-9_-]{8,}|service_role' apps/web/dist; then echo "::error::A secret key was found in the build output"; exit 1; fi
       
       - name: Setup Pages
         uses: actions/configure-pages@v4
@@ -65,7 +67,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: './dist'
+          path: './apps/web/dist'
       
       - name: Deploy to GitHub Pages
         id: deployment

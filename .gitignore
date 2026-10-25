@@ -1,5 +1,6 @@
-# dependencies
-/node_modules
+# dependencies (every workspace has its own folder)
+node_modules
+*.tsbuildinfo
 /.pnp
 .pnp.js
 

@@ -1,0 +1,109 @@
+/*
+ * The public calendar (/#/takvim) keeps the look it had before the redesign. It was built on
+ * Tailwind 3, so the colours, font and preflight details it relied on are pinned here.
+ * Everything is scoped to <html class="hk-public-root">: index.html sets it before the first
+ * paint and PublicPage keeps it while the page is open, so the admin panel never sees it.
+ */
+:root.hk-public-root {
+  color-scheme: light;
+  font-family: "Euclid Circular A", system-ui, sans-serif;
+  background: #fff;
+  color: #000;
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
+  text-rendering: auto;
+  font-feature-settings: normal;
+
+  /* Tailwind 3 values of the colour families the page uses */
+  --color-zinc-50: #fafafa;
+  --color-zinc-100: #f4f4f5;
+  --color-zinc-200: #e4e4e7;
+  --color-zinc-300: #d4d4d8;
+  --color-zinc-400: #a1a1aa;
+  --color-zinc-500: #71717a;
+  --color-zinc-600: #52525b;
+  --color-zinc-700: #3f3f46;
+  --color-zinc-800: #27272a;
+  --color-zinc-900: #18181b;
+
+  --color-sky-50: #f0f9ff;
+  --color-sky-100: #e0f2fe;
+  --color-sky-200: #bae6fd;
+  --color-sky-300: #7dd3fc;
+  --color-sky-400: #38bdf8;
+  --color-sky-500: #0ea5e9;
+  --color-sky-600: #0284c7;
+  --color-sky-700: #0369a1;
+  --color-sky-800: #075985;
+  --color-sky-900: #0c4a6e;
+
+  --color-pink-50: #fdf2f8;
+  --color-pink-100: #fce7f3;
+  --color-pink-200: #fbcfe8;
+  --color-pink-300: #f9a8d4;
+  --color-pink-400: #f472b6;
+  --color-pink-500: #ec4899;
+  --color-pink-600: #db2777;
+  --color-pink-700: #be185d;
+  --color-pink-800: #9d174d;
+  --color-pink-900: #831843;
+
+  --color-yellow-50: #fefce8;
+  --color-yellow-100: #fef9c3;
+  --color-yellow-200: #fef08a;
+  --color-yellow-300: #fde047;
+  --color-yellow-400: #facc15;
+  --color-yellow-500: #eab308;
+  --color-yellow-600: #ca8a04;
+  --color-yellow-700: #a16207;
+  --color-yellow-800: #854d0e;
+  --color-yellow-900: #713f12;
+
+  --color-emerald-50: #ecfdf5;
+  --color-emerald-100: #d1fae5;
+  --color-emerald-200: #a7f3d0;
+  --color-emerald-300: #6ee7b7;
+  --color-emerald-400: #34d399;
+  --color-emerald-500: #10b981;
+  --color-emerald-600: #059669;
+  --color-emerald-700: #047857;
+  --color-emerald-800: #065f46;
+  --color-emerald-900: #064e3b;
+}
+
+:root.hk-public-root body {
+  font-size: 1rem;
+}
+
+:root.hk-public-root * {
+  scrollbar-color: #d2d2d7 transparent;
+}
+
+:root.hk-public-root ::-webkit-scrollbar-thumb {
+  background: #d2d2d7;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  border-radius: 10px;
+}
+
+:root.hk-public-root ::-webkit-scrollbar-thumb:hover {
+  background: #86868b;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+
+/* Tailwind 3 preflight: borders default to gray-200 and buttons show a pointer.
+   Kept in the base layer so the page's own utility classes still win. */
+@layer base {
+  :root.hk-public-root *,
+  :root.hk-public-root ::after,
+  :root.hk-public-root ::before,
+  :root.hk-public-root ::backdrop {
+    border-color: #e5e7eb;
+  }
+
+  :root.hk-public-root button:not(:disabled),
+  :root.hk-public-root [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+}
