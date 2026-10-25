@@ -17,7 +17,7 @@ import { Band, Card, CardLink } from '../../ui/Page'
 import { WhatsAppLink } from '../../ui/PhoneActions'
 import { LessonShape } from '../../ui/signature'
 import { cx } from '../../ui/cx'
-import { endText, formatPeriod, shortDate } from '../children/ChildBits'
+import { endText, formatPeriod, ParentName, shortDate } from '../children/ChildBits'
 import { AttendancePicker } from '../lessons/AttendancePicker'
 import { useLessonTitle } from '../lessons/LessonBits'
 import type { useWaiting } from './data'
@@ -162,7 +162,7 @@ export function WaitingCard({
           ]}
         />
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto pb-2 lg:max-h-[40rem]">
+      <div className="relative min-h-0 flex-1 overflow-y-auto pb-2 lg:max-h-[40rem]">
         {loadError ? (
           <div className="p-4 sm:px-[1.375rem]">
             <LoadError
@@ -662,7 +662,9 @@ export function TomorrowCard({
                       <Avatar name={child.student_name} />
                       <div className="min-w-0 flex-1">
                         <ChildLink id={child.id} name={child.student_name} className="block" />
-                        <p className="truncate text-[0.84375rem] leading-[1.125rem] text-ink-3">{fmt(t.today.lessonsCard.parentOf, { name: child.parent_name })}</p>
+                        <p className="truncate text-[0.84375rem] leading-[1.125rem] text-ink-3">
+                          <ParentName template={t.today.lessonsCard.parentOf} name={child.parent_name} />
+                        </p>
                       </div>
                       {seat.status !== 'scheduled' ? (
                         <Mark tone="neutral">{labels.attendance(seat.status)}</Mark>

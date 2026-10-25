@@ -13,6 +13,23 @@ export function remainingClass(usage: Usage | undefined) {
   return tone === 'out' || tone === 'low' ? 'font-semibold text-action-ink' : 'text-ink-2'
 }
 
+/**
+ * "Veli: Havva Nur" with the name underlined, so the parent reads as a label and a name and never
+ * runs into the line before it. The words come from the message ("Veli: {name}").
+ */
+export function ParentName({ template, name }: { template: string; name: string | null | undefined }) {
+  const trimmed = name?.trim()
+  if (!trimmed) return null
+  const [before = '', after = ''] = template.split('{name}')
+  return (
+    <>
+      {before}
+      <span className="underline decoration-1 underline-offset-[3px]">{trimmed}</span>
+      {after}
+    </>
+  )
+}
+
 /** The share bar with the remaining count next to it; free participation shows the word instead. */
 export function UsageLine({ usage, size = 'sm', className }: { usage: Usage | undefined; size?: 'sm' | 'md'; className?: string }) {
   const i18n = useI18n()

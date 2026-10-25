@@ -79,7 +79,7 @@ export function CalendarScreen() {
         gap={0}
         title={t.calendar.title}
         // "+" in the iPhone's own bar, as on the other tabs; Android keeps the round button
-        bar={{ options: headerButton(c, t.calendar.newLesson, 'add', () => createOn(selected)) }}
+        bar={{ options: headerButton(c, t.calendar.newLesson, 'add', () => createOn(selected)), buttons: 1 }}
         actions={
           <>
             <Segmented<Mode>

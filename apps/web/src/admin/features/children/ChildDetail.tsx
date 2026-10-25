@@ -8,7 +8,8 @@ import {
   HandCoinsIcon,
   PencilSimpleIcon,
   ReceiptIcon,
-  WhatsappLogoIcon
+  WhatsappLogoIcon,
+  XIcon
 } from '@phosphor-icons/react'
 import { releaseSeats, remainingTone, setRegistrationActive, upcomingSeats, type Registration, type Usage } from '@hellokido/core/api'
 import { useActiveUsage, useChildUsage, useLabels, useRefresh } from '../../data/queries'
@@ -34,7 +35,7 @@ import { daysLeft, ENDING_WINDOW_DAYS, isEnding, isFree, isPaymentDue } from './
  * One child on the board, with no card around it: who they are and who to call, what can be done,
  * then the package and the period's lessons side by side, the payments, the note and the messages.
  */
-export function ChildDetail({ registration, showName }: { registration: Registration; showName: boolean }) {
+export function ChildDetail({ registration, showName, onClose }: { registration: Registration; showName: boolean; onClose?: () => void }) {
   const i18n = useI18n()
   const { t, fmt } = i18n
   const { startTask } = useActions()
@@ -85,16 +86,24 @@ export function ChildDetail({ registration, showName }: { registration: Registra
   return (
     <div className="@container flex flex-col">
       {showName ? (
-        <div className="flex flex-wrap items-center gap-x-[1.125rem] gap-y-4 pt-1 pb-5">
-          <Avatar name={registration.student_name} size="xl" tone="sky" />
-          <div className="min-w-0 flex-[1_1_12rem]">
-            <h2 className="truncate text-[2rem] leading-[2.375rem] font-semibold tracking-[-0.025em]">{registration.student_name}</h2>
-            <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.96875rem] text-ink-2">
-              {registration.student_age && <span>{registration.student_age}</span>}
-              {status}
-            </p>
+        <div className="flex items-start gap-3 pt-1 pb-5">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-[1.125rem] gap-y-4">
+            <Avatar name={registration.student_name} size="xl" tone="sky" />
+            <div className="min-w-0 flex-[1_1_12rem]">
+              <h2 className="truncate text-[2rem] leading-[2.375rem] font-semibold tracking-[-0.025em]">{registration.student_name}</h2>
+              <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.96875rem] text-ink-2">
+                {registration.student_age && <span>{registration.student_age}</span>}
+                {status}
+              </p>
+            </div>
+            {parent}
           </div>
-          {parent}
+          {/* Closes the child and leaves the list alone; level with the middle of the avatar */}
+          {onClose && (
+            <IconButton label={t.common.close} variant="quiet" onPress={onClose} className="mt-[1.125rem] size-10! shrink-0">
+              <XIcon aria-hidden className="size-[1.125rem]" />
+            </IconButton>
+          )}
         </div>
       ) : (
         <div className="flex flex-col items-start gap-3 pb-4">

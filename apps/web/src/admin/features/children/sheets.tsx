@@ -14,7 +14,7 @@ import { Sheet } from '../../ui/Sheet'
 import { MiniBeads } from '../../ui/signature'
 import { cx } from '../../ui/cx'
 import { IncomeEntryForm } from '../money/IncomeEntryForm'
-import { beadsLabel, remainingText } from './ChildBits'
+import { beadsLabel, ParentName, remainingText } from './ChildBits'
 import { CollectForm } from './CollectForm'
 import { ExtendForm, type FormState } from './ExtendForm'
 import { RegistrationForm, type RegistrationPrefill } from './RegistrationForm'
@@ -223,7 +223,9 @@ export function PaymentSheet({ isOpen, onOpenChange, params }: SheetProps & { pa
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-[0.96875rem] font-medium text-ink">{item.student_name}</span>
                         <span className="block truncate text-[0.84375rem] text-ink-3">
-                          {labels.packageName(item.package_type)}, {fmt(t.children.phone.parentOf, { name: item.parent_name })}
+                          {labels.packageName(item.package_type)}
+                          {item.parent_name?.trim() && ' · '}
+                          <ParentName template={t.children.phone.parentOf} name={item.parent_name} />
                         </span>
                       </span>
                     </AriaButton>

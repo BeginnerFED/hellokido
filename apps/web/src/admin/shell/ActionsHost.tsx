@@ -178,7 +178,7 @@ function CommandPalette({ isOpen, onOpenChange, onTask }: { isOpen: boolean; onO
                 item.run()
               }}
               renderEmptyState={() => <p className="px-4 py-8 text-center text-sm text-ink-2">{t.common.noResults}</p>}
-              className="max-h-[min(26rem,60dvh)] overflow-y-auto p-2 outline-none"
+              className="relative max-h-[min(26rem,60dvh)] overflow-y-auto p-2 outline-none"
             >
               {(section) => (
                 <MenuSection id={section.id} className="pb-1">

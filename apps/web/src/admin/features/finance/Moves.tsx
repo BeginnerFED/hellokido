@@ -292,7 +292,7 @@ export function MovesSection({
         ) : (
           <div
             aria-busy={waiting}
-            className={cx('pb-2 transition-opacity duration-200', fill && 'min-h-0 flex-1 overflow-y-auto overscroll-contain', waiting && 'opacity-60')}
+            className={cx('pb-2 transition-opacity duration-200', fill && 'relative min-h-0 flex-1 overflow-y-auto overscroll-contain', waiting && 'opacity-60')}
           >
             {days.map((group) => {
               const day = date(group.day, isSameYear(group.day, now) ? { weekday: 'long', day: 'numeric', month: 'long' } : { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })

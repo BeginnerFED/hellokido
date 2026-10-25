@@ -99,7 +99,7 @@ function Rail({ collapsed }: { collapsed: boolean }) {
           <Logo className="h-[5.375rem]! w-[9.375rem]! object-contain" />
         )}
       </Link>
-      <nav aria-label={t.shell.nav.main} className="-mx-1 flex min-h-0 flex-1 flex-col overflow-y-auto px-1 py-0.5">
+      <nav aria-label={t.shell.nav.main} className="relative -mx-1 flex min-h-0 flex-1 flex-col overflow-y-auto px-1 py-0.5">
         <ul className="flex flex-col gap-[3px]">
           {NAV.map((item) => (
             <li key={item.to}>

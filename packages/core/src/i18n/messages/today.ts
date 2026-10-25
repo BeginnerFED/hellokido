@@ -39,8 +39,8 @@ const tr = {
     allDone: 'Geçmiş yoklamaların hepsi girildi',
     allDoneBody: 'Kalan dersler çocukların sayfalarında güncellendi.',
     inCalendar: 'Takvimde aç',
-    // "Velisi", not "Veli": Veli is also a first name, and "Veli Seyhan" read as one person
-    parentOf: 'Velisi {name}'
+    // "Veli:" with a colon reads as a label: Veli is also a first name, and "Veli Seyhan" read as one person
+    parentOf: 'Veli: {name}'
   },
   work: {
     title: 'Ödemeler ve paketler',
@@ -184,7 +184,7 @@ const en: Widen<typeof tr> = {
     allDone: 'All past attendance is marked',
     allDoneBody: 'Lessons left are up to date on the children’s pages.',
     inCalendar: 'Open in calendar',
-    parentOf: 'Parent {name}'
+    parentOf: 'Parent: {name}'
   },
   work: {
     title: 'Payments and packages',

@@ -117,7 +117,7 @@ export function Sheet({
                 <XIcon aria-hidden className="size-[1.125rem]" />
               </IconButton>
             </header>
-            <div className={cx('min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-6 md:px-6', bodyClassName)}>
+            <div className={cx('relative min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-6 md:px-6', bodyClassName)}>
               <CloseRequest.Provider value={requestClose}>
                 <FooterSlot.Provider value={footerSlot}>{children}</FooterSlot.Provider>
               </CloseRequest.Provider>

@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-aria-components'
-import { useParams } from 'react-router'
+import { useNavigate, useParams } from 'react-router'
 import { PlusIcon, UserFocusIcon } from '@phosphor-icons/react'
 import { remainingTone, type Registration, type UsageMap } from '@hellokido/core/api'
 import { useActiveUsage, useLabels, useRegistrations } from '../../data/queries'
@@ -13,7 +13,7 @@ import { SearchField } from '../../ui/Field'
 import { Page } from '../../ui/Page'
 import { useWideLayout } from '../../ui/useMediaQuery'
 import { cx } from '../../ui/cx'
-import { remainingText } from './ChildBits'
+import { ParentName, remainingText } from './ChildBits'
 import { ChildDetail, ChildDetailSkeleton } from './ChildDetail'
 import { usePackageOptions } from './packageOptions'
 import { byName, daysLeft, ENDING_WINDOW_DAYS, isEnding, isFree, isPaymentDue, isRunningLow, matchesChild } from './rules'
@@ -34,6 +34,7 @@ const TESTS: Record<Exclude<Filter, 'all'>, (row: Registration, usage: UsageMap 
  */
 export default function ChildrenPage() {
   const { id } = useParams()
+  const navigate = useNavigate()
   const { t, plural } = useI18n()
   const labels = useLabels()
   const { startTask } = useActions()
@@ -139,7 +140,7 @@ export default function ChildrenPage() {
         <EmptyState className="py-12" title={t.children.detail.notFound} />
       </div>
     ) : (
-      <ChildDetail key={selected.id} registration={selected} showName={showName} />
+      <ChildDetail key={selected.id} registration={selected} showName={showName} onClose={showName ? () => navigate('/children') : undefined} />
     )
 
   // Phones: one child fills the screen
@@ -231,7 +232,7 @@ export default function ChildrenPage() {
             )}
           </div>
 
-          <div ref={list} className="min-h-0 flex-1 overscroll-contain px-2 pb-2 lg:overflow-y-auto lg:px-3.5 lg:pb-3">
+          <div ref={list} className="relative min-h-0 flex-1 overscroll-contain px-2 pb-2 lg:overflow-y-auto lg:px-3.5 lg:pb-3">
             {registrations.isError ? (
               <div className="p-2">
                 <LoadError message={t.children.loadFailed} retryLabel={t.common.retry} onRetry={() => void registrations.refetch()} />
@@ -264,7 +265,11 @@ export default function ChildrenPage() {
         </section>
 
         {wide && (
-          <section aria-label={selected?.student_name ?? t.children.title} className="min-w-0">
+          // An open child sits in a thin frame, so it reads as one thing that its X closes
+          <section
+            aria-label={selected?.student_name ?? t.children.title}
+            className={cx('min-w-0', id && 'rounded-[2.5rem] border border-line p-3.5')}
+          >
             {id ? (
               detail(true)
             ) : (
@@ -309,9 +314,15 @@ function ChildRow({ row, usage, selected, onOpen }: { row: Registration; usage: 
     <Mark tone="action">{days < 0 ? plural(t.children.phone.ended, -days) : t.children.phone.endsToday}</Mark>
   ) : null
   const sub =
-    days !== null && days > 0 && days <= ENDING_WINDOW_DAYS
-      ? plural(t.children.phone.endsIn, days)
-      : [labels.packageName(row.package_type), fmt(t.children.phone.parentOf, { name: row.parent_name })].join(', ')
+    days !== null && days > 0 && days <= ENDING_WINDOW_DAYS ? (
+      plural(t.children.phone.endsIn, days)
+    ) : (
+      <>
+        {labels.packageName(row.package_type)}
+        {row.parent_name?.trim() && ' · '}
+        <ParentName template={t.children.phone.parentOf} name={row.parent_name} />
+      </>
+    )
 
   const left = own?.remaining ?? 0
   const low = remainingTone(own) === 'low' || remainingTone(own) === 'out'

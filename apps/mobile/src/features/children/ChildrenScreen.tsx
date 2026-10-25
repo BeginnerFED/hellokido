@@ -43,7 +43,7 @@ export function ChildrenScreen() {
   const insets = useSafeAreaInsets()
   const { t, plural } = useI18n()
   // "+" in the iPhone's own bar, as on the other tabs; Android keeps the round button
-  const head = useTabHeader({ options: headerButton(c, t.children.newRegistration, 'add', () => tasks.registration()) })
+  const head = useTabHeader({ options: headerButton(c, t.children.newRegistration, 'add', () => tasks.registration()), buttons: 1 })
   const labels = useLabels()
   const client = useQueryClient()
   const menu = useActionMenu()
@@ -153,6 +153,7 @@ export function ChildrenScreen() {
         title={t.children.title}
         subtitle={rows ? plural(t.children.summary.active, activeCount) : undefined}
         actions={head.native ? undefined : <RoundButton icon="add" label={t.children.newRegistration} onPress={() => tasks.registration()} />}
+        head={head}
       />
       <View style={styles.tools}>
         <OfflineNotice />
@@ -252,6 +253,7 @@ export function ChildrenScreen() {
         ListEmptyComponent={empty}
         onScrollBeginDrag={closeSwipedRow}
         contentInsetAdjustmentBehavior="automatic"
+        contentInset={head.contentInset}
         keyboardDismissMode="on-drag"
         keyboardShouldPersistTaps="handled"
         initialNumToRender={14}
@@ -270,7 +272,7 @@ export function ChildrenScreen() {
         }
       />
       {/* What scrolls up passes under the status bar on plain paper, not under the clock */}
-      <View pointerEvents="none" style={[styles.statusCover, { height: head.cover, backgroundColor: c.page }]} />
+      <View pointerEvents="none" style={[styles.statusCover, { height: insets.top, backgroundColor: c.page }]} />
     </View>
   )
 }
@@ -329,7 +331,7 @@ function ChildRow({ row, usage, first, last, onOpen, openMenu, onMessage }: Chil
   ]
   const actions = offered.filter((action): action is RowAction => action !== null)
   // Under the name: the one thing that asks for a look, else the package and the parent
-  const about = [labels.packageName(row.package_type), row.parent_name ? fmt(t.children.phone.parentOf, { name: firstNameOf(row.parent_name) }) : ''].filter(Boolean).join(', ')
+  const about = [labels.packageName(row.package_type), row.parent_name ? fmt(t.children.phone.parentOf, { name: firstNameOf(row.parent_name) }) : ''].filter(Boolean).join(' · ')
   const kind = !active ? 'about' : isPaymentDue(row) ? 'due' : days !== null && days < 0 ? 'ended' : days !== null && days <= ENDING_WINDOW_DAYS ? 'ending' : 'about'
   const subText = kind === 'due' ? t.children.pendingPayment : (kind === 'ended' || kind === 'ending') && days !== null ? packageEndText(i18n, days) : about
   const sub =

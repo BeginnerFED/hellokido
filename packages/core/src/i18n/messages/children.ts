@@ -220,7 +220,7 @@ const tr = {
   phone: {
     lessonsUnit: { one: 'ders', other: 'ders' },
     leftUnit: { one: 'ders kaldı', other: 'ders kaldı' },
-    parentOf: 'velisi {name}',
+    parentOf: 'Veli: {name}',
     endsIn: { one: 'Paketi {count} gün sonra bitiyor', other: 'Paketi {count} gün sonra bitiyor' },
     endsToday: 'Paketi bugün bitiyor',
     ended: { one: 'Paketi {count} gün önce bitti', other: 'Paketi {count} gün önce bitti' },
@@ -465,7 +465,7 @@ const en: Widen<typeof tr> = {
   phone: {
     lessonsUnit: { one: 'lesson', other: 'lessons' },
     leftUnit: { one: 'lesson left', other: 'lessons left' },
-    parentOf: 'parent {name}',
+    parentOf: 'Parent: {name}',
     endsIn: { one: 'Package ends in {count} day', other: 'Package ends in {count} days' },
     endsToday: 'Package ends today',
     ended: { one: 'Package ended {count} day ago', other: 'Package ended {count} days ago' },
@@ -711,7 +711,7 @@ const uk: Widen<typeof tr> = {
   phone: {
     lessonsUnit: { one: 'заняття', few: 'заняття', many: 'занять', other: 'заняття' },
     leftUnit: { one: 'заняття залишилось', few: 'заняття залишилось', many: 'занять залишилось', other: 'заняття залишилось' },
-    parentOf: 'батьки: {name}',
+    parentOf: 'Батьки: {name}',
     endsIn: { one: 'Пакет закінчується через {count} день', few: 'Пакет закінчується через {count} дні', many: 'Пакет закінчується через {count} днів', other: 'Пакет закінчується через {count} дня' },
     endsToday: 'Пакет закінчується сьогодні',
     ended: { one: 'Пакет закінчився {count} день тому', few: 'Пакет закінчився {count} дні тому', many: 'Пакет закінчився {count} днів тому', other: 'Пакет закінчився {count} дня тому' },

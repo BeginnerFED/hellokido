@@ -143,7 +143,8 @@ export function FinanceScreen() {
     options: headerMenus([
       { label: t.common.add, icon: 'add', items: add },
       ...(rule ? [{ label: t.finance.period.otherPeriod, icon: 'calendar' as const, items: periodChoices }] : [])
-    ])
+    ]),
+    buttons: rule ? 2 : 1
   }
   const fromBar = Platform.OS === 'ios'
 

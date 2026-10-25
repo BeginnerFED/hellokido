@@ -47,7 +47,7 @@ export function ChildPicker({
       ) : list.length === 0 ? (
         <p className="py-4 text-center text-sm text-ink-3">{t.calendar.lesson.pickerEmpty}</p>
       ) : (
-        <ul aria-label={t.calendar.lesson.chooseChildren} className="-mx-1 max-h-72 overflow-y-auto overscroll-contain">
+        <ul aria-label={t.calendar.lesson.chooseChildren} className="relative -mx-1 max-h-72 overflow-y-auto overscroll-contain">
           {list.map((child) => (
             <li key={child.id}>
               <Checkbox

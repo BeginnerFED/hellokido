@@ -228,7 +228,7 @@ function ChildPage({ registration, onRefresh }: { registration: Registration; on
 
   const who = [registration.student_age?.trim(), registration.parent_name ? fmt(t.children.phone.parentOf, { name: registration.parent_name }) : '']
     .filter(Boolean)
-    .join(', ')
+    .join(' · ')
 
   return (
     <>
