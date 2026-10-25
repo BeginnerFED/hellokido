@@ -14,7 +14,6 @@ import { useColors } from '../../theme/colors'
 import { useActionMenu } from '../../ui/ActionMenu'
 import { EmptyState, LoadError, Skeleton } from '../../ui/Bits'
 import { Button } from '../../ui/Button'
-import { Segmented } from '../../ui/Fields'
 import { Card, RoundButton, Screen, Section } from '../../ui/Screen'
 import { Text } from '../../ui/Text'
 import { dayTitle, DayTimeline, MonthDots, PeriodBar, TimelineSkeleton, useLessonActions, WeekStrip, WeekThemeRow, weekRange } from './parts'
@@ -80,21 +79,7 @@ export function CalendarScreen() {
         title={t.calendar.title}
         // "+" in the iPhone's own bar, as on the other tabs; Android keeps the round button
         bar={{ options: headerButton(c, t.calendar.newLesson, 'add', () => createOn(selected)), buttons: 1 }}
-        actions={
-          <>
-            <Segmented<Mode>
-              compact
-              options={[
-                { id: 'day', label: t.calendar.views.day },
-                { id: 'month', label: t.calendar.views.month }
-              ]}
-              value={mode}
-              onChange={setMode}
-              style={styles.modes}
-            />
-            {Platform.OS !== 'ios' && <RoundButton icon="add" label={t.calendar.newLesson} onPress={() => createOn(selected)} />}
-          </>
-        }
+        actions={Platform.OS !== 'ios' ? <RoundButton icon="add" label={t.calendar.newLesson} onPress={() => createOn(selected)} /> : undefined}
       >
         <PeriodBar
           label={heading}
@@ -102,6 +87,9 @@ export function CalendarScreen() {
           nextLabel={nextLabel}
           onPrevious={() => step(-1)}
           onNext={() => step(1)}
+          expanded={mode === 'month'}
+          onToggle={() => setMode(mode === 'month' ? 'day' : 'month')}
+          toggleHint={mode === 'month' ? t.calendar.showWeek : t.calendar.showMonth}
           under={
             !showsNow ? (
               <Button variant="plain" size="sm" onPress={() => setSelected(new Date(`${todayKey}T00:00:00`))} style={styles.today}>
@@ -181,7 +169,6 @@ export function CalendarScreen() {
 }
 
 const styles = StyleSheet.create({
-  modes: { width: 132 },
   // Takes the height of the line it replaces; it still answers to a whole fingertip
   today: { marginVertical: -7 },
   week: { marginTop: 14, gap: 14 },

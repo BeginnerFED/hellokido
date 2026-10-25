@@ -56,7 +56,8 @@ export function GroupNote({ tone, children, style }: { tone: Extract<TextTone, '
 
 /**
  * The week or month on show with the arrows to step through it, as Finance steps through its
- * periods: two felt circles and the range between them, with a line under it.
+ * periods: two felt circles and the range between them, with a line under it. The range itself
+ * opens the month and closes it again, as the month name does in the phone's own Calendar.
  */
 export function PeriodBar({
   label,
@@ -64,7 +65,10 @@ export function PeriodBar({
   onPrevious,
   onNext,
   previousLabel,
-  nextLabel
+  nextLabel,
+  expanded,
+  onToggle,
+  toggleHint
 }: {
   label: string
   under?: ReactNode
@@ -72,25 +76,37 @@ export function PeriodBar({
   onNext: () => void
   previousLabel: string
   nextLabel: string
+  /** The month is open in place of the week. */
+  expanded: boolean
+  onToggle: () => void
+  toggleHint: string
 }) {
+  const c = useColors()
   return (
     <View style={styles.period}>
       <IconButton icon="chevronLeft" label={previousLabel} variant="felt" size={40} onPress={onPrevious} />
       <View style={styles.periodMiddle}>
-        {/* A week across two years is the longest; it narrows a little rather than lose its end */}
-        <Text
-          weight="600"
-          tabular
-          align="center"
-          numberOfLines={1}
-          adjustsFontSizeToFit
-          minimumFontScale={0.8}
-          accessibilityRole="header"
+        <Pressable
+          onPress={() => {
+            void Haptics.selectionAsync()
+            onToggle()
+          }}
+          accessibilityRole="button"
+          accessibilityLabel={label}
+          accessibilityHint={toggleHint}
+          accessibilityState={{ expanded }}
           accessibilityLiveRegion="polite"
-          style={styles.periodLabel}
+          hitSlop={{ top: 6, bottom: 2 }}
+          style={({ pressed }) => [styles.periodToggle, pressed && { backgroundColor: c.pressed }]}
         >
-          {label}
-        </Text>
+          {/* A week across two years is the longest; it narrows a little rather than lose its end */}
+          <Text weight="600" tabular numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={styles.periodLabel}>
+            {label}
+          </Text>
+          <View style={expanded && styles.flipped}>
+            <Icon name="chevronDown" size={15} color={c.ink2} weight="semibold" />
+          </View>
+        </Pressable>
         {under}
       </View>
       <IconButton icon="chevronRight" label={nextLabel} variant="felt" size={40} onPress={onNext} />
@@ -596,7 +612,9 @@ const styles = StyleSheet.create({
   noteDot: { width: 7, height: 7, borderRadius: 4, marginTop: 6 },
   period: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   periodMiddle: { flex: 1, minWidth: 0, alignItems: 'center', minHeight: 44, justifyContent: 'center' },
-  periodLabel: { fontSize: 18, lineHeight: 23, letterSpacing: -0.2 },
+  periodToggle: { flexDirection: 'row', alignItems: 'center', gap: 6, maxWidth: '100%', paddingLeft: 12, paddingRight: 10, paddingVertical: 3, borderRadius: 14 },
+  periodLabel: { fontSize: 18, lineHeight: 23, letterSpacing: -0.2, flexShrink: 1 },
+  flipped: { transform: [{ rotate: '180deg' }] },
   strip: { flexDirection: 'row', marginHorizontal: -4 },
   day: { flex: 1, alignItems: 'center', gap: 4, paddingVertical: 2 },
   dayNumber: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
