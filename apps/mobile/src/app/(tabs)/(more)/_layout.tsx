@@ -15,6 +15,7 @@ export default function MoreStack() {
       <Stack.Screen name="waitlist" options={{ title: t.shell.nav.waitlist }} />
       <Stack.Screen name="notes" options={{ title: t.shell.nav.notes }} />
       <Stack.Screen name="settings" options={{ title: t.shell.nav.settings }} />
+      <Stack.Screen name="messages" options={{ title: t.messages.texts }} />
     </Stack>
   )
 }

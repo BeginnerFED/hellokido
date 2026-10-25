@@ -20,6 +20,8 @@ const tr = {
   },
   inUse: 'Kullanılıyor',
   add: 'Yeni mesaj',
+  /** The row in the phone's Settings that opens every message, by kind. */
+  texts: 'Mesaj metinleri',
   workshop: {
     title: 'Atölye bilgileri',
     meta: '{place} · {duration}',
@@ -147,6 +149,7 @@ const en: Widen<typeof tr> = {
   },
   inUse: 'In use',
   add: 'New message',
+  texts: 'Message texts',
   workshop: {
     title: 'Workshop details',
     meta: '{place} · {duration}',
@@ -274,6 +277,7 @@ const uk: Widen<typeof tr> = {
   },
   inUse: 'Використовується',
   add: 'Нове повідомлення',
+  texts: 'Тексти повідомлень',
   workshop: {
     title: 'Дані майстерні',
     meta: '{place} · {duration}',

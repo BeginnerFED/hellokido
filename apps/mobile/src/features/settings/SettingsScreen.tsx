@@ -3,10 +3,12 @@ import { Alert, Platform, StyleSheet, View, type StyleProp, type ViewStyle } fro
 import Constants from 'expo-constants'
 import * as Haptics from 'expo-haptics'
 import * as Updates from 'expo-updates'
+import { router, type Href } from 'expo-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { listAdmins, listRecurring, revokeAdmin, updateEveningReminder, type Admin, type EveningReminder, type PackageType } from '@hellokido/core/api'
 import { LANGUAGE_NAMES, LOCALES, type Locale } from '@hellokido/core/i18n'
 import { rateText } from '@hellokido/core/view'
+import { messageKeys, useTemplates } from '../../data/messages'
 import { keys, useCatalog, useLabels, useRefresh } from '../../data/queries'
 import { tasks } from '../../lib/navigation'
 import { useAuth } from '../../providers/Auth'
@@ -37,7 +39,7 @@ const nameOfEmail = (email: string) => (email.split('@')[0] ?? '').replace(/[._-
 /**
  * The few things set once and changed rarely, on one page laid out as the phone's Settings: how the
  * app looks on this phone, the prices and names the forms use, card money, monthly expenses,
- * categories, the evening reminder and who may sign in.
+ * categories, the WhatsApp texts, the evening reminder and who may sign in.
  */
 export function SettingsScreen() {
   const client = useQueryClient()
@@ -46,7 +48,8 @@ export function SettingsScreen() {
       Promise.all([
         client.invalidateQueries({ queryKey: keys.catalog }),
         client.invalidateQueries({ queryKey: keys.finance('recurring') }),
-        client.invalidateQueries({ queryKey: keys.admins })
+        client.invalidateQueries({ queryKey: keys.admins }),
+        client.invalidateQueries({ queryKey: messageKeys.templates })
       ]),
     [client]
   )
@@ -59,6 +62,7 @@ export function SettingsScreen() {
       <Monthly />
       <Categories kind="expense" />
       <Categories kind="income" />
+      <Messages />
       <EveningReminderSetting />
       <Access />
       <Account />
@@ -317,6 +321,42 @@ function Categories({ kind }: { kind: 'expense' | 'income' }) {
         />
       ))}
       <ActionRow icon="add" lead={TILE} label={copy.add} onPress={() => tasks.category(kind)} />
+    </Group>
+  )
+}
+
+/** The WhatsApp texts parents receive, on a page of their own, and the workshop facts they use. */
+function Messages() {
+  const { t, fmt } = useI18n()
+  const templates = useTemplates()
+  const catalog = useCatalog()
+  const copy = t.messages
+
+  if (!templates.data || !catalog.data) {
+    return (
+      <Waiting
+        title={copy.title}
+        failed={templates.isError || catalog.isError}
+        onRetry={() => void Promise.all([templates.refetch(), catalog.refetch()])}
+      />
+    )
+  }
+
+  const workshop = catalog.data.settings.workshop
+  return (
+    <Group title={copy.title} footer={copy.body}>
+      <Row
+        title={<SettingTitle>{copy.texts}</SettingTitle>}
+        value={templates.data.length}
+        chevron
+        onPress={() => router.push('/(tabs)/(more)/messages' as Href)}
+      />
+      <Row
+        title={<SettingTitle>{copy.workshop.title}</SettingTitle>}
+        subtitle={fmt(copy.workshop.meta, { place: workshop.place, duration: workshop.duration })}
+        chevron
+        onPress={tasks.workshop}
+      />
     </Group>
   )
 }

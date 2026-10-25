@@ -80,6 +80,8 @@ function Navigation() {
           <Stack.Screen name="package" options={sheet} />
           <Stack.Screen name="category" options={sheet} />
           <Stack.Screen name="card-settings" options={sheet} />
+          <Stack.Screen name="message-template" options={sheet} />
+          <Stack.Screen name="workshop" options={sheet} />
           <Stack.Screen name="finance-period" options={sheet} />
           <Stack.Screen name="grant-access" options={sheet} />
           <Stack.Screen name="lesson-form" options={sheet} />

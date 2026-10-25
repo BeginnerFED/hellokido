@@ -46,6 +46,10 @@ export const tasks = {
   /** An expense or income category to rename or hide (`code`), or a new one. */
   category: (kind: 'expense' | 'income', code?: string) => openSheet('/category', { kind, code }),
   cardSettings: () => openSheet('/card-settings'),
+  /** A WhatsApp text to change (`id`), or a new one of a kind. */
+  messageTemplate: (params: { id?: string; kind?: string }) => openSheet('/message-template', params),
+  /** The workshop's place, map link and lesson length, which the messages use. */
+  workshop: () => openSheet('/workshop'),
   /** Any first and last day for the Finance tab. */
   financePeriod: () => openSheet('/finance-period'),
   grantAccess: () => openSheet('/grant-access'),
