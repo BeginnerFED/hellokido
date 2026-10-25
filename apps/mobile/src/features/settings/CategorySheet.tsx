@@ -35,7 +35,15 @@ export function CategorySheet({ kind, code }: { kind: CategoryKind; code?: strin
     <SheetScreen title={code ? form.editTitle : form.newTitle} subtitle={kind === 'expense' ? form.expenseKind : form.incomeKind} dirty={state.dirty} busy={state.busy}>
       {!catalog.data ? (
         catalog.isError ? (
-          <EmptyState icon="info" title={t.common.loadFailed} />
+          <EmptyState
+            icon="info"
+            title={t.common.loadFailed}
+            action={
+              <Button size="sm" icon="refresh" busy={catalog.isFetching} onPress={() => void catalog.refetch()}>
+                {t.common.retry}
+              </Button>
+            }
+          />
         ) : (
           <View style={styles.stack}>
             <Skeleton height={50} radius={13} />

@@ -11,11 +11,11 @@ import { SearchField } from '../../ui/Fields'
 import { Icon } from '../../ui/Icon'
 import { Card } from '../../ui/Screen'
 import { Peg } from '../../ui/signature'
-import { Text } from '../../ui/Text'
+import { DOT, Text } from '../../ui/Text'
 
 /** "3 yaş · Ayşe Yılmaz": what tells two children apart in a list. */
 export const describeChild = (child: { student_age?: string | null; parent_name?: string | null }) =>
-  [child.student_age, child.parent_name].filter(Boolean).join(' · ')
+  [child.student_age, child.parent_name].filter(Boolean).join(DOT)
 
 /**
  * Active children to tick for a lesson, found by their own or a parent's name. Those ticked when

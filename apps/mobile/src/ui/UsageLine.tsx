@@ -10,7 +10,13 @@ import { Text } from './Text'
 /** Beads with the remaining count next to them; free participation shows the word instead. */
 export function UsageLine({ usage, size = 'sm' }: { usage: Usage | undefined; size?: 'sm' | 'md' }) {
   const i18n = useI18n()
-  if (!usage) return <Skeleton height={12} width={120} radius={6} />
+  // The resting bar stands in a box the height of the line it becomes, so the row keeps its size
+  if (!usage)
+    return (
+      <View style={styles.waiting}>
+        <Skeleton height={12} width={120} radius={6} />
+      </View>
+    )
   const tone = remainingTone(usage)
   // Running low and running out both ask for a new package: the colour of things to act on, not of danger
   const ink = tone === 'out' || tone === 'low' ? 'actionInk' : 'ink3'
@@ -31,5 +37,6 @@ export function useLessonTitle() {
 }
 
 const styles = StyleSheet.create({
-  line: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 9, rowGap: 3, minWidth: 0 }
+  line: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 9, rowGap: 3, minWidth: 0 },
+  waiting: { height: 18, justifyContent: 'center' }
 })

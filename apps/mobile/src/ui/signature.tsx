@@ -86,9 +86,11 @@ export function Peg({ seat, size = 'md', style }: { seat: PegSeat; size?: keyof 
       importantForAccessibility="no-hide-descendants"
       style={[styles.peg, { width: s.box, height: s.box, borderRadius: s.radius }, look.box, style]}
     >
+      {/* A tile has a fixed size, so its initials grow only a little with the phone's text size */}
       <Text
         weight="600"
         tabular
+        maxFontSizeMultiplier={1.15}
         style={{ fontSize: s.font, lineHeight: s.font + 3, color: look.ink, textDecorationLine: look.struck ? 'line-through' : 'none' }}
       >
         {initialsOf(seat.name)}

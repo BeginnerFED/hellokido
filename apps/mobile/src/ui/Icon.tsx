@@ -40,6 +40,7 @@ const ICONS = {
   lock: ['lock', 'lock'],
   logout: ['rectangle.portrait.and.arrow.right', 'logout'],
   megaphone: ['megaphone', 'campaign'],
+  minus: ['minus', 'remove'],
   money: ['turkishlirasign.circle', 'payments'],
   moon: ['circle.lefthalf.filled', 'dark_mode'],
   more: ['ellipsis.circle', 'more_horiz'],

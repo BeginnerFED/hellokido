@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Alert, Pressable, StyleSheet, View } from 'react-native'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Alert, Pressable, StyleSheet, View, type TextInputInstance } from 'react-native'
 import { router, type Href } from 'expo-router'
 import { useQuery } from '@tanstack/react-query'
 import * as Haptics from 'expo-haptics'
@@ -27,7 +27,7 @@ import { EmptyState, Notice, Skeleton } from '../../ui/Bits'
 import { Button } from '../../ui/Button'
 import { PeriodField, Segmented, SelectField, Stepper, TextField } from '../../ui/Fields'
 import { SheetActions, SheetScreen, useSheet } from '../../ui/Sheet'
-import { Text } from '../../ui/Text'
+import { DOT, Text } from '../../ui/Text'
 import { useToast } from '../../ui/Toast'
 import { PaymentFields, usePackageOptions, usePackagePrice, type FormState } from '../payment/fields'
 import { useTakeOffWaitlist } from '../waitlist/handoff'
@@ -65,9 +65,9 @@ export function RegistrationSheet({ id, waitlistId }: { id?: string; waitlistId?
     >
       {waiting ? (
         <View style={styles.stack}>
-          <Skeleton height={50} radius={13} />
-          <Skeleton height={50} radius={13} />
-          <Skeleton height={50} radius={13} />
+          <Skeleton height={50} radius={14} />
+          <Skeleton height={50} radius={14} />
+          <Skeleton height={50} radius={14} />
         </View>
       ) : id && !row ? (
         <EmptyState icon="info" title={t.children.detail.notFound} />
@@ -134,8 +134,15 @@ function RegistrationForm({ registration: row, fromWaitlist, onStateChange }: Fo
   const [extra, setExtra] = useState(initial.extra)
   const [note, setNote] = useState(initial.note)
   const [owner, setOwner] = useState<Owner | null>(null)
+  // The phone is judged once it was left, not from its first digit
+  const [phoneLeft, setPhoneLeft] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // A second tap in the same moment must not register the child twice
+  const saving = useRef(false)
+  const ageRef = useRef<TextInputInstance>(null)
+  const parentRef = useRef<TextInputInstance>(null)
+  const phoneRef = useRef<TextInputInstance>(null)
 
   const packageOptions = usePackageOptions({ includeFree: true, current: initial.packageType })
   const price = usePackagePrice(packageType)
@@ -241,7 +248,7 @@ function RegistrationForm({ registration: row, fromWaitlist, onStateChange }: Fo
   const describePayment = (values: { status: string | null; amount: number | null; method: string | null; date: Date | string | null }) =>
     values.status !== 'odendi'
       ? t.children.form.pendingWord
-      : [money(values.amount), labels.method(values.method), values.date ? formatDate(values.date) : ''].filter(Boolean).join(' · ')
+      : [money(values.amount), labels.method(values.method), values.date ? formatDate(values.date) : ''].filter(Boolean).join(DOT)
 
   const showOwner = async (normalized: string) => {
     const found = await findRegistrationByPhone(normalized)
@@ -249,7 +256,7 @@ function RegistrationForm({ registration: row, fromWaitlist, onStateChange }: Fo
   }
 
   const save = async (confirmed = false) => {
-    if (!valid || busy || !packageType) return
+    if (!valid || busy || saving.current || !packageType) return
     if (row) {
       if (Object.keys(changes).length === 0) return sheet.finish()
       // Changing a payment that was already collected rewrites it: say so before it happens
@@ -269,6 +276,7 @@ function RegistrationForm({ registration: row, fromWaitlist, onStateChange }: Fo
         return
       }
     }
+    saving.current = true
     setBusy(true)
     setError(null)
     try {
@@ -307,15 +315,18 @@ function RegistrationForm({ registration: row, fromWaitlist, onStateChange }: Fo
     } catch (caught) {
       const kind = registrationError(caught)
       if (kind === 'duplicate_phone') {
-        await showOwner(row ? (changes.parent_phone ?? row.parent_phone) : normalizePhone(phone))
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error)
+        await showOwner(row ? (changes.parent_phone ?? row.parent_phone) : normalizePhone(phone)).catch(() => setOwner('unknown'))
       } else if (kind === 'stale' || kind === 'not_found') {
         toast({ tone: 'warning', title: t.children.form.stale })
         refresh.children(row?.id)
         sheet.finish()
       } else {
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error)
         setError(kind === 'invalid_period' ? t.children.form.invalidPeriod : row ? t.children.form.updateFailed : t.children.form.createFailed)
       }
     } finally {
+      saving.current = false
       setBusy(false)
     }
   }
@@ -325,7 +336,7 @@ function RegistrationForm({ registration: row, fromWaitlist, onStateChange }: Fo
       ? t.children.form.phoneUsedUnknown
       : owner
         ? fmt(owner.is_active === false ? t.children.form.phoneUsedArchived : t.children.form.phoneUsed, { name: owner.student_name })
-        : phone && phoneEdited && !isValidPhone(phone)
+        : phone && phoneLeft && phoneEdited && !isValidPhone(phone)
           ? t.children.form.phoneHint
           : undefined
 
@@ -344,9 +355,13 @@ function RegistrationForm({ registration: row, fromWaitlist, onStateChange }: Fo
         autoComplete="off"
         autoCorrect={false}
         autoFocus={!editing && !fromWaitlist}
+        // "Next" on the keyboard walks the child and the parent field by field
         returnKeyType="next"
+        submitBehavior="submit"
+        onSubmitEditing={() => ageRef.current?.focus()}
       />
       <TextField
+        ref={ageRef}
         label={t.children.form.studentAge}
         placeholder={t.children.form.agePlaceholder}
         value={age}
@@ -354,10 +369,13 @@ function RegistrationForm({ registration: row, fromWaitlist, onStateChange }: Fo
         autoCapitalize="words"
         autoComplete="off"
         returnKeyType="next"
+        submitBehavior="submit"
+        onSubmitEditing={() => parentRef.current?.focus()}
       />
 
       <View style={styles.break} />
       <TextField
+        ref={parentRef}
         label={t.children.form.parentName}
         value={parentName}
         onChangeText={(text) => setParentName(capitalizeName(text) ?? '')}
@@ -365,15 +383,19 @@ function RegistrationForm({ registration: row, fromWaitlist, onStateChange }: Fo
         autoComplete="off"
         autoCorrect={false}
         returnKeyType="next"
+        submitBehavior="submit"
+        onSubmitEditing={() => phoneRef.current?.focus()}
       />
       <View style={styles.phone}>
         <TextField
+          ref={phoneRef}
           label={t.children.form.parentPhone}
           value={phone}
           onChangeText={(text) => {
             setOwner(null)
             setPhone(phoneDigits(text))
           }}
+          onBlur={() => setPhoneLeft(true)}
           keyboardType="phone-pad"
           inputMode="tel"
           autoComplete="tel"
@@ -452,8 +474,9 @@ function RegistrationForm({ registration: row, fromWaitlist, onStateChange }: Fo
 
 const styles = StyleSheet.create({
   stack: { gap: 14 },
-  // The extra space between the child, the parent, the package and the payment
-  break: { height: 6 },
+  // A step more room between the child, the parent, the package and the payment: the spacer sits
+  // between two of the sheet's 20pt gaps and takes most of them back, so a group break is 28pt
+  break: { marginVertical: -6 },
   phone: { gap: 8 },
   link: { alignSelf: 'flex-start', paddingHorizontal: 2 }
 })

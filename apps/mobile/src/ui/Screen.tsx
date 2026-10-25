@@ -33,11 +33,11 @@ type ScreenProps = {
   children: ReactNode
   onRefresh?: () => Promise<unknown>
   scrollRef?: Ref<ScrollViewInstance>
-  /** Space between the sections; the large title above is the system's own. */
+  /** Space between the sections; the title bar above is the system's own. */
   gap?: number
 }
 
-/** A tab's page: scrolls under the large title, with pull to refresh when it has data to read again. */
+/** A tab's page: scrolls under the title bar, with pull to refresh when it has data to read again. */
 export function Screen({ children, onRefresh, scrollRef, gap = 30 }: ScreenProps) {
   const c = useColors()
   const pull = usePullRefresh(onRefresh ?? (async () => undefined))
@@ -48,7 +48,12 @@ export function Screen({ children, onRefresh, scrollRef, gap = 30 }: ScreenProps
       keyboardDismissMode="on-drag"
       style={{ backgroundColor: c.ground }}
       contentContainerStyle={[styles.content, { gap }]}
-      refreshControl={onRefresh ? <RefreshControl refreshing={pull.refreshing} onRefresh={pull.onRefresh} tintColor={c.ink3} colors={[c.accent]} /> : undefined}
+      refreshControl={
+        onRefresh ? (
+          // Android draws its spinner on a disc of its own, which stays white in the dark theme unless told
+          <RefreshControl refreshing={pull.refreshing} onRefresh={pull.onRefresh} tintColor={c.ink3} colors={[c.accent]} progressBackgroundColor={c.surface} />
+        ) : undefined
+      }
     >
       <OfflineNotice />
       {children}
@@ -155,7 +160,7 @@ export function Row({ leading, title, subtitle, trailing, onPress, chevron, acce
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
-      style={({ pressed }) => [styles.row, pressed && { backgroundColor: c.well }, style]}
+      style={({ pressed }) => [styles.row, pressed && { backgroundColor: c.pressed }, style]}
     >
       {body}
     </Pressable>

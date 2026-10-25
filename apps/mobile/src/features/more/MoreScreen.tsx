@@ -21,6 +21,9 @@ export function MoreScreen() {
 
   const families = waitlist.data?.length
   const noteCount = notes.data?.length
+  // The count under a name: an empty line while it loads; nothing when it could not be read (the page itself says why)
+  const countLine = (count: number | undefined, failed: boolean, line: (count: number) => string) =>
+    count !== undefined ? line(count) : failed ? undefined : LOADING_LINE
   // The settings' own parts say what is inside, so nobody has to open it to find out
   const inside = [t.settings.appearance.title, t.settings.packages.title, t.settings.card.title, t.settings.monthly.title, t.settings.access.title]
     .map((title, index) => (index === 0 ? title : title.toLocaleLowerCase(tag)))
@@ -34,14 +37,14 @@ export function MoreScreen() {
         <Row
           leading={<Tablet icon="waitlist" />}
           title={t.shell.nav.waitlist}
-          subtitle={families === undefined ? LOADING_LINE : families > 0 ? plural(t.waitlist.summary, families) : t.waitlist.summaryNone}
+          subtitle={countLine(families, waitlist.isError, (count) => (count > 0 ? plural(t.waitlist.summary, count) : t.waitlist.summaryNone))}
           chevron
           onPress={() => open('waitlist')}
         />
         <Row
           leading={<Tablet icon="note" />}
           title={t.shell.nav.notes}
-          subtitle={noteCount === undefined ? LOADING_LINE : noteCount > 0 ? plural(t.notes.count, noteCount) : t.notes.empty}
+          subtitle={countLine(noteCount, notes.isError, (count) => (count > 0 ? plural(t.notes.count, count) : t.notes.empty))}
           chevron
           onPress={() => open('notes')}
         />

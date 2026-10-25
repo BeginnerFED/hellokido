@@ -4,6 +4,7 @@ import { CircleHalfIcon, MoonIcon, SunIcon } from '@phosphor-icons/react'
 import { LANGUAGE_NAMES, LOCALES, type Locale } from '@hellokido/core/i18n'
 import { useI18n } from '../../providers/I18n'
 import { useTheme, type ThemeChoice } from '../../providers/Theme'
+import { PeriodStartSettings } from '../finance/PeriodStart'
 import { Segmented } from '../../ui/Choice'
 import { Page } from '../../ui/Page'
 import { cx } from '../../ui/cx'
@@ -15,7 +16,7 @@ import { MessageList } from './Messages'
 import { MonthlyList } from './MonthlyList'
 import { PackageList } from './Packages'
 
-const SECTIONS = ['appearance', 'packages', 'messages', 'card', 'monthly', 'expense-categories', 'income-categories', 'access', 'about'] as const
+const SECTIONS = ['appearance', 'packages', 'messages', 'money-period', 'card', 'monthly', 'expense-categories', 'income-categories', 'access', 'about'] as const
 type SectionId = (typeof SECTIONS)[number]
 
 /**
@@ -31,6 +32,7 @@ export default function SettingsPage() {
     appearance: copy.appearance.title,
     packages: copy.packages.title,
     messages: t.messages.title,
+    'money-period': copy.period.title,
     card: copy.card.title,
     monthly: copy.monthly.title,
     'expense-categories': copy.categories.expenseTitle,
@@ -82,6 +84,9 @@ export default function SettingsPage() {
           </SettingsSection>
           <SettingsSection id="messages" title={titles.messages} body={t.messages.body}>
             <MessageList />
+          </SettingsSection>
+          <SettingsSection id="money-period" title={titles['money-period']} body={copy.period.body}>
+            <PeriodStartSettings />
           </SettingsSection>
           <SettingsSection id="card" title={titles.card} body={copy.card.body}>
             <CardSettings />

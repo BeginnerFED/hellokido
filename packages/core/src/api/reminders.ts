@@ -205,6 +205,50 @@ export async function updateWorkshop(info: WorkshopInfo) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Evening reminder (app_settings 'evening_reminder'): the server tells every admin phone how many
+// of tomorrow's families still wait for their reminder, once a day at this Istanbul time
+
+export type EveningReminder = { enabled: boolean; time: string }
+
+export const DEFAULT_EVENING_REMINDER: EveningReminder = { enabled: true, time: '16:00' }
+
+const TIME = /^([01]\d|2[0-3]):[0-5]\d$/
+
+/** "16:00" from "16:00", "16.00", "1600" or "9:30"; null for anything that is not a time of day. */
+export function parseTimeOfDay(text: string): string | null {
+  const match = /^(\d{1,2})[:.]?(\d{2})$/.exec(text.trim())
+  if (!match) return null
+  const time = `${match[1].padStart(2, '0')}:${match[2]}`
+  return TIME.test(time) ? time : null
+}
+
+export function readEveningReminder(value: unknown): EveningReminder {
+  const row = value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {}
+  return {
+    enabled: typeof row.enabled === 'boolean' ? row.enabled : DEFAULT_EVENING_REMINDER.enabled,
+    time: typeof row.time === 'string' && TIME.test(row.time) ? row.time : DEFAULT_EVENING_REMINDER.time
+  }
+}
+
+export async function updateEveningReminder(setting: EveningReminder) {
+  const result = await db.from('app_settings').update({ value: { enabled: setting.enabled, time: setting.time } }).eq('key', 'evening_reminder').select('id')
+  if (result.error) throw result.error
+  if (!result.data?.length) throw new Error('not_found')
+}
+
+/** Signs this phone up for the evening reminder; called after sign-in with the phone's Expo push token. */
+export async function registerPushDevice(token: string, locale: string, platform: 'ios' | 'android') {
+  const result = await db.rpc('register_push_device', { device_token: token, device_locale: locale, device_platform: platform })
+  if (result.error) throw result.error
+}
+
+/** Takes this phone off the list; called before signing out, while the session still exists. */
+export async function unregisterPushDevice(token: string) {
+  const result = await db.rpc('unregister_push_device', { device_token: token })
+  if (result.error) throw result.error
+}
+
+// ---------------------------------------------------------------------------------------------
 // Reminder log: what was opened in WhatsApp, shared by every admin and device
 
 export type ReminderLogEntry = Row<'reminder_log'>

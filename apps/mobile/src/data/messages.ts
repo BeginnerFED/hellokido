@@ -28,7 +28,7 @@ export const messageKeys = {
 }
 
 export function useTemplates() {
-  return useQuery({ queryKey: messageKeys.templates, queryFn: listMessageTemplates, staleTime: 5 * 60_000 })
+  return useQuery({ queryKey: messageKeys.templates, queryFn: listMessageTemplates, staleTime: 60_000 })
 }
 
 /**

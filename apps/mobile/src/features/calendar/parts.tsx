@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { Pressable, StyleSheet, View } from 'react-native'
+import * as Haptics from 'expo-haptics'
 import { addDays, addMinutes, isSameDay, isSameMonth, startOfDay } from 'date-fns'
 import { SEATS_SHOWN, type Lesson, type Seat } from '@hellokido/core/api'
 import { holdsSeat } from '@hellokido/core/rules/attendance.js'
@@ -9,6 +10,7 @@ import { useI18n, type I18n } from '../../providers/I18n'
 import { tint, useColors, type Colors } from '../../theme/colors'
 import { Mark, Skeleton } from '../../ui/Bits'
 import { Icon } from '../../ui/Icon'
+import { Card } from '../../ui/Screen'
 import { AgeTablet, LessonShape } from '../../ui/signature'
 import { Text } from '../../ui/Text'
 import { useLessonTitle } from '../../ui/UsageLine'
@@ -46,7 +48,7 @@ export function WeekStrip({ days, selected, lessons, now, onSelect }: { days: Da
   const grouped = useMemo(() => byDay(lessons), [lessons])
   const todayStart = startOfDay(now)
   return (
-    <View style={[styles.strip, { backgroundColor: c.surface }]}>
+    <View style={[styles.strip, { backgroundColor: c.surface, borderColor: c.line }]}>
       {days.map((day) => {
         const list = grouped.get(dayKey(day)) ?? []
         const on = isSameDay(day, selected)
@@ -55,7 +57,11 @@ export function WeekStrip({ days, selected, lessons, now, onSelect }: { days: Da
         return (
           <Pressable
             key={dayKey(day)}
-            onPress={() => onSelect(day)}
+            onPress={() => {
+              if (on) return
+              void Haptics.selectionAsync()
+              onSelect(day)
+            }}
             accessibilityRole="button"
             accessibilityState={{ selected: on }}
             accessibilityLabel={`${date(day, { weekday: 'long', day: 'numeric', month: 'long' })}${list.length ? `, ${plural(t.calendar.lessonCount, list.length)}` : ''}`}
@@ -98,7 +104,7 @@ export function SeatNames({ seats }: { seats: Seat[] }) {
                 !holds ? { backgroundColor: c.lineStrong } : fill ? { backgroundColor: fill } : { borderWidth: 1.5, borderColor: c.accent, backgroundColor: c.surface }
               ]}
             />
-            <Text variant="foot" tone={holds ? 'ink' : 'ink3'} numberOfLines={1} style={!holds && styles.struck}>
+            <Text variant="foot" tone={holds ? 'ink' : 'ink3'} numberOfLines={1} style={[styles.shrink, !holds && styles.struck]}>
               {seat.child.student_name}
             </Text>
           </View>
@@ -127,7 +133,14 @@ export function AgendaCard({ lesson, now, onOpen }: { lesson: Lesson; now: Date;
     <Pressable
       onPress={onOpen}
       accessibilityRole="button"
-      accessibilityLabel={`${time} ${title(lesson)}, ${labels.ageGroup(lesson.age_group)}, ${fmt(t.today.seats, { count: taken, capacity: SEATS_SHOWN })}`}
+      accessibilityLabel={[
+        `${time} ${title(lesson)}`,
+        labels.ageGroup(lesson.age_group),
+        fmt(t.today.seats, { count: taken, capacity: SEATS_SHOWN }),
+        unmarked > 0 ? plural(t.calendar.unmarked, unmarked) : null
+      ]
+        .filter(Boolean)
+        .join(', ')}
       style={({ pressed }) => [styles.card, { backgroundColor: look.background, borderColor: look.border }, pressed && { opacity: 0.75 }]}
     >
       <View style={styles.cardHead}>
@@ -149,10 +162,11 @@ export function AgendaCard({ lesson, now, onOpen }: { lesson: Lesson; now: Date;
           <View style={styles.marks}>
             <AgeTablet group={lesson.age_group} label={labels.ageGroup(lesson.age_group)} />
             {running && <Mark tone="accent">{t.calendar.now}</Mark>}
-            {unmarked > 0 && <Mark tone="action">{plural(t.calendar.unmarked, unmarked)}</Mark>}
+            {unmarked > 0 && <Mark tone="action">{plural(t.calendar.unmarkedShort, unmarked)}</Mark>}
           </View>
         </View>
-        <Text variant="foot" weight="600" tone={taken > SEATS_SHOWN ? 'actionInk' : 'ink2'} tabular>
+        {/* A child past the planned six turns the count red, as on the seat board */}
+        <Text variant="foot" weight="600" tone={taken > SEATS_SHOWN ? 'negativeInk' : 'ink2'} tabular style={styles.count}>
           {taken}/{SEATS_SHOWN}
         </Text>
       </View>
@@ -172,8 +186,8 @@ export function AgendaCard({ lesson, now, onOpen }: { lesson: Lesson; now: Date;
 export function AgendaSkeleton() {
   return (
     <View style={styles.list}>
-      <Skeleton height={112} radius={16} />
-      <Skeleton height={112} radius={16} />
+      <Skeleton height={112} radius={18} />
+      <Skeleton height={112} radius={18} />
     </View>
   )
 }
@@ -207,11 +221,12 @@ export function MonthDots({
 
   return (
     <View style={styles.month}>
-      <View style={[styles.grid, { backgroundColor: c.surface }]}>
-        <View style={styles.week}>
+      <View style={[styles.grid, { backgroundColor: c.surface, borderColor: c.line }]}>
+        {/* Short names: Turkish narrow ones repeat (P S Ç P C C P) and cannot be told apart */}
+        <View style={[styles.week, styles.weekdays]}>
           {daysOf(weeks[0]).map((day) => (
-            <Text key={day.getDay()} variant="caption" weight="500" tone="ink3" align="center" style={styles.cell}>
-              {date(day, { weekday: 'narrow' })}
+            <Text key={day.getDay()} variant="caption" weight="500" tone="ink3" align="center" numberOfLines={1} style={styles.cell}>
+              {date(day, { weekday: 'short' })}
             </Text>
           ))}
         </View>
@@ -229,7 +244,8 @@ export function MonthDots({
                   accessibilityLabel={`${date(day, { weekday: 'long', day: 'numeric', month: 'long' })}${list.length ? `, ${plural(t.calendar.lessonCount, list.length)}` : ''}`}
                   style={({ pressed }) => [styles.cell, styles.monthDay, pressed && { backgroundColor: c.well }]}
                 >
-                  <View style={[styles.monthNumber, isToday && { backgroundColor: c.accentSolid }]}>
+                  {/* Days of the neighbouring months fade further than past days, so the month's edges read in any month */}
+                  <View style={[styles.monthNumber, isToday && { backgroundColor: c.accentSolid }, !inMonth && !isToday && styles.outside]}>
                     <Text
                       variant="sub"
                       weight="600"
@@ -255,34 +271,35 @@ export function MonthDots({
         <Text variant="section" accessibilityRole="header" style={styles.themesTitle}>
           {t.calendar.theme.label}
         </Text>
-        <View style={[styles.themes, { backgroundColor: c.surface }]}>
-          {weeks.map((monday, index) => {
+        <Card>
+          {weeks.map((monday) => {
             const theme = themes?.[weekKey(monday)]?.trim()
             return (
-              <View key={dayKey(monday)}>
-                {index > 0 && <View style={[styles.separator, { backgroundColor: c.line }]} />}
-                <Pressable
-                  onPress={() => onTheme(monday)}
-                  accessibilityRole="button"
-                  accessibilityLabel={`${weekRange(i18n, monday)}: ${theme || t.calendar.theme.none}`}
-                  style={({ pressed }) => [styles.themeRow, pressed && { backgroundColor: c.well }]}
-                >
-                  <Text variant="foot" tone="ink2" tabular numberOfLines={1} style={styles.themeDates}>
-                    {weekRange(i18n, monday, false)}
-                  </Text>
-                  {themes === undefined ? (
+              <Pressable
+                key={dayKey(monday)}
+                onPress={() => onTheme(monday)}
+                accessibilityRole="button"
+                accessibilityLabel={`${weekRange(i18n, monday)}: ${theme || t.calendar.theme.none}`}
+                accessibilityHint={theme ? t.calendar.theme.edit : t.calendar.theme.add}
+                style={({ pressed }) => [styles.themeRow, pressed && { backgroundColor: c.well }]}
+              >
+                <Text variant="foot" tone="ink2" tabular numberOfLines={1} style={styles.themeDates}>
+                  {weekRange(i18n, monday, false)}
+                </Text>
+                {themes === undefined ? (
+                  <View style={styles.flex}>
                     <Skeleton height={12} width={90} radius={6} />
-                  ) : (
-                    <Text variant="sub" weight={theme ? '500' : '400'} tone={theme ? 'ink' : 'ink3'} numberOfLines={3} style={styles.flex}>
-                      {theme || t.calendar.theme.add}
-                    </Text>
-                  )}
-                  <Icon name="chevronRight" size={12} color={c.ink3} weight="semibold" />
-                </Pressable>
-              </View>
+                  </View>
+                ) : (
+                  <Text variant="sub" weight={theme ? '500' : '400'} tone={theme ? 'ink' : 'ink3'} numberOfLines={3} style={styles.flex}>
+                    {theme || t.calendar.theme.add}
+                  </Text>
+                )}
+                <Icon name="chevronRight" size={13} color={c.ink3} weight="semibold" />
+              </Pressable>
             )
           })}
-        </View>
+        </Card>
       </View>
     </View>
   )
@@ -291,7 +308,7 @@ export function MonthDots({
 const styles = StyleSheet.create({
   flex: { flex: 1, minWidth: 0 },
   shrink: { flexShrink: 1 },
-  strip: { flexDirection: 'row', borderRadius: 16, padding: 5, gap: 2 },
+  strip: { flexDirection: 'row', borderRadius: 18, borderWidth: 1, padding: 5, gap: 2 },
   day: { flex: 1, alignItems: 'center', gap: 2, borderRadius: 12, paddingTop: 6, paddingBottom: 7 },
   dayNumber: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   dots: { flexDirection: 'row', alignItems: 'center', gap: 3, height: 6 },
@@ -300,6 +317,7 @@ const styles = StyleSheet.create({
   card: { borderRadius: 18, borderWidth: 1 },
   cardHead: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 11 },
   times: { width: 52 },
+  count: { paddingTop: 3 },
   titleLine: { flexDirection: 'row', alignItems: 'center', gap: 6, minWidth: 0 },
   marks: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 8, rowGap: 4, marginTop: 4 },
   cardFoot: { borderTopWidth: StyleSheet.hairlineWidth, paddingHorizontal: 16, paddingVertical: 10 },
@@ -308,14 +326,14 @@ const styles = StyleSheet.create({
   nameDot: { width: 7, height: 7, borderRadius: 4 },
   struck: { textDecorationLine: 'line-through' },
   month: { gap: 24 },
-  grid: { borderRadius: 16, padding: 5 },
+  grid: { borderRadius: 18, borderWidth: 1, padding: 5 },
   week: { flexDirection: 'row' },
-  cell: { flex: 1 },
-  monthDay: { alignItems: 'center', gap: 3, paddingVertical: 5, borderRadius: 10, minHeight: 50 },
+  weekdays: { paddingTop: 6, paddingBottom: 4 },
+  cell: { flex: 1, minWidth: 0 },
+  monthDay: { alignItems: 'center', gap: 3, paddingVertical: 5, borderRadius: 12, minHeight: 50 },
   monthNumber: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  outside: { opacity: 0.45 },
   themesTitle: { marginBottom: 10, paddingHorizontal: 4 },
-  themes: { borderRadius: 16, overflow: 'hidden' },
-  separator: { height: StyleSheet.hairlineWidth, marginLeft: 16 },
-  themeRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 11, minHeight: 50 },
+  themeRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12, minHeight: 56 },
   themeDates: { width: 118 }
 })

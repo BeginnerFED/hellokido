@@ -50,11 +50,14 @@ function ToastView({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
       <Animated.View entering={still ? undefined : FadeInUp.duration(220)} exiting={still ? undefined : FadeOutUp.duration(180)}>
         <Pressable
           onPress={onDismiss}
+          // With an undo inside, the toast is not one element, so a screen reader can still reach the button
+          accessible={!toast.action}
           accessibilityRole="alert"
+          accessibilityLiveRegion="polite"
           style={[styles.toast, { backgroundColor: c.surface, borderColor: c.line }]}
         >
           <Icon name={icon} size={20} color={iconColor} />
-          <View style={{ flexShrink: 1 }}>
+          <View style={styles.words}>
             <Text variant="sub" weight="500">
               {toast.title}
             </Text>
@@ -109,5 +112,6 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 6 },
     elevation: 6
   },
+  words: { flexShrink: 1 },
   action: { marginLeft: 6, paddingVertical: 2 }
 })

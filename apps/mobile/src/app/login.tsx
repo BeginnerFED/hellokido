@@ -1,7 +1,9 @@
 import { useRef, useState } from 'react'
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, useColorScheme, View, type TextInputInstance } from 'react-native'
+import { Pressable, ScrollView, StyleSheet, useColorScheme, useWindowDimensions, View, type TextInputInstance } from 'react-native'
+import * as Haptics from 'expo-haptics'
 import { Image } from 'expo-image'
-import { LANGUAGE_NAMES, LOCALES, type Messages } from '@hellokido/core/i18n'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { LANGUAGE_NAMES, LOCALES, type Locale, type Messages } from '@hellokido/core/i18n'
 import { supabase } from '../lib/supabase'
 import { useI18n } from '../providers/I18n'
 import { useColors } from '../theme/colors'
@@ -26,6 +28,9 @@ function readableError(message: string, errors: Messages['login']['errors']) {
 export default function Login() {
   const c = useColors()
   const scheme = useColorScheme()
+  const insets = useSafeAreaInsets()
+  // A small phone (SE, mini) keeps the form high enough that the button stays above the keyboard
+  const compact = useWindowDimensions().height < 740
   const { t, locale, setLocale, fmt } = useI18n()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -34,25 +39,42 @@ export default function Login() {
   const [error, setError] = useState<string | null>(null)
   const passwordRef = useRef<TextInputInstance>(null)
 
+  const fail = (message: string) => {
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error)
+    setError(readableError(message, t.login.errors))
+  }
+
   const submit = async () => {
     if (busy || !email.trim() || !password) return
     setBusy(true)
     setError(null)
     try {
       const { error: signInError } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
-      if (signInError) setError(readableError(signInError.message, t.login.errors))
+      if (signInError) fail(signInError.message)
     } catch (caught) {
-      setError(readableError(String((caught as Error)?.message ?? ''), t.login.errors))
+      fail(String((caught as Error)?.message ?? ''))
     } finally {
       setBusy(false)
     }
   }
 
+  const chooseLanguage = (code: Locale) => {
+    if (code === locale) return
+    void Haptics.selectionAsync()
+    setLocale(code)
+  }
+
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={[styles.page, { backgroundColor: c.ground }]}>
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+    <View style={[styles.page, { backgroundColor: c.ground }]}>
+      {/* The iPhone lifts the form above the keyboard and scrolls the box being typed in into view */}
+      <ScrollView
+        contentContainerStyle={[styles.content, { paddingTop: insets.top + (compact ? 24 : 48), paddingBottom: insets.bottom + 20 }]}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+        automaticallyAdjustKeyboardInsets
+      >
         <View style={styles.form}>
-          <Image source={scheme === 'dark' ? LOGO_DARK : LOGO} style={styles.logo} contentFit="contain" accessibilityLabel="Hello Kido" />
+          <Image source={scheme === 'dark' ? LOGO_DARK : LOGO} style={[styles.logo, compact && styles.logoCompact]} contentFit="contain" accessibilityLabel="Hello Kido" />
           <Text variant="title" align="center" accessibilityRole="header" style={styles.title}>
             {t.login.title}
           </Text>
@@ -60,6 +82,7 @@ export default function Login() {
             label={t.login.email}
             value={email}
             onChangeText={setEmail}
+            editable={!busy}
             autoCapitalize="none"
             autoCorrect={false}
             autoComplete="email"
@@ -74,6 +97,7 @@ export default function Login() {
             label={t.login.password}
             value={password}
             onChangeText={setPassword}
+            editable={!busy}
             secureTextEntry={!shown}
             autoCapitalize="none"
             autoCorrect={false}
@@ -105,7 +129,7 @@ export default function Login() {
             {LOCALES.map((code) => (
               <Pressable
                 key={code}
-                onPress={() => setLocale(code)}
+                onPress={() => chooseLanguage(code)}
                 accessibilityRole="radio"
                 accessibilityState={{ checked: code === locale }}
                 hitSlop={8}
@@ -122,17 +146,19 @@ export default function Login() {
           </Text>
         </View>
       </ScrollView>
-    </KeyboardAvoidingView>
+    </View>
   )
 }
 
 const styles = StyleSheet.create({
   page: { flex: 1 },
-  content: { flexGrow: 1, justifyContent: 'space-between', paddingHorizontal: 24, paddingTop: 96, paddingBottom: 36 },
+  content: { flexGrow: 1, justifyContent: 'space-between', paddingHorizontal: 24 },
   form: { gap: 18, width: '100%', maxWidth: 420, alignSelf: 'center' },
   logo: { width: 168, height: 96, alignSelf: 'center', marginBottom: 6 },
+  logoCompact: { width: 140, height: 76, marginBottom: 0 },
   title: { marginBottom: 8 },
   footer: { gap: 14, marginTop: 40, alignItems: 'center' },
-  languages: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  language: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12 }
+  languages: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', gap: 6 },
+  // Pressed things are pills
+  language: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999 }
 })

@@ -46,6 +46,10 @@ export const tasks = {
   /** An expense or income category to rename or hide (`code`), or a new one. */
   category: (kind: 'expense' | 'income', code?: string) => openSheet('/category', { kind, code }),
   cardSettings: () => openSheet('/card-settings'),
+  /** The day money periods start on (Settings › Money period). */
+  moneyPeriod: () => openSheet('/money-period'),
+  /** Any first and last day for the Finance tab. */
+  financePeriod: () => openSheet('/finance-period'),
   grantAccess: () => openSheet('/grant-access'),
   /** A new lesson on a day ('yyyy-MM-dd'), the day and kind of one (`id`), or a copy of it (`copy`). */
   lesson: ({ id, day, copy }: { id?: string; day?: string; copy?: boolean } = {}) => openSheet('/lesson-form', { id, day, copy: copy ? '1' : undefined }),

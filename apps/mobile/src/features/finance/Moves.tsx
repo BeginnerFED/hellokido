@@ -13,8 +13,8 @@ import { Button } from '../../ui/Button'
 import { Chip, Segmented } from '../../ui/Fields'
 import { Card, Section } from '../../ui/Screen'
 import { Peg } from '../../ui/signature'
-import { Text } from '../../ui/Text'
-import { CategoryTablet, IncomeTablet, MINUS, methodName, together } from './bits'
+import { DOT, DotLine, dots, Text } from '../../ui/Text'
+import { CategoryTablet, IncomeTablet, MINUS, methodName, ROW_INSET, TILE, together } from './bits'
 
 export type MoveKind = 'all' | 'in' | 'out'
 /** `type` is an expense type for money out, the source (package, child, other) for money in. */
@@ -34,9 +34,11 @@ type Move = {
   method: string
   type: string
   title: string
-  meta: string
+  /** What the money was for and when; each part takes its own line when they do not fit one. */
+  meta: string[]
   glyph: ReactNode
-  marks: ReactNode
+  /** A word beside the name (archived, monthly); it is read out with the row. */
+  mark: string | null
   onOpen?: () => void
 }
 
@@ -64,10 +66,10 @@ function incomeMove(i18n: I18n, labels: Labels, line: IncomeLine, openChild: (id
     type: line.source,
     title,
     // The weeks a package covers stay together on one line
-    meta: [what, period && together(period)].filter(Boolean).join(' · '),
-    glyph: forChild ? <Peg seat={{ id: registrationId ?? line.key, name: line.student, status: 'scheduled' }} /> : <IncomeTablet code={line.category} />,
+    meta: [what, together(period)].filter(Boolean),
+    glyph: forChild ? <Peg seat={{ id: registrationId ?? line.key, name: line.student, status: 'scheduled' }} /> : <IncomeTablet code={line.category} size={TILE} />,
     // Archived children keep their payments; a missing status counts as archived, as before
-    marks: forChild && line.isActive !== true ? <Mark tone="neutral">{t.common.archived}</Mark> : null,
+    mark: forChild && line.isActive !== true ? t.common.archived : null,
     // Package payments are corrected on the child's page, where the lesson counts stay in step
     onOpen: line.source === 'package' ? (registrationId ? () => openChild(registrationId) : undefined) : () => tasks.income({ id: line.id })
   }
@@ -84,9 +86,9 @@ function expenseMove(t: I18n['t'], labels: Labels, row: Expense): Move {
     method: row.payment_method,
     type: row.expense_type,
     title: row.description || category,
-    meta: [row.description ? category : '', row.notes].filter(Boolean).join(' · '),
-    glyph: <CategoryTablet code={row.expense_type} />,
-    marks: row.recurring_expense_id ? <Mark tone="neutral">{t.finance.moves.monthly}</Mark> : null,
+    meta: [row.description ? category : '', row.notes ?? ''].filter(Boolean),
+    glyph: <CategoryTablet code={row.expense_type} size={TILE} />,
+    mark: row.recurring_expense_id ? t.finance.moves.monthly : null,
     onOpen: () => tasks.expense({ id: row.id })
   }
 }
@@ -130,7 +132,7 @@ export function MovesSection({ income, expenses, isError, waiting, onRetry, filt
   const filtered = filter.kind !== 'all' || filter.type !== 'any'
   const totalIn = shown.reduce((sum, move) => sum + (move.kind === 'in' ? move.amount : 0), 0)
   const totalOut = shown.reduce((sum, move) => sum + (move.kind === 'out' ? move.amount : 0), 0)
-  const totals = [totalIn > 0 && `+${money(totalIn)}`, totalOut > 0 && `${MINUS}${money(totalOut)}`].filter(Boolean).join(' · ')
+  const totals = [totalIn > 0 && together(`+${money(totalIn)}`), totalOut > 0 && together(`${MINUS}${money(totalOut)}`)].filter(Boolean).join(DOT)
 
   const days: { key: string; day: Date; moves: Move[] }[] = []
   for (const move of shown.slice(0, limit)) {
@@ -187,7 +189,7 @@ export function MovesSection({ income, expenses, isError, waiting, onRetry, filt
         </View>
       ) : shown.length === 0 ? (
         <EmptyState
-          title={t.finance.moves.noMatch}
+          title={t.finance.moves.noMatchFilter}
           action={
             <Button size="sm" onPress={() => change(NO_FILTER)}>
               {t.common.clearFilters}
@@ -203,7 +205,7 @@ export function MovesSection({ income, expenses, isError, waiting, onRetry, filt
                   date(group.day, isSameYear(group.day, now) ? { weekday: 'long', day: 'numeric', month: 'long' } : { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
                 )}
               </Text>
-              <Card inset={60}>
+              <Card inset={ROW_INSET}>
                 {group.moves.map((move) => (
                   <MoveRow key={move.key} move={move} />
                 ))}
@@ -226,7 +228,8 @@ function MoveRow({ move }: { move: Move }) {
   const { t, money } = useI18n()
   const labels = useLabels()
   const method = methodName(t, labels, move.method)
-  const amount = `${move.kind === 'in' ? '+' : MINUS}${money(move.amount)}`
+  // The sign, the figure and ₺ never part across lines
+  const amount = together(`${move.kind === 'in' ? '+' : MINUS}${money(move.amount)}`)
   const body = (
     <>
       {move.glyph}
@@ -235,20 +238,16 @@ function MoveRow({ move }: { move: Move }) {
           <Text variant="callout" weight="500" numberOfLines={1} style={styles.shrink}>
             {move.title}
           </Text>
-          {move.marks}
+          {move.mark ? <Mark tone="neutral">{move.mark}</Mark> : null}
         </View>
-        {move.meta ? (
-          <Text variant="foot" tone="ink3" numberOfLines={2}>
-            {move.meta}
-          </Text>
-        ) : null}
+        {move.meta.length > 0 ? <DotLine variant="foot" tone="ink3" numberOfLines={2} parts={move.meta} /> : null}
       </View>
       <View style={styles.amount}>
-        <Text variant="callout" weight="600" tabular>
+        <Text variant="callout" weight="600" tabular numberOfLines={1}>
           {amount}
         </Text>
         {method ? (
-          <Text variant="foot" tone="ink3">
+          <Text variant="foot" tone="ink3" numberOfLines={1}>
             {method}
           </Text>
         ) : null}
@@ -260,7 +259,7 @@ function MoveRow({ move }: { move: Move }) {
     <Pressable
       onPress={move.onOpen}
       accessibilityRole="button"
-      accessibilityLabel={[move.title, move.meta, amount, method].filter(Boolean).join(', ')}
+      accessibilityLabel={[move.title, move.mark, dots(...move.meta), amount, method].filter(Boolean).join(', ')}
       style={({ pressed }) => [styles.move, pressed && { backgroundColor: c.well }]}
     >
       {body}
@@ -273,11 +272,11 @@ const styles = StyleSheet.create({
   shrink: { flexShrink: 1 },
   controls: { gap: 10, marginBottom: 14 },
   filterLine: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 4, minHeight: 34 },
-  emptyCard: { borderRadius: 16, borderWidth: 1, borderStyle: 'dashed' },
+  emptyCard: { borderRadius: 18, borderWidth: 1, borderStyle: 'dashed' },
   days: { gap: 16 },
   dim: { opacity: 0.6 },
   dayHead: { paddingHorizontal: 4, marginBottom: 7 },
-  move: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 11, minHeight: 60 },
+  move: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingLeft: 16, paddingRight: 14, paddingVertical: 12, minHeight: 62 },
   nameLine: { flexDirection: 'row', alignItems: 'center', gap: 6, minWidth: 0 },
   amount: { alignItems: 'flex-end', flexShrink: 0 },
   more: { alignSelf: 'flex-start', marginLeft: 4 }

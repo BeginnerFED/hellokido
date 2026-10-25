@@ -1,11 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native'
 import { useQuery } from '@tanstack/react-query'
 import * as Haptics from 'expo-haptics'
-import { format, isSameDay, isSameMonth, startOfMonth, subDays } from 'date-fns'
+import { format, isSameDay, subDays } from 'date-fns'
 import { addExpense, cardPaymentsSince, deleteExpense, listRecurring, type Expense, type IncomeLine, type RecurringExpense } from '@hellokido/core/api'
 import { upperFirst } from '@hellokido/core/rules/text.js'
-import { arrivalOf, formatPeriod, FREE, shortDate } from '@hellokido/core/view'
+import { arrivalOf, dueDayInPeriod, formatPeriod, FREE, inPeriod, shortDate, type Period } from '@hellokido/core/view'
 import { keys, useCatalog, useLabels, usePendingIncome, useRefresh, useRegistrations } from '../../data/queries'
 import { tasks } from '../../lib/navigation'
 import { useI18n } from '../../providers/I18n'
@@ -16,10 +16,10 @@ import { Button, IconButton } from '../../ui/Button'
 import { Icon } from '../../ui/Icon'
 import { Card, Section } from '../../ui/Screen'
 import { Peg } from '../../ui/signature'
-import { Text } from '../../ui/Text'
+import { DOT, Text } from '../../ui/Text'
 import { useToast } from '../../ui/Toast'
 import { ChildName } from '../today/sections'
-import { CategoryTablet, dueDayIn, IncomeTablet, methodName, sumOf, together } from './bits'
+import { CategoryTablet, IncomeTablet, methodName, ROW_INSET, sumOf, TILE, together } from './bits'
 
 // Rows shown before a list folds; a couple more than this are shown in full
 const FIRST = 5
@@ -35,10 +35,11 @@ function Quiet({ children }: { children: string }) {
 // ---------------------------------------------------------------------------------------------
 
 /**
- * Rent, salaries and bills of the month on screen. A fixed amount is recorded with one tap (and can
- * be undone from the message); an amount that changes opens the expense form filled in.
+ * Rent, salaries and bills of the period on screen (a month long: 1–31 Oct, or 10 Oct – 9 Nov when
+ * periods start on the 10th). A fixed amount is recorded with one tap (and can be undone from the
+ * message); an amount that changes opens the expense form filled in.
  */
-export function MonthlySection({ month, today, expenses, waiting }: { month: Date; today: Date; expenses: Expense[] | undefined; waiting: boolean }) {
+export function MonthlySection({ period, today, expenses, waiting }: { period: Period; today: Date; expenses: Expense[] | undefined; waiting: boolean }) {
   const c = useColors()
   const { t, fmt, money, date } = useI18n()
   const labels = useLabels()
@@ -47,12 +48,14 @@ export function MonthlySection({ month, today, expenses, waiting }: { month: Dat
   const menu = useActionMenu()
   const templates = useQuery({ queryKey: keys.finance('recurring'), queryFn: listRecurring })
   const [busy, setBusy] = useState<string | null>(null)
+  // A second tap in the same moment would record the expense twice; state is too late to stop it
+  const recording = useRef(false)
 
-  const current = isSameMonth(month, today)
-  const future = startOfMonth(month) > today
+  const current = inPeriod(period, today)
+  const future = period.start > today
   const active = useMemo(() => (templates.data ?? []).filter((row) => row.is_active), [templates.data])
 
-  // The latest expense each template produced in this month
+  // The latest expense each template produced in this period
   const recorded = useMemo(() => {
     const map = new Map<string, Expense>()
     for (const row of expenses ?? []) {
@@ -64,10 +67,10 @@ export function MonthlySection({ month, today, expenses, waiting }: { month: Dat
   }, [expenses])
   const done = active.filter((row) => recorded.has(row.id)).length
 
-  // This month: the day it is recorded is the day it was paid. Another month: its usual day there.
+  // This period: the day it is recorded is the day it was paid. Another period: its usual day there.
   const dayFor = (row: RecurringExpense) => {
     if (current) return new Date()
-    const day = dueDayIn(month, row.day_of_month)
+    const day = dueDayInPeriod(period, row.day_of_month)
     day.setHours(12, 0, 0, 0)
     return day
   }
@@ -89,6 +92,8 @@ export function MonthlySection({ month, today, expenses, waiting }: { month: Dat
       tasks.expense({ templateId: row.id, day: when.toISOString() })
       return
     }
+    if (recording.current) return
+    recording.current = true
     setBusy(row.id)
     try {
       const id = await addExpense({
@@ -108,8 +113,10 @@ export function MonthlySection({ month, today, expenses, waiting }: { month: Dat
         action: { label: t.common.undo, onPress: () => void undo(id) }
       })
     } catch {
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error)
       toast({ tone: 'error', title: t.finance.expense.failed })
     } finally {
+      recording.current = false
       setBusy(null)
     }
   }
@@ -136,16 +143,16 @@ export function MonthlySection({ month, today, expenses, waiting }: { month: Dat
         </View>
       ) : (
         <>
-          <Card inset={60} style={waiting && styles.dim}>
+          <Card inset={ROW_INSET} style={waiting && styles.dim}>
             {active.map((row) => {
               const expense = recorded.get(row.id)
-              const due = dueDayIn(month, row.day_of_month)
-              const late = !expense && !future && (!current || today.getDate() > due.getDate())
+              const due = dueDayInPeriod(period, row.day_of_month)
+              const late = !expense && !future && (!current || today > due)
               const detail = expense
-                ? `${fmt(t.finance.monthly.recorded, { date: date(expense.expense_date ?? expense.created_at ?? '', { day: 'numeric', month: 'short' }) })} · ${money(expense.amount)}`
-                : [row.amount != null ? money(row.amount) : t.finance.monthly.varies, labels.expenseCategory(row.expense_type), methodName(t, labels, row.payment_method)]
+                ? `${fmt(t.finance.monthly.recorded, { date: date(expense.expense_date ?? expense.created_at ?? '', { day: 'numeric', month: 'short' }) })}${DOT}${together(money(expense.amount))}`
+                : [row.amount != null ? together(money(row.amount)) : t.finance.monthly.varies, labels.expenseCategory(row.expense_type), methodName(t, labels, row.payment_method)]
                     .filter(Boolean)
-                    .join(' · ')
+                    .join(DOT)
               return (
                 <View key={row.id} style={styles.monthlyRow}>
                   <View
@@ -154,9 +161,9 @@ export function MonthlySection({ month, today, expenses, waiting }: { month: Dat
                     style={[styles.dayTablet, { backgroundColor: expense ? c.positiveWash : late ? c.actionWash : c.well }]}
                   >
                     {expense ? (
-                      <Icon name="check" size={15} color={c.positiveInk} weight="bold" />
+                      <Icon name="check" size={17} color={c.positiveInk} weight="bold" />
                     ) : (
-                      <Text variant="foot" weight="700" tabular style={{ color: late ? c.actionInk : c.ink2 }}>
+                      <Text variant="sub" weight="600" tabular style={{ color: late ? c.actionInk : c.ink2 }}>
                         {due.getDate()}
                       </Text>
                     )}
@@ -174,7 +181,8 @@ export function MonthlySection({ month, today, expenses, waiting }: { month: Dat
                     <Text variant="foot" tone="ink3" numberOfLines={2}>
                       {late && (
                         <Text variant="foot" weight="600" tone="actionInk">
-                          {t.finance.monthly.late} ·{' '}
+                          {t.finance.monthly.late}
+                          {DOT}
                         </Text>
                       )}
                       {detail}
@@ -272,10 +280,10 @@ export function ExpectedSection({ todayKey, onLayout }: { todayKey: string; onLa
         <Quiet>{t.finance.expected.empty}</Quiet>
       ) : (
         <>
-          <Card inset={60}>
+          <Card inset={ROW_INSET}>
             {shown.map((line) => {
               const overdue = Boolean(line.dueDate && line.dueDate < todayKey)
-              const due = line.dueDate ? fmt(overdue ? t.finance.expected.overdue : t.finance.expected.due, { date: shortDate(i18n, `${line.dueDate}T00:00:00`) }) : ''
+              const due = line.dueDate ? fmt(overdue ? t.finance.expected.overdue : t.finance.expected.due, { date: together(shortDate(i18n, `${line.dueDate}T00:00:00`)) }) : ''
               const period = line.source === 'package' ? formatPeriod(i18n, line.periodStart, line.periodEnd) : ''
               const what =
                 line.source === 'package'
@@ -286,10 +294,14 @@ export function ExpectedSection({ todayKey, onLayout }: { todayKey: string; onLa
                       ? labels.incomeCategory(line.category)
                       : ''
               const title = line.source === 'other' ? line.description || labels.incomeCategory(line.category) || t.finance.entry.otherTitle : line.student
-              const rest = [what, period && together(period)].filter(Boolean).join(' · ')
+              const rest = [what, period && together(period)].filter(Boolean).join(DOT)
               return (
                 <View key={line.key} style={styles.personRow}>
-                  {line.source === 'other' ? <IncomeTablet code={line.category} /> : <Peg seat={{ id: line.registrationId ?? line.key, name: line.student, status: 'scheduled' }} />}
+                  {line.source === 'other' ? (
+                    <IncomeTablet code={line.category} size={TILE} />
+                  ) : (
+                    <Peg seat={{ id: line.registrationId ?? line.key, name: line.student, status: 'scheduled' }} />
+                  )}
                   <View style={styles.flex}>
                     {line.source !== 'other' && line.registrationId ? (
                       <ChildName id={line.registrationId} name={title} />
@@ -300,10 +312,10 @@ export function ExpectedSection({ todayKey, onLayout }: { todayKey: string; onLa
                     )}
                     <Text variant="foot" tone="ink3" numberOfLines={3}>
                       <Text variant="foot" weight="600" tone="ink2" tabular>
-                        {line.amount > 0 ? money(line.amount) : t.finance.expected.noAmount}
+                        {line.amount > 0 ? together(money(line.amount)) : t.finance.expected.noAmount}
                       </Text>
-                      {rest ? ` · ${rest}` : ''}
-                      {due ? ' · ' : ''}
+                      {rest ? `${DOT}${rest}` : ''}
+                      {due ? DOT : ''}
                       {due ? (
                         <Text variant="foot" weight={overdue ? '600' : '400'} tone={overdue ? 'actionInk' : 'ink3'}>
                           {due}
@@ -311,7 +323,8 @@ export function ExpectedSection({ todayKey, onLayout }: { todayKey: string; onLa
                       ) : null}
                     </Text>
                   </View>
-                  <Button size="sm" onPress={() => collect(line)}>
+                  {/* The button says whose money it is, since a screen reader may reach it on its own */}
+                  <Button size="sm" accessibilityLabel={`${line.source === 'other' ? t.finance.expected.received : t.finance.expected.collect}: ${title}`} onPress={() => collect(line)}>
                     {line.source === 'other' ? t.finance.expected.received : t.finance.expected.collect}
                   </Button>
                 </View>
@@ -334,13 +347,8 @@ export function ExpectedSection({ todayKey, onLayout }: { todayKey: string; onLa
 // Names of the payers shown for a day before "+2"
 const NAMES = 2
 
-/**
- * Card payments the bank has not credited yet, by the day they should arrive. Card money comes in
- * about a month later, so this is the difference between "money in" and the bank account.
- */
-export function OnTheWaySection({ today, onLayout }: { today: Date; onLayout?: (event: LayoutChangeEvent) => void }) {
-  const { t, fmt, plural, money, date, tag } = useI18n()
-  const labels = useLabels()
+/** Card payments not credited yet, whatever the period on screen, grouped by the day they should arrive. */
+export function useCardsOnTheWay(today: Date) {
   const catalog = useCatalog()
   const days = catalog.data?.settings.cardSettlementDays ?? 30
   const rate = catalog.data?.settings.cardCommissionRate ?? 0
@@ -350,7 +358,6 @@ export function OnTheWaySection({ today, onLayout }: { today: Date; onLayout?: (
     queryFn: () => cardPaymentsSince(since),
     enabled: !catalog.isPending
   })
-  const [unfolded, setUnfolded] = useState(false)
 
   const groups = useMemo(() => {
     if (!cards.data) return null
@@ -369,6 +376,19 @@ export function OnTheWaySection({ today, onLayout }: { today: Date; onLayout?: (
   }, [cards.data, days, today])
 
   const total = (groups ?? []).reduce((sum, group) => sum + group.amount, 0)
+  const count = (groups ?? []).reduce((sum, group) => sum + group.lines.length, 0)
+  return { cards, groups, total, count, days, rate }
+}
+
+/**
+ * Card payments the bank has not credited yet, by the day they should arrive. Card money comes in
+ * about a month later, so this is the difference between "money in" and the bank account.
+ */
+export function OnTheWaySection({ today, onLayout }: { today: Date; onLayout?: (event: LayoutChangeEvent) => void }) {
+  const { t, fmt, plural, money, date, tag } = useI18n()
+  const labels = useLabels()
+  const { cards, groups, total, days, rate } = useCardsOnTheWay(today)
+  const [unfolded, setUnfolded] = useState(false)
   const shown = !groups ? [] : unfolded || groups.length <= FIRST + 1 ? groups : groups.slice(0, FIRST)
   const ratePercent = new Intl.NumberFormat(tag, { style: 'percent', maximumFractionDigits: 2 }).format(rate / 100)
   const who = (line: IncomeLine) => (line.source === 'other' ? line.description || labels.incomeCategory(line.category) : line.student)
@@ -394,7 +414,9 @@ export function OnTheWaySection({ today, onLayout }: { today: Date; onLayout?: (
                       {isSameDay(group.day, today) ? t.finance.card.arrivesToday : upperFirst(fmt(t.finance.card.arrives, { date: date(group.day, { day: 'numeric', month: 'long' }) }))}
                     </Text>
                     <Text variant="foot" tone="ink3" numberOfLines={1}>
-                      {plural(t.finance.card.payments, group.lines.length)} · {names.join(', ')}
+                      {plural(t.finance.card.payments, group.lines.length)}
+                      {DOT}
+                      {names.join(', ')}
                       {more > 0 ? ` +${more}` : ''}
                     </Text>
                   </View>
@@ -412,7 +434,7 @@ export function OnTheWaySection({ today, onLayout }: { today: Date; onLayout?: (
           )}
           {rate > 0 && (
             <Text variant="foot" tone="ink2" style={styles.note}>
-              {fmt(t.finance.card.commission, { rate: ratePercent, amount: money(total * (1 - rate / 100)) })}
+              {fmt(t.finance.card.commission, { rate: ratePercent, amount: together(money(total * (1 - rate / 100))) })}
             </Text>
           )}
         </>
@@ -459,7 +481,7 @@ export function CategoriesSection({ expenses, waiting, onPick }: { expenses: Exp
       ) : groups.length === 0 ? (
         <Quiet>{t.finance.categories.empty}</Quiet>
       ) : (
-        <Card inset={60} style={waiting && styles.dim}>
+        <Card inset={ROW_INSET} style={waiting && styles.dim}>
           {groups.map((group) => {
             const name = labels.expenseCategory(group.code)
             return (
@@ -470,7 +492,7 @@ export function CategoriesSection({ expenses, waiting, onPick }: { expenses: Exp
                 accessibilityLabel={`${fmt(t.finance.categories.show, { category: name })}: ${money(group.amount)}`}
                 style={({ pressed }) => [styles.categoryRow, pressed && { backgroundColor: c.well }]}
               >
-                <CategoryTablet code={group.code} />
+                <CategoryTablet code={group.code} size={TILE} />
                 <View style={styles.flex}>
                   <View style={styles.categoryHead}>
                     <Text variant="callout" weight="500" numberOfLines={1} style={styles.flex}>
@@ -506,11 +528,12 @@ const styles = StyleSheet.create({
   note: { marginTop: 10, paddingHorizontal: 4 },
   emptyMonthly: { gap: 12 },
   start: { alignSelf: 'flex-start', marginLeft: 4 },
-  monthlyRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingLeft: 16, paddingRight: 8, paddingVertical: 11, minHeight: 60 },
-  dayTablet: { width: 32, height: 32, borderRadius: 9, alignItems: 'center', justifyContent: 'center', marginRight: 2 },
-  personRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingLeft: 16, paddingRight: 12, paddingVertical: 11 },
-  cardRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 11, minHeight: 56 },
-  categoryRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 11 },
+  // The tablet keeps 12px before the words, the buttons after them sit 10px apart
+  monthlyRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingLeft: 16, paddingRight: 8, paddingVertical: 12, minHeight: 62 },
+  dayTablet: { width: TILE, height: TILE, borderRadius: 11, alignItems: 'center', justifyContent: 'center', marginRight: 2 },
+  personRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingLeft: 16, paddingRight: 14, paddingVertical: 12, minHeight: 62 },
+  cardRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingLeft: 16, paddingRight: 14, paddingVertical: 12, minHeight: 56 },
+  categoryRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingLeft: 16, paddingRight: 14, paddingVertical: 12, minHeight: 62 },
   categoryHead: { flexDirection: 'row', alignItems: 'baseline', gap: 12 },
   barLine: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 7 },
   bar: { height: 6, borderTopRightRadius: 3, borderBottomRightRadius: 3 },

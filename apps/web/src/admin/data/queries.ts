@@ -36,7 +36,8 @@ export const keys = {
 }
 
 export function useCatalog() {
-  return useQuery({ queryKey: keys.catalog, queryFn: loadCatalog, staleTime: 5 * 60_000 })
+  // Settings saved on a phone show here within a minute (and on coming back to the tab)
+  return useQuery({ queryKey: keys.catalog, queryFn: loadCatalog, staleTime: 60_000 })
 }
 
 export function useRegistrations(enabled = true) {

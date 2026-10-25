@@ -1,21 +1,31 @@
 import { useState } from 'react'
 import { startOfDay } from 'date-fns'
-import { CalendarBlankIcon, CalendarDotsIcon, CaretDownIcon, CaretLeftIcon, CaretRightIcon, CheckIcon } from '@phosphor-icons/react'
+import { CalendarBlankIcon, CalendarDotsIcon, CaretDownIcon, CaretLeftIcon, CaretRightIcon, CheckIcon, SlidersHorizontalIcon } from '@phosphor-icons/react'
 import { useI18n } from '../../providers/I18n'
 import { Button, IconButton } from '../../ui/Button'
 import { DateRangeField, type DateRange } from '../../ui/DateRangeField'
 import { Menu, MenuItem, MenuSeparator } from '../../ui/Menu'
 import { Sheet, SheetActions } from '../../ui/Sheet'
-import { matchPreset, periodLabel, presetPeriod, stepPeriod, type Period } from './period'
+import { matchPreset, periodLabel, presetName, presetPeriod, stepPeriod, type Period } from './period'
+import { PeriodStartSheet } from './PeriodStart'
 
-const OTHER_PRESETS = ['lastMonth', 'last14', 'today'] as const
+const OTHER_PRESETS = ['lastPeriod', 'last14', 'today'] as const
 
-/** Back and forth by month (or by the length of any other period), this month, and other periods. */
-export function PeriodNav({ period, today, onChange }: { period: Period; today: Date; onChange: (next: Period) => void }) {
+type Props = {
+  period: Period
+  today: Date
+  /** The day money periods start on (Settings › Money period). */
+  startDay: number
+  onChange: (next: Period) => void
+}
+
+/** Back and forth by period (or by the length of any other range), the current period, and other ranges. */
+export function PeriodNav({ period, today, startDay, onChange }: Props) {
   const i18n = useI18n()
   const { t } = i18n
   const [custom, setCustom] = useState({ open: false, key: 0 })
-  const preset = matchPreset(period, today)
+  const [start, setStart] = useState({ open: false, key: 0 })
+  const preset = matchPreset(period, today, startDay)
 
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
@@ -23,8 +33,8 @@ export function PeriodNav({ period, today, onChange }: { period: Period; today: 
         <IconButton label={t.finance.period.previous} size="sm" onPress={() => onChange(stepPeriod(period, -1))}>
           <CaretLeftIcon aria-hidden weight="bold" className="size-4" />
         </IconButton>
-        <Button size="sm" variant="secondary" onPress={() => onChange(presetPeriod('thisMonth', today))} isDisabled={preset === 'thisMonth'}>
-          {t.finance.period.thisMonth}
+        <Button size="sm" variant="secondary" onPress={() => onChange(presetPeriod('thisPeriod', today, startDay))} isDisabled={preset === 'thisPeriod'}>
+          {presetName(t, 'thisPeriod', startDay)}
         </Button>
         <IconButton label={t.finance.period.next} size="sm" onPress={() => onChange(stepPeriod(period, 1))}>
           <CaretRightIcon aria-hidden weight="bold" className="size-4" />
@@ -37,6 +47,7 @@ export function PeriodNav({ period, today, onChange }: { period: Period; today: 
         </h2>
         <Menu
           label={t.finance.period.otherPeriod}
+          placement="bottom end"
           trigger={
             <Button size="sm" variant="ghost" aria-label={t.finance.period.otherPeriod} icon={<CalendarDotsIcon aria-hidden className="size-[1.125rem]" />} className="-mr-2">
               <span className="max-sm:hidden">{t.finance.period.otherPeriod}</span>
@@ -48,14 +59,17 @@ export function PeriodNav({ period, today, onChange }: { period: Period; today: 
             <MenuItem
               key={id}
               icon={preset === id ? <CheckIcon aria-hidden weight="bold" className="size-4 text-accent" /> : <span aria-hidden className="size-4" />}
-              onAction={() => onChange(presetPeriod(id, today))}
+              onAction={() => onChange(presetPeriod(id, today, startDay))}
             >
-              {t.finance.period[id]}
+              {presetName(t, id, startDay)}
             </MenuItem>
           ))}
           <MenuSeparator />
           <MenuItem icon={<CalendarBlankIcon aria-hidden className="size-[1.125rem]" />} onAction={() => setCustom((state) => ({ open: true, key: state.key + 1 }))}>
             {t.finance.period.custom}
+          </MenuItem>
+          <MenuItem icon={<SlidersHorizontalIcon aria-hidden className="size-[1.125rem]" />} onAction={() => setStart((state) => ({ open: true, key: state.key + 1 }))}>
+            {t.finance.period.changeStart}
           </MenuItem>
         </Menu>
       </div>
@@ -66,6 +80,15 @@ export function PeriodNav({ period, today, onChange }: { period: Period; today: 
           onOpenChange={(open) => setCustom((state) => ({ ...state, open }))}
           period={period}
           onPick={onChange}
+        />
+      )}
+      {start.key > 0 && (
+        <PeriodStartSheet
+          key={start.key}
+          isOpen={start.open}
+          onOpenChange={(open) => setStart((state) => ({ ...state, open }))}
+          saved={startDay}
+          onSaved={(day) => onChange(presetPeriod('thisPeriod', today, day))}
         />
       )}
     </div>

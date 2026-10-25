@@ -12,6 +12,8 @@ const light = {
   well: '#f6f5f2',
   /** The chosen piece lifted off a well, such as the selected segment. */
   raised: '#ffffff',
+  /** A row or menu item under the finger; the well is too close to white to be seen there. */
+  pressed: '#ebe9e4',
   line: '#e6e4df',
   /** The rule between rows inside a card, a step lighter than its edge. */
   line2: '#efede8',
@@ -65,6 +67,7 @@ const dark: Colors = {
   well: '#1c1c1c',
   // A surface would sink into the dark well, so the chosen piece is lighter instead
   raised: '#2e2e2e',
+  pressed: '#262626',
   line: '#2a2a2a',
   line2: '#232323',
   lineStrong: '#3a3a3a',

@@ -79,7 +79,7 @@ export function NotesScreen() {
         ) : !rows ? (
           <View style={styles.cards}>
             {[0, 1, 2].map((key) => (
-              <Skeleton key={key} height={150} radius={16} />
+              <Skeleton key={key} height={150} radius={18} />
             ))}
           </View>
         ) : rows.length === 0 ? (
@@ -102,7 +102,15 @@ export function NotesScreen() {
               {search && <SearchField value={query} onChange={setQuery} placeholder={t.notes.search} label={t.notes.search} />}
             </View>
             {shown.length === 0 ? (
-              <EmptyState icon="search" title={t.notes.noMatch} />
+              <EmptyState
+                icon="search"
+                title={t.notes.noMatch}
+                action={
+                  <Button size="sm" onPress={() => setQuery('')}>
+                    {t.mobile.clearSearch}
+                  </Button>
+                }
+              />
             ) : favorites.length > 0 ? (
               <>
                 <Section title={t.notes.favorites} aside={favorites.length}>
@@ -132,7 +140,7 @@ function NoteCard({ note, onCopy, onFavorite }: { note: Note; onCopy: () => void
   const content = note.content?.trim()
 
   return (
-    <View style={[styles.card, { backgroundColor: c.surface }]}>
+    <View style={[styles.card, { backgroundColor: c.surface, borderColor: c.line }]}>
       <View style={styles.cardTop}>
         {/* The words open the note; the star and the copy button stay buttons of their own */}
         <Pressable
@@ -179,7 +187,8 @@ const styles = StyleSheet.create({
   top: { gap: 12 },
   summary: { paddingHorizontal: 4 },
   cards: { gap: 10 },
-  card: { borderRadius: 18, paddingLeft: 16, paddingRight: 8, paddingTop: 12, paddingBottom: 12, gap: 10 },
+  // A phone card like every other: white with its hairline edge
+  card: { borderRadius: 18, borderWidth: 1, paddingLeft: 16, paddingRight: 8, paddingTop: 12, paddingBottom: 12, gap: 10 },
   cardTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 4 },
   cardText: { flex: 1, minWidth: 0, gap: 6, paddingTop: 2 },
   pressed: { opacity: 0.6 },

@@ -1,5 +1,4 @@
 import { StyleSheet, View } from 'react-native'
-import { endOfMonth } from 'date-fns'
 import type { Messages } from '@hellokido/core/i18n'
 import type { Labels } from '../../data/queries'
 import { useColors } from '../../theme/colors'
@@ -18,12 +17,20 @@ const CATEGORY_ICONS: Record<string, IconName> = {
   filament: 'cube'
 }
 
-/** An expense type as a small tablet with its picture, the size of a child's peg. Own types get a receipt. */
-export function CategoryTablet({ code }: { code: string | null | undefined }) {
+/** The tile of a finance row: as large as a child's peg, so names line up whatever leads the row. */
+export const TILE = 38
+/** Where the rule between finance rows starts: the row's 16px edge, the tile and the 12px gap. */
+export const ROW_INSET = 16 + TILE + 12
+
+// Settings lists the types in smaller rows; the finance lists mix them with children's pegs
+const tabletLook = (size: number) => ({ width: size, height: size, borderRadius: size >= TILE ? 11 : 9 })
+
+/** An expense type as a small tablet with its picture. Own types get a receipt. */
+export function CategoryTablet({ code, size = 32 }: { code: string | null | undefined; size?: number }) {
   const c = useColors()
   return (
-    <View style={[styles.tablet, { backgroundColor: c.well }]}>
-      <Icon name={CATEGORY_ICONS[code ?? ''] ?? 'receipt'} size={17} color={c.ink2} />
+    <View style={[styles.tablet, tabletLook(size), { backgroundColor: c.well }]}>
+      <Icon name={CATEGORY_ICONS[code ?? ''] ?? 'receipt'} size={Math.round(size * 0.52)} color={c.ink2} />
     </View>
   )
 }
@@ -31,11 +38,11 @@ export function CategoryTablet({ code }: { code: string | null | undefined }) {
 const INCOME_ICONS: Record<string, IconName> = { etkinlik: 'party', 'dogum-gunu': 'cake', satis: 'bag' }
 
 /** Income that belongs to no child (a party, a sale), with the picture of its category. */
-export function IncomeTablet({ code }: { code?: string | null }) {
+export function IncomeTablet({ code, size = 32 }: { code?: string | null; size?: number }) {
   const c = useColors()
   return (
-    <View style={[styles.tablet, { backgroundColor: c.accentWash2 }]}>
-      <Icon name={INCOME_ICONS[code ?? ''] ?? 'money'} size={17} color={c.accentInk} />
+    <View style={[styles.tablet, tabletLook(size), { backgroundColor: c.accentWash2 }]}>
+      <Icon name={INCOME_ICONS[code ?? ''] ?? 'money'} size={Math.round(size * 0.52)} color={c.accentInk} />
     </View>
   )
 }
@@ -50,15 +57,8 @@ export function methodName(t: Messages, labels: Labels, method: string | null | 
   return t.finance.methodShort[method] ?? labels.method(method)
 }
 
-/** The day a monthly expense falls on in a given month; the 31st becomes the last day of a short month. */
-export function dueDayIn(month: Date, dayOfMonth: number) {
-  const last = endOfMonth(month).getDate()
-  return new Date(month.getFullYear(), month.getMonth(), Math.min(Math.max(dayOfMonth, 1), last))
-}
-
-/** Words that stay on one line ("Card 5.850 ₺"): a sentence may break between them, never inside. */
-export const together = (text: string) => text.replace(/ /g, ' ')
+export { together } from '../../ui/Text'
 
 const styles = StyleSheet.create({
-  tablet: { width: 32, height: 32, borderRadius: 9, alignItems: 'center', justifyContent: 'center', flexShrink: 0 }
+  tablet: { alignItems: 'center', justifyContent: 'center', flexShrink: 0 }
 })

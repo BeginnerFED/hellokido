@@ -4,16 +4,20 @@ import { Button as AriaButton } from 'react-aria-components'
 import { PlusIcon } from '@phosphor-icons/react'
 import {
   addMessageTemplate,
+  DEFAULT_EVENING_REMINDER,
   DEFAULT_MESSAGES,
   deleteMessageTemplate,
   MESSAGE_KINDS,
   MESSAGE_VARIABLES,
+  parseTimeOfDay,
   renderMessage,
   setDefaultMessageTemplate,
   unknownVariables,
+  updateEveningReminder,
   updateMessageTemplate,
   updateWorkshop,
   VARIABLES_FOR,
+  type EveningReminder,
   type MessageKind,
   type MessageTemplate,
   type WorkshopInfo
@@ -24,7 +28,7 @@ import { useI18n } from '../../providers/I18n'
 import { useToast } from '../../providers/Toasts'
 import { LoadError, Mark } from '../../ui/Bits'
 import { Button } from '../../ui/Button'
-import { Select } from '../../ui/Choice'
+import { Select, Switch } from '../../ui/Choice'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { fieldLabelClass, TextArea, TextField } from '../../ui/Field'
 import { Notice } from '../../ui/Notice'
@@ -47,11 +51,13 @@ export function MessageList() {
   const catalog = useCatalog()
   const sheet = useSheet<MessageTemplate | { kind: MessageKind }>()
   const workshopSheet = useSheet<WorkshopInfo>()
+  const eveningSheet = useSheet<EveningReminder>()
 
   if (templates.isError) return <LoadError message={t.common.loadFailed} retryLabel={t.common.retry} onRetry={() => void templates.refetch()} />
   if (!templates.data || !catalog.data) return <ListSkeleton rows={4} />
 
   const workshop = catalog.data.settings.workshop
+  const evening = catalog.data.settings.eveningReminder
   const byKind = MESSAGE_KINDS.map((kind) => ({ kind, rows: templates.data.filter((row) => row.kind === kind) }))
 
   return (
@@ -62,6 +68,11 @@ export function MessageList() {
           title={t.messages.workshop.title}
           meta={fmt(t.messages.workshop.meta, { place: workshop.place, duration: workshop.duration })}
           onPress={() => workshopSheet.open(workshop)}
+        />
+        <SettingRow
+          title={t.messages.evening.setting.title}
+          meta={evening.enabled ? fmt(t.messages.evening.setting.on, { time: evening.time }) : t.messages.evening.setting.off}
+          onPress={() => eveningSheet.open(evening)}
         />
       </SettingList>
       {byKind.map(({ kind, rows }) => (
@@ -98,7 +109,78 @@ export function MessageList() {
       {workshopSheet.isOpen || workshopSheet.key > 0 ? (
         <WorkshopSheet key={`w${workshopSheet.key}`} isOpen={workshopSheet.isOpen} onOpenChange={workshopSheet.setOpen} info={workshopSheet.payload} />
       ) : null}
+      {eveningSheet.isOpen || eveningSheet.key > 0 ? (
+        <EveningSheet key={`e${eveningSheet.key}`} isOpen={eveningSheet.isOpen} onOpenChange={eveningSheet.setOpen} saved={eveningSheet.payload} />
+      ) : null}
     </div>
+  )
+}
+
+// ---------------------------------------------------------------------------------------------
+
+/** On or off and the hour of the evening reminder every admin phone gets from the server. */
+function EveningSheet({ isOpen, onOpenChange, saved }: { isOpen: boolean; onOpenChange: (open: boolean) => void; saved: EveningReminder | null }) {
+  const { t } = useI18n()
+  const toast = useToast()
+  const refresh = useRefresh()
+  const initial = saved ?? DEFAULT_EVENING_REMINDER
+  const [enabled, setEnabled] = useState(initial.enabled)
+  const [text, setText] = useState(initial.time)
+  const [busy, setBusy] = useState(false)
+  const time = parseTimeOfDay(text)
+  const dirty = enabled !== initial.enabled || text !== initial.time
+
+  const save = async () => {
+    if (busy || time === null) return
+    if (!dirty) return onOpenChange(false)
+    setBusy(true)
+    try {
+      await updateEveningReminder({ enabled, time })
+      toast({ tone: 'success', title: t.messages.evening.setting.saved })
+      void refresh.catalog()
+      onOpenChange(false)
+    } catch {
+      toast({ tone: 'error', title: t.messages.evening.setting.failed })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Sheet
+      isOpen={isOpen}
+      onOpenChange={onOpenChange}
+      title={t.messages.evening.setting.title}
+      description={t.messages.evening.setting.body}
+      isDirty={dirty}
+      isBusy={busy}
+    >
+      <div className="flex flex-col gap-5">
+        <Switch isSelected={enabled} onChange={setEnabled}>
+          {t.messages.evening.setting.enabled}
+        </Switch>
+        <TextField
+          label={t.messages.evening.setting.time}
+          description={t.messages.evening.setting.timeHint}
+          value={text}
+          onChange={(next) => setText(next.replace(/[^\d:.]/g, '').slice(0, 5))}
+          onBlur={() => time && setText(time)}
+          inputMode="numeric"
+          autoComplete="off"
+          inputClassName="tabular"
+          isDisabled={!enabled}
+          errorMessage={time === null ? t.messages.evening.setting.invalid : undefined}
+          className="sm:max-w-[12rem]"
+        />
+        <SheetFooter>
+          <SheetActions>
+            <Button variant="primary" isDisabled={time === null} isPending={busy} onPress={() => void save()} className="max-md:flex-1">
+              {t.common.save}
+            </Button>
+          </SheetActions>
+        </SheetFooter>
+      </div>
+    </Sheet>
   )
 }
 

@@ -4,7 +4,7 @@ import { useLocation } from 'react-router'
 import { CaretLeftIcon, CaretRightIcon, MagnifyingGlassIcon, PlusIcon, SidebarSimpleIcon } from '@phosphor-icons/react'
 import { useI18n } from '../providers/I18n'
 import { useActions } from '../shell/Actions'
-import { AccountButton, useShell } from '../shell/Shell'
+import { useShell } from '../shell/Shell'
 import { NAV, SETTINGS_NAV } from '../shell/nav'
 import { Button, IconButton, IconLink } from './Button'
 import { cx } from './cx'
@@ -89,7 +89,7 @@ export function Page({ title, summary, toolbar, back, action, children, width = 
   )
 }
 
-/** Desktop only: the rail toggle, where you are, search and the account. */
+/** Desktop only: the rail toggle, where you are and search; the account sits at the foot of the rail. */
 function TopBar({ title, back }: { title: ReactNode; back?: { href: string; label: string } }) {
   const { t } = useI18n()
   const actions = useActions()
@@ -138,7 +138,6 @@ function TopBar({ title, back }: { title: ReactNode; back?: { href: string; labe
           {t.shell.palette.shortcut}
         </kbd>
       </AriaButton>
-      <AccountButton />
     </div>
   )
 }

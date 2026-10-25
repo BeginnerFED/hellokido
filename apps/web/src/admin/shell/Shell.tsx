@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useMemo, useState } from 'react'
 import { Button as AriaButton, Dialog, DialogTrigger, Link, Popover } from 'react-aria-components'
 import { Outlet, useLocation, useNavigate } from 'react-router'
-import { DotsThreeOutlineIcon, SignOutIcon, UserIcon } from '@phosphor-icons/react'
+import { CaretUpDownIcon, DotsThreeOutlineIcon, SignOutIcon } from '@phosphor-icons/react'
 import { LANGUAGE_NAMES, LOCALES, type Locale } from '@hellokido/core/i18n'
 import { useAuth } from '../providers/Auth'
 import { useI18n } from '../providers/I18n'
@@ -64,7 +64,7 @@ function Rail({ collapsed }: { collapsed: boolean }) {
   return (
     <aside
       className={cx(
-        'fixed inset-y-0 left-0 z-30 hidden flex-col gap-3.5 border-r border-rail-line bg-rail px-3 pt-3.5 pb-6 lg:flex',
+        'fixed inset-y-0 left-0 z-30 hidden flex-col gap-3.5 border-r border-rail-line bg-rail px-3 pt-3.5 pb-2.5 lg:flex',
         collapsed ? 'w-16 px-2.5' : 'w-64'
       )}
     >
@@ -129,46 +129,30 @@ function AccountBlock({ collapsed }: { collapsed: boolean }) {
   return (
     <DialogTrigger>
       <div className="border-t border-rail-line pt-2">
-      <AriaButton
-        aria-label={collapsed ? t.shell.account.open : undefined}
-        className={cx(
-          'flex w-full items-center gap-2.5 rounded-[0.5rem] py-1.5 text-left outline-none transition-colors duration-150 data-hovered:bg-hover data-focus-visible:ring-2 data-focus-visible:ring-focus',
-          collapsed ? 'justify-center px-0' : 'px-2.5'
-        )}
-      >
-        {collapsed ? (
-          <span aria-hidden className="grid size-9 place-items-center rounded-full border border-line text-[0.75rem] font-semibold text-ink-2">
-            {initials}
-          </span>
-        ) : (
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-[0.84375rem] font-semibold">{t.shell.workshop}</span>
-            <span className="mt-px block truncate text-[0.8125rem] text-ink-3">{email || t.shell.role}</span>
-          </span>
-        )}
-      </AriaButton>
+        <AriaButton
+          aria-label={collapsed ? t.shell.account.open : undefined}
+          className={cx(
+            'flex w-full items-center gap-2.5 rounded-[0.5rem] py-2 text-left outline-none transition-colors duration-150 data-hovered:bg-hover data-pressed:bg-hover data-focus-visible:ring-2 data-focus-visible:ring-focus',
+            collapsed ? 'justify-center px-0' : 'pr-2 pl-2.5'
+          )}
+        >
+          {collapsed ? (
+            <span aria-hidden className="grid size-9 place-items-center rounded-full border border-line text-[0.75rem] font-semibold text-ink-2">
+              {initials}
+            </span>
+          ) : (
+            <>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[0.84375rem] font-semibold">{t.shell.workshop}</span>
+                <span className="mt-px block truncate text-[0.8125rem] text-ink-3">{email || t.shell.role}</span>
+              </span>
+              {/* Says the block opens something: the account controls rise above it */}
+              <CaretUpDownIcon aria-hidden weight="bold" className="size-4 shrink-0 text-ink-3" />
+            </>
+          )}
+        </AriaButton>
       </div>
       <Popover placement="top start" offset={8} className={cx(popoverClass, 'w-[20rem] p-3')}>
-        <Dialog aria-label={t.shell.account.theme} className="outline-none">
-          <AccountControls />
-        </Dialog>
-      </Popover>
-    </DialogTrigger>
-  )
-}
-
-/** The round account button at the right of each page's top bar. */
-export function AccountButton() {
-  const { t } = useI18n()
-  return (
-    <DialogTrigger>
-      <AriaButton
-        aria-label={t.shell.account.open}
-        className="grid size-[2.375rem] shrink-0 place-items-center rounded-full border border-line bg-surface text-ink outline-none transition-colors duration-150 data-hovered:bg-surface-2 data-focus-visible:ring-2 data-focus-visible:ring-focus"
-      >
-        <UserIcon aria-hidden className="size-[1.0625rem]" />
-      </AriaButton>
-      <Popover placement="bottom end" offset={8} className={cx(popoverClass, 'w-[20rem] p-3')}>
         <Dialog aria-label={t.shell.account.theme} className="outline-none">
           <AccountControls />
         </Dialog>

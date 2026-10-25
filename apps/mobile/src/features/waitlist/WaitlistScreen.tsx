@@ -15,7 +15,7 @@ import { Button, IconButton } from '../../ui/Button'
 import { Chip, SearchField } from '../../ui/Fields'
 import { displayPhone, PhoneActions } from '../../ui/PhoneActions'
 import { Card, Screen, Section } from '../../ui/Screen'
-import { Text } from '../../ui/Text'
+import { DOT, Text } from '../../ui/Text'
 import { useToast } from '../../ui/Toast'
 import { askedAgo, WaitPeg } from './bits'
 
@@ -67,7 +67,7 @@ export function WaitlistScreen() {
   const choosePackage = () =>
     menu.open(t.waitlist.packageFilter, [
       { label: t.children.anyPackage, onPress: () => setPkg(ANY_PACKAGE) },
-      ...packages.map(({ code, count }) => ({ label: `${labels.packageName(code)} · ${count}`, onPress: () => setPkg(code) }))
+      ...packages.map(({ code, count }) => ({ label: `${labels.packageName(code)}${DOT}${count}`, onPress: () => setPkg(code) }))
     ])
 
   const clearFilters = () => {
@@ -213,7 +213,7 @@ function EntryRow({ entry, onContacted, onRegister, onMore }: EntryRowProps) {
   const day = askedOn(entry)
   const name = entry.student_name
   const note = entry.notes?.trim()
-  const who = [entry.student_age, entry.parent_name, displayPhone(entry.parent_phone)].filter(Boolean).join(' · ')
+  const who = [entry.student_age, entry.parent_name, displayPhone(entry.parent_phone)].filter(Boolean).join(DOT)
   const packageName = labels.packageName(entry.package_type)
   const asked = day ? fmt(t.waitlist.asked, { when: askedAgo(i18n, day) }) : null
 
@@ -240,7 +240,7 @@ function EntryRow({ entry, onContacted, onRegister, onMore }: EntryRowProps) {
               <Text variant="foot" tone={entry.package_type === UNDECIDED ? 'ink3' : 'ink2'}>
                 {packageName}
               </Text>
-              {asked && ` · ${asked}`}
+              {asked && `${DOT}${asked}`}
             </Text>
             {note && (
               <Text variant="foot" tone="ink2" numberOfLines={3} style={styles.note}>

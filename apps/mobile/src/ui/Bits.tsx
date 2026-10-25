@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react'
+import { Fragment, useEffect, type ReactNode } from 'react'
 import { StyleSheet, View, type DimensionValue, type StyleProp, type ViewStyle } from 'react-native'
 import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated'
 import { useColors } from '../theme/colors'
@@ -23,25 +23,37 @@ export function Skeleton({ height = 16, width = '100%', radius = 8, style }: { h
   const still = useReducedMotion()
   const opacity = useSharedValue(1)
   useEffect(() => {
-    if (!still) opacity.value = withRepeat(withTiming(0.45, { duration: 900 }), -1, true)
+    if (!still) opacity.set(withRepeat(withTiming(0.45, { duration: 900 }), -1, true))
   }, [opacity, still])
-  const animated = useAnimatedStyle(() => ({ opacity: opacity.value }))
+  const animated = useAnimatedStyle(() => ({ opacity: opacity.get() }))
   return <Animated.View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={[{ height, width, borderRadius: radius, backgroundColor: c.well }, animated, style]} />
 }
 
-/** A card of resting rows (peg and two lines) while a list of people loads. */
+const LINE_WIDTHS: DimensionValue[] = ['55%', '42%', '63%']
+
+/**
+ * A card of resting rows (peg and two lines) while a list of people loads. Each row has the size of
+ * a real Row with a tile, title and subtitle, so nothing jumps when the list arrives.
+ */
 export function ListSkeleton({ rows = 3 }: { rows?: number }) {
   const c = useColors()
   return (
     <View style={[styles.skeleton, { backgroundColor: c.surface, borderColor: c.line }]}>
       {Array.from({ length: rows }, (_, index) => (
-        <View key={index} style={styles.skeletonRow}>
-          <Skeleton height={38} width={38} radius={11} />
-          <View style={styles.skeletonLines}>
-            <Skeleton height={14} width="55%" />
-            <Skeleton height={11} width="35%" />
+        <Fragment key={index}>
+          {index > 0 && <View style={[styles.skeletonRule, { backgroundColor: c.line2 }]} />}
+          <View style={styles.skeletonRow}>
+            <Skeleton height={38} width={38} radius={11} />
+            <View style={styles.skeletonLines}>
+              <View style={styles.skeletonTitle}>
+                <Skeleton height={13} width={LINE_WIDTHS[index % LINE_WIDTHS.length]} />
+              </View>
+              <View style={styles.skeletonSub}>
+                <Skeleton height={10} width="35%" />
+              </View>
+            </View>
           </View>
-        </View>
+        </Fragment>
       ))}
     </View>
   )
@@ -63,7 +75,8 @@ export function Mark({ tone, children }: { tone: MarkTone; children: ReactNode }
   return (
     <View style={[styles.mark, { backgroundColor: background, borderColor: line }]}>
       <View style={[styles.markDot, { backgroundColor: dot }]} />
-      <Text variant="caption" weight="500" numberOfLines={1} style={{ color: ink }}>
+      {/* The chip keeps its height, so its word grows less with the phone's text size */}
+      <Text variant="caption" weight="500" numberOfLines={1} maxFontSizeMultiplier={1.2} style={{ color: ink }}>
         {children}
       </Text>
     </View>
@@ -128,9 +141,13 @@ export function LoadError({ message, retryLabel, onRetry }: { message: string; r
 }
 
 const styles = StyleSheet.create({
-  skeleton: { borderRadius: 18, borderWidth: 1, paddingVertical: 6 },
-  skeletonRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 10 },
-  skeletonLines: { flex: 1, gap: 6 },
+  // The same measures as Card and Row in Screen.tsx
+  skeleton: { borderRadius: 18, borderWidth: 1, overflow: 'hidden' },
+  skeletonRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, paddingVertical: 12, minHeight: 56 },
+  skeletonRule: { height: 1, marginLeft: 64 },
+  skeletonLines: { flex: 1, gap: 1 },
+  skeletonTitle: { height: 22, justifyContent: 'center' },
+  skeletonSub: { height: 18, justifyContent: 'center' },
   mark: { height: 22, borderRadius: 11, borderWidth: 1, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', gap: 5, flexShrink: 0 },
   markDot: { width: 5, height: 5, borderRadius: 3 },
   notice: { borderRadius: 14, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10 },

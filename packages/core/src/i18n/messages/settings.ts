@@ -9,6 +9,20 @@ const tr = {
     body: 'Yalnız bu cihazda geçerli; diğer yönetici kendi cihazında ayrı seçer.',
     theme: 'Tema'
   },
+  period: {
+    title: 'Gelir-gider dönemi',
+    body: 'Ödemeleri her ay aynı günden aynı güne yapıyorsanız (ör. 10’undan 10’una) o günü yaz. Gelir-gider ekranı her zaman içinde bulunduğun dönemle açılır.',
+    day: 'Dönem ayın kaçında başlar',
+    // The row in a settings list, where the section title already says "money period"
+    start: 'Başlangıç günü',
+    hint: '1 yazarsan dönem takvim ayı olur.',
+    invalid: '1 ile 28 arasında bir gün yaz.',
+    example: 'Şu anki dönem: {period}',
+    value: 'Her ayın {day}. günü',
+    calendar: 'Takvim ayı',
+    saved: 'Dönem ayarı kaydedildi',
+    failed: 'Kaydedilemedi. Bağlantını kontrol edip tekrar dene.'
+  },
   card: {
     title: 'Kart ödemeleri',
     body: 'Kartla alınan para bankaya birkaç hafta sonra geçer. Gelir-Gider ekranı yoldaki parayı bu iki ayarla hesaplar.',
@@ -39,10 +53,12 @@ const tr = {
     }
   },
   names: {
+    name: 'Ad',
     tr: 'Türkçe adı',
     en: 'İngilizce adı',
     uk: 'Ukraynaca adı',
-    hint: 'Boş bırakılan dilde Türkçe ad görünür.'
+    more: 'Başka dillerde ad',
+    hint: 'Uygulama İngilizce ya da Ukraynaca kullanılınca görünür. Boş kalırsa orada da Türkçe ad görünür.'
   },
   categories: {
     expenseTitle: 'Gider kategorileri',
@@ -108,6 +124,19 @@ const en: Widen<typeof tr> = {
     body: 'Applies to this device only; the other admin chooses on their own device.',
     theme: 'Theme'
   },
+  period: {
+    title: 'Money period',
+    body: 'If you settle everything from one day of the month to the same day of the next (e.g. the 10th to the 10th), enter that day. Finance always opens on the period you are in.',
+    day: 'Day of the month a period starts',
+    start: 'Start day',
+    hint: 'Enter 1 for calendar months.',
+    invalid: 'Enter a day from 1 to 28.',
+    example: 'Current period: {period}',
+    value: 'Day {day} of each month',
+    calendar: 'Calendar month',
+    saved: 'Period saved',
+    failed: 'Could not save. Check the connection and try again.'
+  },
   card: {
     title: 'Card payments',
     body: 'Money taken by card reaches the bank a few weeks later. The Finance screen works out the money on its way with these two settings.',
@@ -138,10 +167,12 @@ const en: Widen<typeof tr> = {
     }
   },
   names: {
+    name: 'Name (in Turkish)',
     tr: 'Turkish name',
     en: 'English name',
     uk: 'Ukrainian name',
-    hint: 'Where a name is left empty, the Turkish one is shown.'
+    more: 'Names in other languages',
+    hint: 'Shown when the app is used in English or Ukrainian. Left empty, the Turkish name is shown there too.'
   },
   categories: {
     expenseTitle: 'Expense categories',
@@ -207,6 +238,19 @@ const uk: Widen<typeof tr> = {
     body: 'Діє лише на цьому пристрої; інший адміністратор обирає на своєму.',
     theme: 'Режим'
   },
+  period: {
+    title: 'Фінансовий період',
+    body: 'Якщо ви розраховуєтеся щомісяця з одного числа до того ж числа наступного місяця (напр. з 10-го до 10-го), вкажіть це число. «Фінанси» завжди відкриваються на поточному періоді.',
+    day: 'Число місяця, з якого починається період',
+    start: 'День початку',
+    hint: 'Вкажіть 1 для календарних місяців.',
+    invalid: 'Вкажіть число від 1 до 28.',
+    example: 'Поточний період: {period}',
+    value: '{day}-го числа щомісяця',
+    calendar: 'Календарний місяць',
+    saved: 'Період збережено',
+    failed: 'Не вдалося зберегти. Перевірте з’єднання і спробуйте ще раз.'
+  },
   card: {
     title: 'Оплати карткою',
     body: 'Гроші, отримані карткою, надходять у банк через кілька тижнів. Екран «Фінанси» рахує гроші в дорозі за цими двома налаштуваннями.',
@@ -237,10 +281,12 @@ const uk: Widen<typeof tr> = {
     }
   },
   names: {
+    name: 'Назва (турецькою)',
     tr: 'Назва турецькою',
     en: 'Назва англійською',
     uk: 'Назва українською',
-    hint: 'Якщо назву якоюсь мовою не вказано, показується турецька.'
+    more: 'Назви іншими мовами',
+    hint: 'Показуються, коли застосунок англійською чи українською. Якщо порожньо, там теж показується турецька назва.'
   },
   categories: {
     expenseTitle: 'Категорії витрат',

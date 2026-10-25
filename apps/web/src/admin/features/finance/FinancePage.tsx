@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { CoinsIcon, HandCoinsIcon, PlusIcon } from '@phosphor-icons/react'
 import { expensesBetween, incomeBetween } from '@hellokido/core/api'
+import { cycleOf, totalsOf } from '@hellokido/core/view'
 import { keys, useCatalog } from '../../data/queries'
 import { useI18n } from '../../providers/I18n'
 import { useActions } from '../../shell/Actions'
@@ -11,50 +12,57 @@ import { Menu, MenuItem } from '../../ui/Menu'
 import { Page } from '../../ui/Page'
 import { useMediaQuery, useWideLayout } from '../../ui/useMediaQuery'
 import { useClock } from '../today/clock'
-import { Balance } from './Balance'
 import { CategoriesSection } from './Categories'
 import { ExpectedSection } from './Expected'
 import { MonthlySection } from './Monthly'
-import { MonthsChart } from './MonthsChart'
+import { MonthsChart, useMoneySeries } from './MonthsChart'
 import { MovesSection, NO_FILTER, type MoveFilter } from './Moves'
-import { arrivalOf, OnTheWaySection } from './OnTheWay'
+import { OnTheWaySection, useCardsOnTheWay } from './OnTheWay'
+import { Overview } from './Overview'
 import { PeriodNav } from './PeriodNav'
-import { boundsOf, isWholeMonth, monthOf, periodParams, readPeriod, samePeriod, type Period } from './period'
+import { boundsOf, isMonthLong, periodParams, readPeriod, samePeriod, stepPeriod, type Period } from './period'
 import { useShowRange } from './visible'
 
 const MOVES_ID = 'finance-moves'
 const ON_THE_WAY_ID = 'finance-on-the-way'
 
 /**
- * Money in and out of a period (this month unless another is chosen), the list behind it, and what
- * is still to come: expected payments, card money on its way to the bank and the month's fixed
- * expenses. The period lives in the address, so a month can be bookmarked or sent.
+ * Money in and out of a period (the money period that holds today unless another is chosen), the
+ * list behind it, and what is still to come: expected payments, card money on its way to the bank
+ * and the period's fixed expenses. The period lives in the address, so it can be bookmarked or sent.
  */
 export default function FinancePage() {
   const i18n = useI18n()
-  const { t } = i18n
+  const { t, fmt } = i18n
   const { startTask } = useActions()
   const wide = useWideLayout()
   const reduceMotion = useMediaQuery('(prefers-reduced-motion: reduce)')
   const { dayKey } = useClock()
   const today = useMemo(() => new Date(`${dayKey}T00:00:00`), [dayKey])
+  const catalog = useCatalog()
+  // Nothing is read until the start day is known, so the page never flashes the calendar month first
+  const startDay = catalog.data?.settings.moneyPeriodStartDay ?? (catalog.isError ? 1 : undefined)
   const [params, setParams] = useSearchParams()
-  const period = useMemo(() => readPeriod(params, today), [params, today])
+  const period = useMemo(() => readPeriod(params, today, startDay ?? 1), [params, today, startDay])
   const bounds = useMemo(() => boundsOf(period), [period])
   const visible = useMemo(() => ({ from: bounds.from.toISOString(), to: bounds.to.toISOString() }), [bounds])
   useShowRange(visible)
   const [filter, setFilter] = useState<MoveFilter>(NO_FILTER)
+  const ready = startDay !== undefined
 
   const income = useQuery({
     queryKey: keys.finance('income', visible.from, visible.to),
     queryFn: () => incomeBetween(bounds.from, bounds.to),
+    enabled: ready,
     placeholderData: keepPreviousData
   })
   const expenses = useQuery({
     queryKey: keys.finance('expenses', visible.from, visible.to),
     queryFn: () => expensesBetween(bounds.from, bounds.to),
+    enabled: ready,
     placeholderData: keepPreviousData
   })
+  const series = useMoneySeries(today, startDay)
   const waiting = income.isPlaceholderData || expenses.isPlaceholderData
   const failed = income.isError || expenses.isError
   const retry = () => {
@@ -62,25 +70,24 @@ export default function FinancePage() {
     void expenses.refetch()
   }
 
-  const days = useCatalog().data?.settings.cardSettlementDays ?? 30
-  const onTheWay = useMemo(
-    () =>
-      (income.data ?? [])
-        .filter((line) => line.method === 'kart' && line.paymentDate && arrivalOf(line.paymentDate, days) >= today)
-        .reduce((sum, line) => sum + line.amount, 0),
-    [income.data, days, today]
-  )
+  // The same card money as the "on the way" list below, so the figure and the list always agree
+  const onTheWay = useCardsOnTheWay(today)
+  const before = useMemo(() => totalsOf(series.data, series.first, stepPeriod(period, -1)), [series.data, series.first, period])
 
-  // The current month keeps a clean address; any other period is written into it
+  // The current period keeps a clean address; any other period is written into it
   const go = useCallback(
-    (next: Period) => setParams(samePeriod(next, monthOf(today)) ? {} : periodParams(next), { replace: true }),
-    [setParams, today]
+    (next: Period) => setParams(samePeriod(next, cycleOf(today, startDay ?? 1)) ? {} : periodParams(next), { replace: true }),
+    [setParams, today, startDay]
   )
 
   const scrollTo = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' })
   const pickCategory = (code: string) => {
     setFilter({ ...NO_FILTER, kind: 'out', type: code })
     requestAnimationFrame(() => scrollTo(MOVES_ID))
+  }
+  const show = (what: 'in' | 'out' | 'bank') => {
+    if (what !== 'bank') setFilter({ ...NO_FILTER, kind: what })
+    requestAnimationFrame(() => scrollTo(what === 'bank' ? ON_THE_WAY_ID : MOVES_ID))
   }
 
   const addExpense = () => startTask('expense', { visible })
@@ -108,25 +115,26 @@ export default function FinancePage() {
     </>
   )
 
-  const balance = (
-    <Balance
-      income={failed ? undefined : income.data}
-      expenses={failed ? undefined : expenses.data}
+  const loaded = ready && !failed
+  const overview = (
+    <Overview
+      income={loaded ? income.data : undefined}
+      expenses={loaded ? expenses.data : undefined}
       isError={failed}
       waiting={waiting}
       onRetry={retry}
-      onTheWay={waiting ? 0 : onTheWay}
-      onShowOnTheWay={() => scrollTo(ON_THE_WAY_ID)}
-      className={wide ? undefined : 'rounded-panel border border-line bg-surface p-5'}
+      onTheWay={onTheWay.groups ? { amount: onTheWay.total, count: onTheWay.count } : null}
+      before={waiting ? null : before}
+      onShow={show}
     />
   )
-  const chart = <MonthsChart today={today} period={period} onPick={(month) => go(monthOf(month))} />
+  const chart = startDay !== undefined && <MonthsChart today={today} startDay={startDay} period={period} series={series} onPick={go} />
   const moves = (
     <MovesSection
       key={`${visible.from}/${visible.to}`}
       id={MOVES_ID}
-      income={failed ? undefined : income.data}
-      expenses={failed ? undefined : expenses.data}
+      income={loaded ? income.data : undefined}
+      expenses={loaded ? expenses.data : undefined}
       isError={failed}
       waiting={waiting}
       onRetry={retry}
@@ -135,24 +143,30 @@ export default function FinancePage() {
       visible={visible}
     />
   )
-  const monthly = isWholeMonth(period) && (
-    <MonthlySection month={period.start} expenses={waiting ? undefined : expenses.data} waiting={waiting} today={today} visible={visible} />
+  const monthly = ready && isMonthLong(period) && (
+    <MonthlySection period={period} expenses={waiting ? undefined : expenses.data} waiting={waiting} today={today} visible={visible} />
   )
   const expected = <ExpectedSection todayKey={dayKey} />
   const cards = <OnTheWaySection id={ON_THE_WAY_ID} today={today} />
-  const categories = <CategoriesSection expenses={failed ? undefined : expenses.data} waiting={waiting} onPick={pickCategory} />
+  const categories = <CategoriesSection expenses={loaded ? expenses.data : undefined} waiting={waiting} onPick={pickCategory} />
 
   return (
-    <Page title={t.shell.nav.finance} toolbar={toolbar} action={{ label: t.finance.addExpense, onPress: addExpense }} width="wide">
-      <PeriodNav period={period} today={today} onChange={go} />
+    <Page
+      title={t.shell.nav.finance}
+      summary={startDay !== undefined && startDay !== 1 ? fmt(t.finance.period.startsOn, { day: startDay }) : undefined}
+      toolbar={toolbar}
+      action={{ label: t.finance.addExpense, onPress: addExpense }}
+      width="wide"
+    >
+      <PeriodNav period={period} today={today} startDay={startDay ?? 1} onChange={go} />
       {wide ? (
         <>
-          <div className="mt-5 grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] overflow-hidden rounded-panel border border-line bg-surface">
-            <div className="min-w-0 p-6">{balance}</div>
-            <div className="min-w-0 border-l border-line p-6">{chart}</div>
-          </div>
+          <div className="mt-5">{overview}</div>
           <div className="mt-6 grid grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)] items-start gap-6">
-            {moves}
+            <div className="flex min-w-0 flex-col gap-6">
+              {chart}
+              {moves}
+            </div>
             <div className="flex min-w-0 flex-col gap-6">
               {monthly}
               {expected}
@@ -163,13 +177,13 @@ export default function FinancePage() {
         </>
       ) : (
         <div className="mt-5 flex flex-col gap-5">
-          {balance}
+          {overview}
           {monthly}
           {moves}
           {expected}
           {cards}
           {categories}
-          <div className="rounded-panel border border-line bg-surface p-5">{chart}</div>
+          {chart}
         </div>
       )}
     </Page>

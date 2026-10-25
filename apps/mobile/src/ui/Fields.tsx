@@ -1,5 +1,6 @@
-import { forwardRef, useState, type ReactNode } from 'react'
+import { forwardRef, useImperativeHandle, useRef, useState, type ReactNode } from 'react'
 import { Platform, Pressable, StyleSheet, Switch, TextInput, View, type TextInputInstance, type TextInputProps } from 'react-native'
+import Animated, { FadeIn, useReducedMotion } from 'react-native-reanimated'
 import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker'
 import * as Haptics from 'expo-haptics'
 import { addDays, isSameDay, startOfDay } from 'date-fns'
@@ -8,7 +9,7 @@ import { useI18n } from '../providers/I18n'
 import { useColors } from '../theme/colors'
 import { IconButton } from './Button'
 import { Icon } from './Icon'
-import { Text } from './Text'
+import { MAX_FONT_SCALE, Text } from './Text'
 
 export function FieldLabel({ children, hint }: { children: ReactNode; hint?: string }) {
   return (
@@ -49,10 +50,15 @@ type TextFieldProps = Omit<TextInputProps, 'style'> & {
 export const TextField = forwardRef<TextInputInstance, TextFieldProps>(function TextField({ label, hint, error, suffix, trailing, multiline, minHeight, ...props }, ref) {
   const c = useColors()
   const [focused, setFocused] = useState(false)
+  const input = useRef<TextInputInstance | null>(null)
+  useImperativeHandle(ref, () => input.current as TextInputInstance, [])
   return (
     <View>
       {label && <FieldLabel hint={hint}>{label}</FieldLabel>}
-      <View
+      {/* The whole box is the field: a tap beside the words or on the ₺ still starts typing */}
+      <Pressable
+        onPress={() => props.editable !== false && input.current?.focus()}
+        accessible={false}
         style={[
           styles.box,
           multiline && styles.boxMultiline,
@@ -60,7 +66,9 @@ export const TextField = forwardRef<TextInputInstance, TextFieldProps>(function 
         ]}
       >
         <TextInput
-          ref={ref}
+          ref={input}
+          underlineColorAndroid="transparent"
+          maxFontSizeMultiplier={MAX_FONT_SCALE}
           {...props}
           multiline={multiline}
           accessibilityLabel={props.accessibilityLabel ?? label}
@@ -82,7 +90,7 @@ export const TextField = forwardRef<TextInputInstance, TextFieldProps>(function 
           </Text>
         )}
         {trailing}
-      </View>
+      </Pressable>
       <FieldError>{error}</FieldError>
     </View>
   )
@@ -107,6 +115,8 @@ export function SearchField({ value, onChange, placeholder, label, autoFocus }: 
         autoComplete="off"
         returnKeyType="search"
         clearButtonMode="while-editing"
+        underlineColorAndroid="transparent"
+        maxFontSizeMultiplier={MAX_FONT_SCALE}
         style={[styles.searchInput, { color: c.ink }]}
       />
       {Platform.OS !== 'ios' && value !== '' && <IconButton icon="close" label={t.mobile.clearSearch} variant="plain" size={30} color={c.ink3} onPress={() => onChange('')} />}
@@ -153,10 +163,12 @@ export function Segmented<T extends string>({ label, options, value, onChange, d
               }}
               accessibilityRole="radio"
               accessibilityState={{ checked: on, disabled: Boolean(disabled) }}
+              // The track's own edge counts too, so a segment takes a whole fingertip
+              hitSlop={{ top: 4, bottom: 4 }}
               style={({ pressed }) => [styles.segment, on && [styles.segmentOn, { backgroundColor: c.raised, borderColor: c.line }], pressed && !on && { opacity: 0.6 }]}
             >
               {option.leading}
-              <Text variant="sub" weight={on ? '600' : '500'} tone={on ? 'ink' : 'ink2'} numberOfLines={1} style={styles.shrink}>
+              <Text variant="sub" weight={on ? '600' : '500'} tone={on ? 'ink' : 'ink2'} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={styles.shrink}>
                 {option.label}
               </Text>
             </Pressable>
@@ -189,7 +201,11 @@ export function Chip({ label, selected, onPress, icon, leading, count, menu, rem
   const ink = selected ? c.accentInk : c.ink
   return (
     <Pressable
-      onPress={onPress}
+      onPress={() => {
+        // Choosing is felt, as with the segments; a chip that opens a list leaves that to the list
+        if (!menu) void Haptics.selectionAsync()
+        onPress()
+      }}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? (count !== undefined ? `${label}, ${count}` : undefined)}
       accessibilityState={{ selected: Boolean(selected) }}
@@ -202,7 +218,7 @@ export function Chip({ label, selected, onPress, icon, leading, count, menu, rem
     >
       {icon && <Icon name={icon} size={15} color={selected ? c.accentInk : c.ink2} />}
       {leading}
-      <Text variant="sub" weight="500" numberOfLines={1} style={{ color: ink }}>
+      <Text variant="sub" weight="500" numberOfLines={1} style={[styles.shrink, { color: ink }]}>
         {label}
       </Text>
       {count !== undefined && (
@@ -245,8 +261,9 @@ function openAndroidCalendar(value: Date | null, { minimumDate, maximumDate }: L
 
 function InlineCalendar({ value, minimumDate, maximumDate, onPick }: Limits & { value: Date | null; onPick: (day: Date) => void }) {
   const c = useColors()
+  const still = useReducedMotion()
   return (
-    <View style={[styles.calendar, { backgroundColor: c.surface, borderColor: c.line }]}>
+    <Animated.View entering={still ? undefined : FadeIn.duration(180)} style={[styles.calendar, { backgroundColor: c.surface, borderColor: c.line }]}>
       <DateTimePicker
         value={value ?? startOfDay(new Date())}
         mode="date"
@@ -258,7 +275,7 @@ function InlineCalendar({ value, minimumDate, maximumDate, onPick }: Limits & { 
           if (event.type === 'set' && picked) onPick(startOfDay(picked))
         }}
       />
-    </View>
+    </Animated.View>
   )
 }
 
@@ -416,7 +433,8 @@ export function SelectField<T extends string>({ label, placeholder, options, val
             onPress={() => setOpen(true)}
             accessibilityRole="button"
             accessibilityLabel={`${label}: ${current?.label ?? placeholder}`}
-            style={({ pressed }) => [styles.option, pressed && { backgroundColor: c.well }]}
+            accessibilityState={{ expanded: false }}
+            style={({ pressed }) => [styles.option, pressed && { backgroundColor: c.pressed }]}
           >
             <View style={styles.flex}>
               <Text variant="body" tone={current ? 'ink' : 'ink3'} numberOfLines={1}>
@@ -444,7 +462,7 @@ export function SelectField<T extends string>({ label, placeholder, options, val
                   }}
                   accessibilityRole="radio"
                   accessibilityState={{ checked: on }}
-                  style={({ pressed }) => [styles.option, pressed && { backgroundColor: c.well }]}
+                  style={({ pressed }) => [styles.option, pressed && { backgroundColor: c.pressed }]}
                 >
                   <View style={styles.flex}>
                     <Text variant="body" weight={on ? '600' : '400'} numberOfLines={1}>
@@ -492,7 +510,7 @@ export function Stepper({
     void Haptics.selectionAsync()
     onChange(next)
   }
-  const button = (delta: number, text: string, a11y: string, disabled: boolean) => (
+  const button = (delta: number, icon: 'minus' | 'add', a11y: string, disabled: boolean) => (
     <Pressable
       onPress={() => step(delta)}
       disabled={disabled}
@@ -501,9 +519,7 @@ export function Stepper({
       hitSlop={4}
       style={({ pressed }) => [styles.stepButton, { opacity: disabled ? 0.35 : pressed ? 0.6 : 1 }]}
     >
-      <Text variant="title" weight="500" tone="accentInk">
-        {text}
-      </Text>
+      <Icon name={icon} size={17} color={c.accentInk} weight="semibold" />
     </Pressable>
   )
   return (
@@ -520,11 +536,11 @@ export function Stepper({
         accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
         onAccessibilityAction={(event) => step(event.nativeEvent.actionName === 'increment' ? 1 : -1)}
       >
-        {button(-1, '−', decreaseLabel, value <= min)}
+        {button(-1, 'minus', decreaseLabel, value <= min)}
         <Text variant="headline" tabular style={styles.stepValue}>
           {value}
         </Text>
-        {button(1, '+', increaseLabel, value >= max)}
+        {button(1, 'add', increaseLabel, value >= max)}
       </View>
     </View>
   )
@@ -572,7 +588,8 @@ const styles = StyleSheet.create({
   shrink: { flexShrink: 1 },
   segmentOn: { shadowColor: '#000000', shadowOpacity: 0.08, shadowRadius: 3, shadowOffset: { width: 0, height: 1 }, elevation: 1 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip: { height: 38, borderRadius: 19, borderWidth: 1, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  // A chip never grows wider than its row; a long label ends in an ellipsis inside the pill
+  chip: { height: 38, maxWidth: '100%', borderRadius: 19, borderWidth: 1, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 6 },
   calendar: { marginTop: 10, borderRadius: 18, borderWidth: 1, paddingHorizontal: 6, paddingVertical: 4 },
   periodCard: { borderRadius: 18, borderWidth: 1, overflow: 'hidden' },
   periodRow: { minHeight: 52, paddingLeft: 16, paddingRight: 10, flexDirection: 'row', alignItems: 'center', gap: 12 },

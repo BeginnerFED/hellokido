@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, StyleSheet, View } from 'react-native'
 import { useQuery } from '@tanstack/react-query'
 import * as Haptics from 'expo-haptics'
@@ -44,7 +44,14 @@ export function ExpenseSheet({ params }: { params: ExpenseParams }) {
   const templates = useQuery({ queryKey: keys.finance('recurring'), queryFn: listRecurring, enabled: Boolean(params.templateId) })
   const template = params.templateId ? (templates.data?.find((row) => row.id === params.templateId) ?? null) : null
   const waiting = (Boolean(params.id) && expense.isPending) || (Boolean(params.templateId) && templates.isPending)
-  const missing = Boolean(params.id) && !waiting && !expense.data
+  // A failed read is not a deleted expense, and a monthly expense whose template could not be read
+  // would be saved without its link, so it would still wait in "Monthly expenses"
+  const failed = (Boolean(params.id) && expense.isError) || (Boolean(params.templateId) && templates.isError)
+  const missing = Boolean(params.id) && !waiting && !failed && !expense.data
+  const retry = () => {
+    if (params.id) void expense.refetch()
+    if (params.templateId) void templates.refetch()
+  }
 
   return (
     <SheetScreen
@@ -59,6 +66,16 @@ export function ExpenseSheet({ params }: { params: ExpenseParams }) {
           <Skeleton height={96} radius={13} />
           <Skeleton height={50} radius={13} />
         </View>
+      ) : failed ? (
+        <EmptyState
+          icon="info"
+          title={t.common.loadFailed}
+          action={
+            <Button size="sm" busy={expense.isFetching || templates.isFetching} onPress={retry}>
+              {t.common.retry}
+            </Button>
+          }
+        />
       ) : missing ? (
         <EmptyState icon="info" title={t.finance.expense.notFound} />
       ) : (
@@ -99,7 +116,10 @@ function ExpenseForm({ expense, template, day: dayParam, onStateChange }: FormPr
   const [day, setDay] = useState<Date | null>(initial.day)
   const [note, setNote] = useState(initial.note)
   const [repeat, setRepeat] = useState(false)
-  const [busy, setBusy] = useState(false)
+  // Which button is at work, so only that one spins
+  const [busy, setBusy] = useState<'save' | 'delete' | null>(null)
+  // A second tap before the button turns busy would save twice; state comes too late to stop it
+  const working = useRef(false)
   const [error, setError] = useState<string | null>(null)
 
   const categories = useMemo(
@@ -116,10 +136,15 @@ function ExpenseForm({ expense, template, day: dayParam, onStateChange }: FormPr
     day?.getTime() !== initial.day.getTime() ||
     note !== initial.note ||
     repeat
-  useEffect(() => onStateChange({ dirty, busy }), [dirty, busy, onStateChange])
+  useEffect(() => onStateChange({ dirty, busy: busy !== null }), [dirty, busy, onStateChange])
+
+  const fail = (message: string) => {
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error)
+    setError(message)
+  }
 
   const save = async () => {
-    if (!valid || busy || !category || !method || !day) return
+    if (!valid || working.current || !category || !method || !day) return
     const value = parseAmount(amount) ?? 0
     const when = new Date(day)
     when.setHours(initial.base.getHours(), initial.base.getMinutes(), initial.base.getSeconds(), initial.base.getMilliseconds())
@@ -133,7 +158,8 @@ function ExpenseForm({ expense, template, day: dayParam, onStateChange }: FormPr
     }
     // Users who did not see a saved expense in the list entered it twice, so the message says where it went
     const body = fmt(t.finance.expense.savedBody, { date: date(when, { day: 'numeric', month: 'long' }), amount: money(value) })
-    setBusy(true)
+    working.current = true
+    setBusy('save')
     setError(null)
     let createdTemplate: string | null = null
     try {
@@ -172,9 +198,10 @@ function ExpenseForm({ expense, template, day: dayParam, onStateChange }: FormPr
         sheet.finish()
         return
       }
-      setError(t.finance.expense.failed)
+      fail(t.finance.expense.failed)
     } finally {
-      setBusy(false)
+      working.current = false
+      setBusy(null)
     }
   }
 
@@ -189,17 +216,21 @@ function ExpenseForm({ expense, template, day: dayParam, onStateChange }: FormPr
           text: t.common.delete,
           style: 'destructive',
           onPress: async () => {
-            setBusy(true)
+            if (working.current) return
+            working.current = true
+            setBusy('delete')
             setError(null)
             try {
               const found = await deleteExpense(expense.id)
+              void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
               toast(found ? { title: t.finance.expense.deleted } : { tone: 'warning', title: t.finance.expense.notFound })
               refresh.finance()
               sheet.finish()
             } catch {
-              setError(t.finance.expense.deleteFailed)
+              fail(t.finance.expense.deleteFailed)
             } finally {
-              setBusy(false)
+              working.current = false
+              setBusy(null)
             }
           }
         }
@@ -215,7 +246,8 @@ function ExpenseForm({ expense, template, day: dayParam, onStateChange }: FormPr
         value={title}
         onChangeText={(text) => setTitle(upperFirst(text) ?? '')}
         autoComplete="off"
-        returnKeyType="next"
+        // The type chips come next, not another box, so the key closes the keyboard
+        returnKeyType="done"
       />
       <View>
         <FieldLabel>{t.finance.expense.category}</FieldLabel>
@@ -245,11 +277,11 @@ function ExpenseForm({ expense, template, day: dayParam, onStateChange }: FormPr
         />
       )}
       <SheetActions error={error}>
-        <Button variant="primary" size="lg" disabled={!valid} busy={busy} onPress={() => void save()}>
+        <Button variant="primary" size="lg" disabled={!valid || busy === 'delete'} busy={busy === 'save'} onPress={() => void save()}>
           {t.finance.expense.save}
         </Button>
         {expense && (
-          <Button variant="danger" size="md" icon="delete" disabled={busy} onPress={remove}>
+          <Button variant="danger" size="md" icon="delete" disabled={busy === 'save'} busy={busy === 'delete'} onPress={remove}>
             {t.finance.expense.delete}
           </Button>
         )}

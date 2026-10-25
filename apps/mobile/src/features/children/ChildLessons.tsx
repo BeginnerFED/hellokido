@@ -14,7 +14,7 @@ import { Button } from '../../ui/Button'
 import { Icon } from '../../ui/Icon'
 import { Card, Section } from '../../ui/Screen'
 import { LessonShape } from '../../ui/signature'
-import { Text } from '../../ui/Text'
+import { DOT, Text } from '../../ui/Text'
 import { useToast } from '../../ui/Toast'
 
 /** The statuses a lesson can be given from here; "scheduled" is never chosen by hand. */
@@ -40,7 +40,7 @@ function statusLook(c: Colors, status: string, overdue: boolean) {
 
 /**
  * Every lesson of the child across all periods: what comes next first, then the past, newest
- * first, with a rule where the current package begins. Attendance can be corrected on any of them.
+ * first, with a heading where the lessons of earlier packages begin. Attendance can be corrected on any of them.
  */
 export function ChildLessons({ registration }: { registration: Registration }) {
   const c = useColors()
@@ -79,6 +79,7 @@ export function ChildLessons({ registration }: { registration: Registration }) {
       await setAttendance(lesson.id, status)
     } catch {
       patch(lesson.id, before)
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error)
       toast({ tone: 'error', title: t.children.detail.statusFailed })
     } finally {
       setSaving((set) => {
@@ -99,7 +100,7 @@ export function ChildLessons({ registration }: { registration: Registration }) {
     )
 
   const total = lessons.data?.length ?? 0
-  // The past of the current package, then (under a rule) lessons of earlier packages
+  // The past of the current package, then (under their own heading) lessons of earlier packages
   const startsAt = isFree(registration) ? null : new Date(registration.package_start_date).getTime()
   const shownPastRows = past.slice(0, shownPast)
   const split = startsAt === null ? -1 : shownPastRows.findIndex((row) => new Date(row.events!.event_date).getTime() < startsAt)
@@ -128,7 +129,7 @@ export function ChildLessons({ registration }: { registration: Registration }) {
           <Text variant="sub" weight="500" numberOfLines={1}>
             {title}
             <Text variant="sub" tone="ink3">
-              {' · '}
+              {DOT}
               {labels.ageGroup(event.age_group)}
             </Text>
           </Text>
@@ -136,7 +137,7 @@ export function ChildLessons({ registration }: { registration: Registration }) {
             {when}
             {lesson.is_makeup && (
               <Text variant="foot" tone="pinkInk">
-                {' · '}
+                {DOT}
                 {t.children.detail.makeup}
               </Text>
             )}
@@ -176,8 +177,8 @@ export function ChildLessons({ registration }: { registration: Registration }) {
       </Button>
     )
 
-  const subheading = (text: string) => (
-    <Text variant="foot" weight="600" tone="ink3" accessibilityRole="header" style={styles.subheading}>
+  const subheading = (text: string, after = false) => (
+    <Text variant="foot" weight="600" tone="ink3" accessibilityRole="header" style={[styles.subheading, after && styles.after]}>
       {text}
     </Text>
   )
@@ -186,9 +187,17 @@ export function ChildLessons({ registration }: { registration: Registration }) {
     <Section title={t.children.detail.lessonsTitle} aside={total > 0 ? plural(t.children.form.lessons, total) : undefined}>
       {menu.element}
       {lessons.isPending ? (
-        <View style={[styles.waiting, { backgroundColor: c.surface }]}>
+        // Shaped like the rows that follow: the type dot, two lines and the status pill
+        <View style={[styles.waiting, { backgroundColor: c.surface, borderColor: c.line }]}>
           {[0, 1, 2].map((item) => (
-            <Skeleton key={item} height={36} />
+            <View key={item} style={styles.waitingRow}>
+              <Skeleton height={12} width={12} radius={6} />
+              <View style={styles.flex}>
+                <Skeleton height={14} width="55%" />
+                <Skeleton height={11} width="40%" style={styles.waitingLine} />
+              </View>
+              <Skeleton height={30} width={88} radius={15} />
+            </View>
           ))}
         </View>
       ) : lessons.isError ? (
@@ -212,12 +221,8 @@ export function ChildLessons({ registration }: { registration: Registration }) {
               {currentRows.length > 0 && <Card inset={42}>{currentRows.map(row)}</Card>}
               {earlierRows.length > 0 && (
                 <>
-                  <View style={[styles.rule, currentRows.length > 0 && { marginTop: 16 }]}>
-                    <Text variant="caption" weight="600" tone="ink3" accessibilityRole="header">
-                      {t.children.detail.earlierPackages}
-                    </Text>
-                    <View style={[styles.ruleLine, { backgroundColor: c.lineStrong }]} />
-                  </View>
+                  {/* Headed like the other groups, so the three read as one set */}
+                  {subheading(t.children.detail.earlierPackages, currentRows.length > 0)}
                   <Card inset={42}>{earlierRows.map(row)}</Card>
                 </>
               )}
@@ -232,14 +237,17 @@ export function ChildLessons({ registration }: { registration: Registration }) {
 
 const styles = StyleSheet.create({
   flex: { flex: 1, minWidth: 0, gap: 1 },
-  waiting: { borderRadius: 16, padding: 16, gap: 12 },
+  waiting: { borderRadius: 18, borderWidth: 1, paddingVertical: 2 },
+  waitingRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingLeft: 16, paddingRight: 12, minHeight: 60 },
+  waitingLine: { marginTop: 7 },
   quiet: { paddingHorizontal: 4 },
   groups: { gap: 18 },
   subheading: { paddingHorizontal: 4, marginBottom: 8 },
   lesson: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingLeft: 16, paddingRight: 12, paddingVertical: 11, minHeight: 56 },
   shape: { width: 14, alignItems: 'center', alignSelf: 'flex-start', paddingTop: 4 },
-  status: { flexDirection: 'row', alignItems: 'center', gap: 4, height: 30, maxWidth: 150, borderRadius: 15, borderWidth: 1, paddingLeft: 11, paddingRight: 9, flexShrink: 0 },
-  rule: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 4, marginBottom: 8 },
-  ruleLine: { flex: 1, height: StyleSheet.hairlineWidth },
+  // A share of the row, not a fixed width: "Yoklama girilmedi" or "Відпрацювання" at a larger text size still fits
+  status: { flexDirection: 'row', alignItems: 'center', gap: 4, height: 30, maxWidth: '48%', borderRadius: 15, borderWidth: 1, paddingLeft: 11, paddingRight: 9, flexShrink: 0 },
+  // A group under another one in the same list keeps the gap between groups
+  after: { marginTop: 18 },
   more: { alignSelf: 'flex-start', marginTop: 6, marginLeft: 4 }
 })

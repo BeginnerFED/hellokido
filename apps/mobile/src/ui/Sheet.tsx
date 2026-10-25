@@ -1,5 +1,5 @@
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react'
-import { Alert, Platform, ScrollView, StyleSheet, View } from 'react-native'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { Alert, Keyboard, LayoutAnimation, Platform, ScrollView, StyleSheet, TextInput, View, type KeyboardEvent, type ScrollViewInstance, type ViewInstance } from 'react-native'
 import { router, usePreventRemove } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useI18n } from '../providers/I18n'
@@ -27,15 +27,59 @@ type SheetValue = {
 
 const SheetContext = createContext<SheetValue | null>(null)
 
+// The sheets on screen, newest last. A form that calls useSheet() in the same component that draws
+// its SheetScreen sits above the provider; it still closes the sheet it is in instead of crashing.
+const openSheets: RefObject<SheetValue>[] = []
+
+const outsideSheet: SheetValue = {
+  finish: () => {
+    const top = openSheets[openSheets.length - 1]
+    if (top) top.current.finish()
+    else router.back()
+  }
+}
+
 export function useSheet(): SheetValue {
-  const value = useContext(SheetContext)
-  if (!value) throw new Error('useSheet must be used inside SheetScreen')
-  return value
+  return useContext(SheetContext) ?? outsideSheet
 }
 
 /** The sheet for a form that draws SheetScreen itself, so its own buttons can still close it after a save. */
 export function WithSheet({ children }: { children: (sheet: SheetValue) => ReactNode }) {
   return <>{children(useSheet())}</>
+}
+
+/**
+ * How far the keyboard reaches over a view, in points; 0 while it is closed. Measured against the
+ * view itself, because a sheet does not start at the top of the screen.
+ */
+function useKeyboardOverlap(ref: RefObject<ViewInstance | null>, enabled: boolean) {
+  const [overlap, setOverlap] = useState(0)
+  useEffect(() => {
+    if (!enabled) return
+    const ios = Platform.OS === 'ios'
+    const settle = (event: KeyboardEvent, next: number) => {
+      // The iPhone moves the keyboard on its own curve; the sheet's foot rides along with it
+      if (ios && event.duration > 0) LayoutAnimation.configureNext({ duration: event.duration, update: { type: LayoutAnimation.Types.keyboard } })
+      setOverlap((current) => (Math.abs(current - next) < 1 ? current : next))
+    }
+    const shown = (event: KeyboardEvent) => {
+      const { screenY, height } = event.endCoordinates
+      const view = ref.current
+      if (height === 0) return settle(event, 0)
+      if (!view) return settle(event, height)
+      const lifted = (y: number, viewHeight: number) => settle(event, viewHeight > 0 ? Math.max(0, Math.round(y + viewHeight - screenY)) : height)
+      // Android places the sheet natively, so only measure() sees where it really starts on screen;
+      // measureInWindow() reports it at the top and the lift fell short by the sheet's top offset
+      if (ios) view.measureInWindow((_x, y, _width, viewHeight) => lifted(y, viewHeight))
+      else view.measure((_x, _y, _width, viewHeight, _pageX, pageY) => lifted(pageY, viewHeight))
+    }
+    const hidden = (event: KeyboardEvent) => settle(event, 0)
+    const subscriptions = ios
+      ? [Keyboard.addListener('keyboardWillChangeFrame', shown), Keyboard.addListener('keyboardWillHide', hidden)]
+      : [Keyboard.addListener('keyboardDidShow', shown), Keyboard.addListener('keyboardDidHide', hidden)]
+    return () => subscriptions.forEach((subscription) => subscription.remove())
+  }, [ref, enabled])
+  return enabled ? overlap : 0
 }
 
 type Props = {
@@ -59,8 +103,34 @@ export function SheetScreen({ title, subtitle, children, dirty, busy, onBack, ba
   const c = useColors()
   const { t } = useI18n()
   const insets = useSafeAreaInsets()
+  const root = useRef<ViewInstance | null>(null)
   // Set once the work is saved or thrown away: from then on the sheet closes without asking
   const [released, setReleased] = useState(false)
+  // The iPhone keeps a scrolling form above the keyboard itself. A foot outside the scroll, and
+  // every sheet on Android (whose full-height sheet never moves), lift by hand instead.
+  const lift = Platform.OS === 'android' || footer !== undefined
+  const keyboard = useKeyboardOverlap(root, lift)
+  const scroller = useRef<ScrollViewInstance | null>(null)
+  const scrolled = useRef(0)
+  const footHeight = useRef(0)
+
+  // Android scrolls the focused field only until it touches the keyboard; this leaves it some air
+  useEffect(() => {
+    if (Platform.OS !== 'android' || keyboard === 0) return
+    const timer = setTimeout(() => {
+      const input = TextInput.State.currentlyFocusedInput()
+      const sheet = root.current
+      if (!input || !sheet) return
+      sheet.measure((_x, _y, _width, sheetHeight, _pageX, sheetY) => {
+        const visibleBottom = sheetY + sheetHeight - keyboard - footHeight.current
+        input.measure((_ix, _iy, _iwidth, inputHeight, _ipageX, inputY) => {
+          const short = inputY + inputHeight + 24 - visibleBottom
+          if (short > 0) scroller.current?.scrollTo({ y: scrolled.current + short, animated: true })
+        })
+      })
+    }, 80)
+    return () => clearTimeout(timer)
+  }, [keyboard])
 
   // Swiping the sheet down, Android's back or the close button never drop typed work without asking
   const disablePrevention = usePreventRemove(Boolean(dirty || busy) && !released, ({ repeat }) => {
@@ -90,9 +160,24 @@ export function SheetScreen({ title, subtitle, children, dirty, busy, onBack, ba
     [disablePrevention]
   )
 
+  const latest = useRef(value)
+  useEffect(() => {
+    latest.current = value
+  }, [value])
+  useEffect(() => {
+    openSheets.push(latest)
+    return () => {
+      const index = openSheets.lastIndexOf(latest)
+      if (index >= 0) openSheets.splice(index, 1)
+    }
+  }, [])
+
+  // While the keyboard is up it covers the home indicator, so that space is not added twice
+  const bottom = keyboard > 0 ? 0 : insets.bottom
+
   return (
     <SheetContext.Provider value={value}>
-      <View style={[styles.sheet, { backgroundColor: c.ground }]}>
+      <View ref={root} style={[styles.sheet, { backgroundColor: c.ground, paddingBottom: keyboard }]}>
         <View style={[styles.header, Platform.OS === 'android' && { paddingTop: 12 }]}>
           <View style={styles.side}>
             {onBack && <IconButton icon="chevronLeft" label={backLabel ?? t.common.back} variant="well" size={32} onPress={onBack} disabled={busy} />}
@@ -115,15 +200,29 @@ export function SheetScreen({ title, subtitle, children, dirty, busy, onBack, ba
           </View>
         </View>
         <ScrollView
+          ref={scroller}
+          onScroll={(event) => {
+            scrolled.current = event.nativeEvent.contentOffset.y
+          }}
+          scrollEventThrottle={32}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="interactive"
-          automaticallyAdjustKeyboardInsets
-          contentContainerStyle={[styles.body, { paddingBottom: footer ? 24 : insets.bottom + 24 }]}
+          automaticallyAdjustKeyboardInsets={!lift}
+          contentContainerStyle={[styles.body, { paddingBottom: footer ? 24 : bottom + 24 }]}
         >
           <OfflineNotice />
           {children}
         </ScrollView>
-        {footer && <View style={[styles.footer, { borderTopColor: c.line, paddingBottom: insets.bottom + 12 }]}>{footer}</View>}
+        {footer && (
+          <View
+            onLayout={(event) => {
+              footHeight.current = event.nativeEvent.layout.height
+            }}
+            style={[styles.footer, { borderTopColor: c.line, backgroundColor: c.ground, paddingBottom: bottom + 12 }]}
+          >
+            {footer}
+          </View>
+        )}
       </View>
     </SheetContext.Provider>
   )
@@ -135,7 +234,7 @@ export function SheetActions({ children, error }: { children: ReactNode; error?:
   return (
     <View style={styles.actions}>
       {error ? (
-        <View accessibilityRole="alert" style={[styles.error, { backgroundColor: c.negativeWash }]}>
+        <View accessibilityRole="alert" accessibilityLiveRegion="polite" style={[styles.error, { backgroundColor: c.negativeWash, borderColor: c.negativeLine }]}>
           <Text variant="foot" style={{ color: c.negativeInk }}>
             {error}
           </Text>
@@ -155,5 +254,5 @@ const styles = StyleSheet.create({
   body: { paddingHorizontal: 16, paddingTop: 6, gap: 20 },
   footer: { paddingHorizontal: 16, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth },
   actions: { gap: 12, marginTop: 4 },
-  error: { borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10 }
+  error: { borderRadius: 14, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10 }
 })

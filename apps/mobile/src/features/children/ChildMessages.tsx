@@ -10,7 +10,7 @@ import type { MenuItem } from '../../ui/ActionMenu'
 import { Button } from '../../ui/Button'
 import { Icon } from '../../ui/Icon'
 import { Card, Section } from '../../ui/Screen'
-import { Text } from '../../ui/Text'
+import { DOT, Text } from '../../ui/Text'
 
 const open = (url: string) => Linking.openURL(url).catch(() => undefined)
 
@@ -98,7 +98,7 @@ export function MessageHistory({ registration }: { registration: Registration })
               <Icon name="chat" size={16} color={c.positiveInk} />
               <Text variant="sub" numberOfLines={1} style={styles.flex}>
                 {title ?? kind}
-                {title && title !== kind ? <Text variant="sub" tone="ink3">{` · ${kind}`}</Text> : null}
+                {title && title !== kind ? <Text variant="sub" tone="ink3">{`${DOT}${kind}`}</Text> : null}
               </Text>
               <Text variant="foot" tone="ink3" tabular>
                 {date(entry.sent_at, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
@@ -118,6 +118,7 @@ export function MessageHistory({ registration }: { registration: Registration })
 
 const styles = StyleSheet.create({
   flex: { flex: 1, minWidth: 0 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12, minHeight: 48 },
+  // The same row height as the payments and lessons above it on the page
+  row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12, minHeight: 56 },
   more: { alignSelf: 'flex-start', marginTop: 6, marginLeft: 4 }
 })

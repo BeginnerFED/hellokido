@@ -11,6 +11,14 @@ export function parseDays(text: string) {
   return days <= MAX_SETTLEMENT_DAYS ? days : null
 }
 
+/** The first day of a money period: a whole day from 1 to 28, so every month has it. */
+export function parseStartDay(text: string) {
+  const value = text.trim()
+  if (!/^\d{1,2}$/.test(value)) return null
+  const day = Number(value)
+  return day >= 1 && day <= 28 ? day : null
+}
+
 /**
  * A commission rate in percent. A rate never needs a thousands mark, so one comma or dot is
  * always the decimal one: "2,49", "2.49" and "%2,49" all read as 2.49. Empty means none.
@@ -28,11 +36,15 @@ export const rateText = (rate: number, locale: Locale) => (locale === 'en' ? Str
 export type Names = { tr: string; en: string; uk: string }
 type Named = { name_tr: string; name_en: string; name_uk: string }
 
-export const namesOf = (row: Named | null): Names => ({
-  tr: row?.name_tr ?? '',
-  en: row?.name_en ?? '',
-  uk: row?.name_uk ?? ''
-})
+/**
+ * Names as the form shows them. A language that only repeats the Turkish name is shown empty: it
+ * follows the Turkish name, also when that is renamed.
+ */
+export const namesOf = (row: Named | null): Names => {
+  const tr = row?.name_tr ?? ''
+  const own = (name: string | undefined) => (name && name !== tr ? name : '')
+  return { tr, en: own(row?.name_en), uk: own(row?.name_uk) }
+}
 
 /** Names as they are saved: trimmed, and a language left empty gets the Turkish name (none may be blank). */
 export function filledNames(names: Names) {

@@ -67,6 +67,8 @@ colors:
   phone-accent-line: "#c0dcec"
   phone-accent-wash: "#edf5fa"
   phone-action: "#e3a300"
+  phone-pressed: "#ebe9e4"
+  phone-dark-pressed: "#262626"
 typography:
   headline:
     fontFamily: "Euclid Circular A, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif"
@@ -235,7 +237,7 @@ components:
 
 The panel is a working tool that steps out of the way. A white canvas, neutral greys, 1px hairlines and one HelloKido blue carry the whole interface; colour is spent only on meaning: a status dot, a lesson-type dot, the one filled button in an area. The look follows the Vizion Menu dashboard the owner approved: cards with a header, a ruled body and a footer link; grey bands for column heads and groups; pill controls; square initials tiles for people.
 
-There are two surfaces with one vocabulary. The web panel (Vite, React, Tailwind 4) is pure white with neutral greys. The iPhone app (Expo, "Template 2") sits on a warm grey canvas with white cards of 18px radius, the system font, the phone's own large titles, tab bar, switches and action sheets. Marks, dots, share bars, tiles and the seat board look the same on both.
+There are two surfaces with one vocabulary. The web panel (Vite, React, Tailwind 4) is pure white with neutral greys. The iPhone app (Expo, "Template 2") sits on a warm grey canvas with white cards of 18px radius, the system font, the phone's own title bar, tab bar, switches and action sheets. Marks, dots, share bars, tiles and the seat board look the same on both.
 
 Density is a working tool's: readable between lessons, numbers in tabular figures, everything opens on the current day, week or month. Light is the default; both surfaces have a full dark theme with the same roles.
 
@@ -311,24 +313,25 @@ A neutral white-and-grey room with one HelloKido blue; status colours live in sm
 
 ## Layout
 
-**Web shell.** From 1024px: a fixed white rail (256px, collapsible to 64px) with the logo, nav items and the account block, divided by hairlines; each page has a sticky 64px top bar with the rail toggle, crumbs (root › section › page), a 320px search pill with a shortcut key, and a round account button. Below 1024px the rail becomes a bottom tab bar (68px, white, hairline on top, filled blue icon when active) with a "More" sheet.
+**Web shell.** From 1024px: a fixed white rail (256px, collapsible to 64px) with the logo, nav items and the account block, divided by hairlines. The account block (workshop name, email, an up-down caret at the right) sits at the foot of the rail, 10px from the bottom edge, and is the only way to the account controls on desktop. Each page has a sticky 64px top bar with the rail toggle, crumbs (root › section › page) and a 320px search pill with a shortcut key. Below 1024px the rail becomes a bottom tab bar (68px, white, hairline on top, filled blue icon when active) with a "More" sheet.
 
 **Page frame.** Content is centred at 80rem (90rem for wide pages: Children, Finance) with 16 / 24 / 40px side padding and 36px top padding on desktop. The header holds the title, an optional one-line summary in ink-3, the page toolbar and one primary "New" pill at the far right. Cards stack with 24px gaps; side-by-side cards use weighted flex (7:5 on Today) or two-column grids.
 
 **Patterns as used.**
 - *Today*: an overview card with a FigureGrid of clickable figures; a lessons card with a pill-track tab (Today / Past, counts inside), each lesson as a grey band (time, type dot, title, age group, seat count, mark) and child rows (tile, name, package, share bar, attendance track); then a work card and a tomorrow card side by side.
 - *Children*: a list card (search pill, filter chips, divided rows) in a 22–30rem column beside the detail column.
-- *Finance*: period navigation, then balance and chart as two halves of one bordered box divided by a vertical hairline, then movements beside a column of smaller cards.
+- *Finance*: period navigation (back / this period / forward, the period's days as a heading, an "other period" menu with presets, a custom range and the period start day); an overview card with a FigureGrid of four figures (in, out, balance, on the way to the bank), each hint giving the count and the previous period's figure, and one footer line of how money came in; then a periods chart (6 or 12 periods, blue in and orange out, the viewed period shaded) and movements beside a column of smaller cards. No progress bars.
+- *Money periods*: every money view uses the period start day from Settings (1–28; 1 gives calendar months). A period runs from that day to the day before it next month and opens on the period that holds today.
 - *Settings*: from 1280px a sticky 168px section index beside a 46rem column of boxed sections.
 
-**Phone app.** Native tabs (Today, Calendar, Children, Finance, More), native large titles, pages that scroll under them on the warm canvas. Screen padding 16px, 30px between sections, section heads 21px with a count at the right. Rows are at least 56px with 14 × 12px padding and 12px gaps. Today opens with a summary line and a sideways strip of blue promo pills for what waits.
+**Phone app.** Native tabs (Today, Calendar, Children, Finance, More), compact native title bars (no large titles: they left an empty white band above the page), pages that scroll under them on the warm canvas. Screen padding 16px, 30px between sections, section heads 21px with a count at the right. Rows are at least 56px with 14 × 12px padding and 12px gaps. Today opens with a summary line and a sideways strip of blue promo pills for what waits. Finance opens with a period bar (‹ period name ⌄ ›, a caption with the start day or "back to this period"), one overview card (the balance large, in and out as two pressable halves, a "to the bank" row) and ends with the periods chart.
 
 **Breakpoints.** 640px (phone layout ends, inputs leave 16px), 768px (sheets move from the bottom to the right), 1024px (rail and top bar replace the tab bar; buttons drop from 44 to 38px), 1280px (settings index).
 
 ### Named Rules
 **The One Container Rule.** The card is the panel's container. Groups inside a card are grey bands and hairline-divided rows, never a card inside a card.
 
-**The Current Period Rule.** Calendar and Finance open on the current week or month; time-based data is shown as a calendar before a list.
+**The Current Period Rule.** Calendar opens on the current week or month and Finance on the current money period; time-based data is shown as a calendar before a list.
 
 ## Elevation & Depth
 
@@ -401,7 +404,7 @@ Every task opens in a sheet: from the bottom on phones (92dvh max, 20px top radi
 - **Do** keep every control a pill and give it a 44px touch area on touch screens.
 - **Do** set numbers in tabular figures and amounts in Turkish format in all three languages.
 - **Do** open every task in a sheet: from the right at 768px and up, from the bottom on phones.
-- **Do** use the phone's own pieces (large titles, tab bar, switches, date picker, action sheets, haptics) instead of drawing them.
+- **Do** use the phone's own pieces (title bar, tab bar, switches, date picker, action sheets, haptics) instead of drawing them.
 - **Do** keep motion between 150 and 320ms, ease-out-expo for arrivals, and honour reduced motion.
 
 ### Don't:

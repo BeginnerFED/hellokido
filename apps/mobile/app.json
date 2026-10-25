@@ -31,6 +31,7 @@
     "plugins": [
       "expo-router",
       "expo-localization",
+      "expo-notifications",
       [
         "expo-splash-screen",
         {
@@ -47,6 +48,18 @@
     "experiments": {
       "typedRoutes": false,
       "reactCompiler": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "a4660782-5876-4f52-9d02-df6c2226705b"
+      }
+    },
+    "owner": "bdavut",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/a4660782-5876-4f52-9d02-df6c2226705b"
     }
   }
 }

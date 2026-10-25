@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { StyleSheet, View } from 'react-native'
 import { useQuery } from '@tanstack/react-query'
 import * as Haptics from 'expo-haptics'
@@ -27,8 +27,8 @@ import { Chip, DateField, FieldLabel, Segmented, TextField } from '../../ui/Fiel
 import { Icon } from '../../ui/Icon'
 import { Card, Row } from '../../ui/Screen'
 import { SheetActions, SheetScreen, WithSheet } from '../../ui/Sheet'
-import { AgeTablet, LessonShape, Peg } from '../../ui/signature'
-import { Text } from '../../ui/Text'
+import { LessonShape, Peg } from '../../ui/signature'
+import { DOT, Text } from '../../ui/Text'
 import { useToast } from '../../ui/Toast'
 import { useLessonTitle } from '../../ui/UsageLine'
 import { ChildChooser, describeChild } from './ChildChooser'
@@ -126,6 +126,7 @@ function LessonForm({ mode, title, detail, day: dayParam }: { mode: Mode; title:
   const [rows, setRows] = useState<ChildRow[]>(opened.rows)
   const [picking, setPicking] = useState(false)
   const [busy, setBusy] = useState(false)
+  const sending = useRef(false)
   const [error, setError] = useState<string | null>(null)
 
   const startAt = day && hour !== null && minute !== null ? set(day, { hours: hour, minutes: minute, seconds: 0, milliseconds: 0 }) : null
@@ -145,7 +146,9 @@ function LessonForm({ mode, title, detail, day: dayParam }: { mode: Mode; title:
     rows.length !== opened.rows.length ||
     rows.some((row) => !opened.rows.some((before) => before.id === row.id))
 
-  const when = (at: Date) => `${date(at, { weekday: 'long', day: 'numeric', month: 'long' })} · ${date(at, { hour: '2-digit', minute: '2-digit' })}`
+  const when = (at: Date) => `${date(at, { weekday: 'long', day: 'numeric', month: 'long' })}${DOT}${date(at, { hour: '2-digit', minute: '2-digit' })}`
+  // The sheet's subtitle is one narrow line between two buttons: short names keep the time in view
+  const whenShort = (at: Date) => `${date(at, { weekday: 'short', day: 'numeric', month: 'short' })}${DOT}${date(at, { hour: '2-digit', minute: '2-digit' })}`
 
   // A stored time outside the usual steps stays choosable, so it is never changed unseen
   const hours = [...new Set([...LESSON_HOURS, ...(opened.hour !== null ? [opened.hour] : [])])].sort((a, b) => a - b)
@@ -168,8 +171,10 @@ function LessonForm({ mode, title, detail, day: dayParam }: { mode: Mode; title:
   }
 
   const save = async (finish: () => void) => {
-    if (!valid || busy || !startAt || !ageGroup || !type) return
+    if (!valid || busy || sending.current || !startAt || !ageGroup || !type) return
     const fields = { start: startAt, ageGroup, type, description }
+    // Set at once, before the next render: a quick second tap never adds the lesson twice
+    sending.current = true
     setBusy(true)
     setError(null)
     try {
@@ -207,6 +212,7 @@ function LessonForm({ mode, title, detail, day: dayParam }: { mode: Mode; title:
       }
       setError(mode === 'edit' ? t.calendar.lesson.saveFailed : t.calendar.lesson.createFailed)
     } finally {
+      sending.current = false
       setBusy(false)
     }
   }
@@ -232,7 +238,7 @@ function LessonForm({ mode, title, detail, day: dayParam }: { mode: Mode; title:
   }
 
   return (
-    <SheetScreen key="form" title={title} subtitle={lesson ? `${lessonTitle(lesson)} · ${when(new Date(lesson.event_date))}` : undefined} dirty={dirty} busy={busy}>
+    <SheetScreen key="form" title={title} subtitle={lesson ? `${lessonTitle(lesson)}${DOT}${whenShort(new Date(lesson.event_date))}` : undefined} dirty={dirty} busy={busy}>
       <DateField
         label={mode === 'copy' ? t.calendar.lesson.copyTo : t.calendar.lesson.date}
         value={day}
@@ -269,7 +275,6 @@ function LessonForm({ mode, title, detail, day: dayParam }: { mode: Mode; title:
             <Chip
               key={group}
               label={labels.ageGroup(group)}
-              leading={<AgeTablet group={group} />}
               selected={ageGroup === group}
               onPress={() => {
                 void Haptics.selectionAsync()
@@ -294,6 +299,8 @@ function LessonForm({ mode, title, detail, day: dayParam }: { mode: Mode; title:
             onChangeText={(text) => setDescription(upperFirst(text) ?? '')}
             maxLength={120}
             autoComplete="off"
+            // "Done" puts the keyboard away, so the buttons under the form come back into view
+            returnKeyType="done"
           />
           {descriptionMissing && (
             <Text variant="foot" tone="ink3" style={styles.after}>
@@ -355,6 +362,11 @@ function LessonForm({ mode, title, detail, day: dayParam }: { mode: Mode; title:
             <Notice tone="action" style={styles.after}>
               {fmt(t.calendar.lesson.seats, { count: rows.length })}
             </Notice>
+          ) : mode === 'new' && rows.length === 0 ? (
+            // Says why "Add the lesson" waits, instead of a button that is simply grey
+            <Text variant="foot" tone="ink3" style={styles.after}>
+              {t.calendar.lesson.childrenRequired}
+            </Text>
           ) : null}
         </View>
       )}
@@ -378,5 +390,6 @@ const styles = StyleSheet.create({
   before: { marginBottom: 10 },
   after: { marginTop: 8, paddingHorizontal: 2 },
   childRow: { paddingRight: 8 },
-  addMark: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' }
+  // As wide as a child's tile, so "Add children" starts where the names do
+  addMark: { width: 32, height: 32, borderRadius: 16, marginHorizontal: 3, alignItems: 'center', justifyContent: 'center' }
 })

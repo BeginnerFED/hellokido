@@ -16,13 +16,8 @@ const NAMES = 2
 // The day a card payment should reach the bank; shared with the phone app
 export { arrivalOf }
 
-/**
- * Card payments the bank has not credited yet, by the day they should arrive. Card money comes in
- * about a month later, so this is the difference between "money in" and the bank account.
- */
-export function OnTheWaySection({ today, id, className }: { today: Date; id?: string; className?: string }) {
-  const { t, fmt, plural, money, date, tag } = useI18n()
-  const labels = useLabels()
+/** Card payments not credited yet, whatever the period on screen, grouped by the day they should arrive. */
+export function useCardsOnTheWay(today: Date) {
   const catalog = useCatalog()
   const days = catalog.data?.settings.cardSettlementDays ?? 30
   const rate = catalog.data?.settings.cardCommissionRate ?? 0
@@ -32,7 +27,6 @@ export function OnTheWaySection({ today, id, className }: { today: Date; id?: st
     queryFn: () => cardPaymentsSince(since),
     enabled: !catalog.isPending
   })
-  const [unfolded, setUnfolded] = useState(false)
 
   const groups = useMemo(() => {
     if (!cards.data) return null
@@ -51,6 +45,19 @@ export function OnTheWaySection({ today, id, className }: { today: Date; id?: st
   }, [cards.data, days, today])
 
   const total = (groups ?? []).reduce((sum, group) => sum + group.amount, 0)
+  const count = (groups ?? []).reduce((sum, group) => sum + group.lines.length, 0)
+  return { cards, groups, total, count, days, rate }
+}
+
+/**
+ * Card payments the bank has not credited yet, by the day they should arrive. Card money comes in
+ * about a month later, so this is the difference between "money in" and the bank account.
+ */
+export function OnTheWaySection({ today, id, className }: { today: Date; id?: string; className?: string }) {
+  const { t, fmt, plural, money, date, tag } = useI18n()
+  const labels = useLabels()
+  const { cards, groups, total, days, rate } = useCardsOnTheWay(today)
+  const [unfolded, setUnfolded] = useState(false)
   const shown = !groups ? [] : unfolded || groups.length <= FIRST + 1 ? groups : groups.slice(0, FIRST)
   const ratePercent = new Intl.NumberFormat(tag, { style: 'percent', maximumFractionDigits: 2 }).format(rate / 100)
 

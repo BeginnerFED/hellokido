@@ -1,12 +1,12 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useMemo, useRef, useState, type ReactNode } from 'react'
 import { Linking, Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native'
 import { useQueryClient } from '@tanstack/react-query'
+import * as Haptics from 'expo-haptics'
 import { LessonError, setAttendance, type AttendanceStatus, type Lesson, type Registration, type UnmarkedSeat } from '@hellokido/core/api'
 import { whatsAppLink } from '@hellokido/core/rules/phone.js'
 import { endText, formatPeriod, shortDate } from '@hellokido/core/view'
 import { useMessageWriter, useRecentReminders, useReminderLog, useRemindedText, useSeatReminders } from '../../data/messages'
 import { keys, useActiveUsage, useLabels } from '../../data/queries'
-import { planEveningReminder } from '../../lib/eveningReminder'
 import { tasks, useOpenChild } from '../../lib/navigation'
 import { useI18n } from '../../providers/I18n'
 import { useColors } from '../../theme/colors'
@@ -17,21 +17,53 @@ import { Icon } from '../../ui/Icon'
 import { WhatsAppButton } from '../../ui/PhoneActions'
 import { Card, Section } from '../../ui/Screen'
 import { LessonShape, Peg } from '../../ui/signature'
-import { Text } from '../../ui/Text'
+import { DOT, dots, Text, together } from '../../ui/Text'
 import { useToast } from '../../ui/Toast'
 import { useLessonTitle } from '../../ui/UsageLine'
 import { useEndingPackages, usePaymentsDue, useUnmarked } from './data'
 
-/** A child's name that opens their page; the touch area is the whole line of words. */
-export function ChildName({ id, name, children }: { id: string; name: string; children?: ReactNode }) {
+/**
+ * A child's name that opens their page; the touch area is the whole line of words. Marks after the
+ * name move under it when both do not fit, so a long name is never cut short for them. Rows with
+ * buttons at the end let the name take two lines.
+ */
+export function ChildName({ id, name, lines = 1, children }: { id: string; name: string; lines?: number; children?: ReactNode }) {
   const openChild = useOpenChild()
   return (
     <Pressable onPress={() => openChild(id)} accessibilityRole="link" hitSlop={{ top: 8, bottom: 8 }} style={({ pressed }) => [styles.nameLine, pressed && { opacity: 0.55 }]}>
-      <Text variant="callout" weight="600" numberOfLines={1} style={styles.shrink}>
+      <Text variant="callout" weight="600" numberOfLines={lines} style={styles.shrink}>
         {name}
       </Text>
       {children}
     </Pressable>
+  )
+}
+
+/**
+ * A family with something to do: the tile, the name and its buttons on one line, and what it is
+ * about under them across the whole row, so a package name is never squeezed beside the buttons.
+ */
+function ActionRow({ child, meta, last, children }: { child: Registration; meta: ReactNode; last: string | null; children: ReactNode }) {
+  return (
+    <View style={styles.actionRow}>
+      <View style={styles.actionHead}>
+        <Peg seat={{ id: child.id, name: child.student_name, status: 'scheduled' }} />
+        <View style={styles.flex}>
+          <ChildName id={child.id} name={child.student_name} lines={2} />
+        </View>
+        {children}
+      </View>
+      <View style={styles.actionBody}>
+        <Text variant="foot" tone="ink3" numberOfLines={2}>
+          {meta}
+        </Text>
+        {last && (
+          <Text variant="foot" tone="positiveInk" numberOfLines={1}>
+            {last}
+          </Text>
+        )}
+      </View>
+    </View>
   )
 }
 
@@ -58,6 +90,8 @@ export function UnmarkedSection({ dayKey, open, onOpenChange, onLayout }: { dayK
   const title = useLessonTitle()
   const { key, query } = useUnmarked(dayKey)
   const [saving, setSaving] = useState<Set<string>>(() => new Set())
+  // Answers on their way, read at once: a second tap before the next render never sends twice
+  const inFlight = useRef(new Set<string>())
 
   const rows = query.data ?? []
   const groups = useMemo(() => {
@@ -74,7 +108,8 @@ export function UnmarkedSection({ dayKey, open, onOpenChange, onLayout }: { dayK
   if (query.isError || rows.length === 0) return null
 
   const mark = async (row: UnmarkedSeat, status: AttendanceStatus) => {
-    if (saving.has(row.id)) return
+    if (inFlight.current.has(row.id)) return
+    inFlight.current.add(row.id)
     setSaving((set) => new Set(set).add(row.id))
     try {
       await setAttendance(row.id, status)
@@ -83,9 +118,11 @@ export function UnmarkedSection({ dayKey, open, onOpenChange, onLayout }: { dayK
       void client.invalidateQueries({ queryKey: keys.childLessons(row.registration_id) })
       void client.invalidateQueries({ queryKey: ['lessons'], refetchType: 'none' })
     } catch (error) {
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error)
       toast({ tone: 'error', title: error instanceof LessonError && error.code === 'not_found' ? t.today.lessonGone : t.children.detail.statusFailed })
       if (error instanceof LessonError) void query.refetch()
     } finally {
+      inFlight.current.delete(row.id)
       setSaving((set) => {
         const next = new Set(set)
         next.delete(row.id)
@@ -123,7 +160,7 @@ export function UnmarkedSection({ dayKey, open, onOpenChange, onLayout }: { dayK
               <View style={styles.groupHead}>
                 <LessonShape type={group.lesson.event_type} size={11} />
                 <Text variant="foot" weight="600" tone="ink2" numberOfLines={1} style={styles.shrink}>
-                  {date(group.lesson.event_date, { weekday: 'short', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })} · {title(group.lesson)} · {labels.ageGroup(group.lesson.age_group)}
+                  {date(group.lesson.event_date, { weekday: 'short', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}{DOT}{title(group.lesson)}{DOT}{labels.ageGroup(group.lesson.age_group)}
                 </Text>
               </View>
               <Card inset={60}>
@@ -136,7 +173,7 @@ export function UnmarkedSection({ dayKey, open, onOpenChange, onLayout }: { dayK
                           {row.child.is_active !== true && <Mark tone="neutral">{t.today.archived}</Mark>}
                         </ChildName>
                         <Text variant="foot" tone="ink3" numberOfLines={1}>
-                          {t.children.detail.parent} · {row.child.parent_name}
+                          {t.children.detail.parent}{DOT}{row.child.parent_name}
                         </Text>
                       </View>
                     </View>
@@ -180,19 +217,7 @@ export function PaymentsSection({ dayKey, onLayout }: { dayKey: string; onLayout
     })
     const last = reminded(byChild.get(child.id), dayKey)
     return (
-      <View key={key} style={styles.personRow}>
-        <Peg seat={{ id: child.id, name: child.student_name, status: 'scheduled' }} />
-        <View style={styles.flex}>
-          <ChildName id={child.id} name={child.student_name} />
-          <Text variant="foot" tone="ink3" numberOfLines={2}>
-            {meta}
-          </Text>
-          {last && (
-            <Text variant="foot" tone="positiveInk" numberOfLines={1}>
-              {last}
-            </Text>
-          )}
-        </View>
+      <ActionRow key={key} child={child} meta={meta} last={last}>
         <WhatsAppButton
           phone={child.parent_phone}
           text={message.text}
@@ -202,7 +227,7 @@ export function PaymentsSection({ dayKey, onLayout }: { dayKey: string; onLayout
         <Button size="sm" onPress={collect}>
           {t.today.payments.collect}
         </Button>
-      </View>
+      </ActionRow>
     )
   }
 
@@ -217,17 +242,17 @@ export function PaymentsSection({ dayKey, onLayout }: { dayKey: string; onLayout
       ) : (
         <Card inset={60}>
           {packages.map((child) =>
-            row(child, child.id, `${labels.packageName(child.package_type)} · ${formatPeriod(i18n, child.package_start_date, child.package_end_date)}`, () =>
+            row(child, child.id, dots(labels.packageName(child.package_type), together(formatPeriod(i18n, child.package_start_date, child.package_end_date))), () =>
               tasks.payment({ registrationId: child.id, choice: 'collect' })
             )
           )}
           {fees.map((line) => {
             const child = byId.get(line.registrationId!)!
-            const due = line.dueDate ? ` · ${fmt(t.children.detail.dueOn, { date: shortDate(i18n, `${line.dueDate}T00:00:00`) })}` : ''
+            const due = line.dueDate ? `${DOT}${fmt(t.children.detail.dueOn, { date: shortDate(i18n, `${line.dueDate}T00:00:00`) })}` : ''
             return row(
               child,
               line.key,
-              `${line.description || t.children.detail.fee} · ${fmt(t.today.payments.expected, { amount: money(line.amount) })}${due}`,
+              `${line.description || t.children.detail.fee}${DOT}${fmt(t.today.payments.expected, { amount: money(line.amount) })}${due}`,
               () => tasks.payment({ registrationId: child.id, choice: 'collect', entryId: line.id }),
               line.amount
             )
@@ -273,23 +298,20 @@ export function EndingSection({ now, dayKey, onLayout }: { now: Date; dayKey: st
         })
         const last = reminded(byChild.get(child.id), dayKey)
         return (
-          <View key={child.id} style={styles.personRow}>
-            <Peg seat={{ id: child.id, name: child.student_name, status: 'scheduled' }} />
-            <View style={styles.flex}>
-              <ChildName id={child.id} name={child.student_name} />
-              <Text variant="foot" tone="ink3" numberOfLines={2}>
+          <ActionRow
+            key={child.id}
+            child={child}
+            last={last}
+            meta={
+              <>
                 <Text variant="foot" weight="600" tone="actionInk">
                   {endText(i18n, days)}
                 </Text>
-                {' · '}
-                {labels.packageName(child.package_type)}
-              </Text>
-              {last && (
-                <Text variant="foot" tone="positiveInk" numberOfLines={1}>
-                  {last}
-                </Text>
-              )}
-            </View>
+                {DOT}
+                {together(labels.packageName(child.package_type))}
+              </>
+            }
+          >
             <WhatsAppButton
               phone={child.parent_phone}
               text={message.text}
@@ -299,7 +321,7 @@ export function EndingSection({ now, dayKey, onLayout }: { now: Date; dayKey: st
             <Button size="sm" onPress={() => tasks.payment({ registrationId: child.id, choice: 'renew' })}>
               {t.today.ending.renew}
             </Button>
-          </View>
+          </ActionRow>
         )
       })}
     </Card>
@@ -359,16 +381,18 @@ export function EndingSection({ now, dayKey, onLayout }: { now: Date; dayKey: st
  */
 export function TomorrowSection({ lessons, isPending, isError, onRetry, now }: { lessons: Lesson[]; isPending: boolean; isError: boolean; onRetry: () => void; now: Date }) {
   const c = useColors()
-  const { t, fmt, date, plural } = useI18n()
+  const { t, fmt, date } = useI18n()
   const labels = useLabels()
   const title = useLessonTitle()
   const write = useMessageWriter()
   const usage = useActiveUsage().data
   const seatIds = useMemo(() => lessons.flatMap((lesson) => lesson.seats.map((seat) => seat.id)), [lessons])
-  const { query: seatLog, bySeat } = useSeatReminders(seatIds)
+  const { bySeat } = useSeatReminders(seatIds)
   const { log, unlog } = useReminderLog()
   // A tap shows at once; the shared log catches up a moment later
   const [local, setLocal] = useState<Record<string, boolean>>({})
+  // A quick second tap on "send to the next" reaches the same family before the screen moves on
+  const sending = useRef(new Set<string>())
   const settle = (seatId: string) =>
     setLocal((current) => {
       const next = { ...current }
@@ -399,24 +423,22 @@ export function TomorrowSection({ lessons, isPending, isError, onRetry, now }: {
   const allSent = reminders.length > 0 && sent === reminders.length
   const next = reminders.find((item) => !isSent(item.seat.id))
 
-  // The 18:00 nudge follows the count: planned while families wait, taken back when all were reminded
-  const unsent = reminders.length - sent
-  const ready = !isPending && !isError && (seatIds.length === 0 || seatLog.isSuccess)
-  const day = now.toDateString()
-  useEffect(() => {
-    if (!ready) return
-    void planEveningReminder({
-      now: new Date(),
-      unsent,
-      channel: t.messages.evening.channel,
-      title: t.messages.evening.title,
-      body: plural(t.messages.evening.body, unsent)
-    })
-  }, [ready, unsent, day, t, plural])
+  // The evening note about families still waiting comes from the server (Settings › Messages)
 
   const send = (item: (typeof reminders)[number]) => {
-    setLocal((current) => ({ ...current, [item.seat.id]: true }))
-    log({ kind: 'lesson', registrationId: item.seat.registration_id, participantId: item.seat.id, templateId: item.templateId }, { onSettled: () => settle(item.seat.id) })
+    const seatId = item.seat.id
+    if (sending.current.has(seatId)) return
+    sending.current.add(seatId)
+    setLocal((current) => ({ ...current, [seatId]: true }))
+    log(
+      { kind: 'lesson', registrationId: item.seat.registration_id, participantId: seatId, templateId: item.templateId },
+      {
+        onSettled: () => {
+          sending.current.delete(seatId)
+          settle(seatId)
+        }
+      }
+    )
     void Linking.openURL(item.chat!).catch(() => undefined)
   }
   const takeBack = (seatId: string) => {
@@ -456,7 +478,7 @@ export function TomorrowSection({ lessons, isPending, isError, onRetry, now }: {
                   >
                     {t.messages.inOrder.button}
                   </Button>
-                  <Text variant="foot" tone="ink2" numberOfLines={1} style={styles.shrink}>
+                  <Text variant="foot" tone="ink2" numberOfLines={2} style={styles.shrink}>
                     {fmt(t.messages.inOrder.next, { name: next.seat.child.student_name })}
                   </Text>
                 </>
@@ -529,7 +551,7 @@ export function TomorrowSection({ lessons, isPending, isError, onRetry, now }: {
 const styles = StyleSheet.create({
   flex: { flex: 1, minWidth: 0 },
   shrink: { flexShrink: 1 },
-  nameLine: { flexDirection: 'row', alignItems: 'center', gap: 6, minWidth: 0, alignSelf: 'flex-start', maxWidth: '100%' },
+  nameLine: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 6, rowGap: 4, minWidth: 0, alignSelf: 'flex-start', maxWidth: '100%' },
   quiet: { paddingHorizontal: 4 },
   warnTitle: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
   warnIcon: { paddingTop: 1 },
@@ -539,6 +561,10 @@ const styles = StyleSheet.create({
   seat: { paddingHorizontal: 16, paddingVertical: 12, gap: 10 },
   seatHead: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   personRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingLeft: 16, paddingRight: 12, paddingVertical: 11 },
+  actionRow: { paddingLeft: 16, paddingRight: 12, paddingVertical: 11 },
+  actionHead: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  // Under the name (past the 38pt tile and its gap); a little into the head line, whose buttons stand taller than the name
+  actionBody: { marginLeft: 48, marginTop: -2 },
   compact: { paddingVertical: 9 },
   inOrder: { flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 1, borderRadius: 18, padding: 10, paddingRight: 14, minHeight: 64 },
   doneLine: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 6, minHeight: 42 },

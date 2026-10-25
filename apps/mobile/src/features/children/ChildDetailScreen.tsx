@@ -14,7 +14,7 @@ import { Button } from '../../ui/Button'
 import { displayPhone, PhoneActions } from '../../ui/PhoneActions'
 import { Card, Screen, Section } from '../../ui/Screen'
 import { BeadString } from '../../ui/signature'
-import { Text } from '../../ui/Text'
+import { DOT, Text } from '../../ui/Text'
 import { useToast } from '../../ui/Toast'
 import { ChildLessons } from './ChildLessons'
 import { MessageHistory, useMessageItems } from './ChildMessages'
@@ -46,10 +46,12 @@ export function ChildDetailScreen({ id }: { id: string }) {
   if (!registrations.data) {
     return (
       <Screen>
+        {/* The page's own shapes: the parent's card, the payment pill, the package card */}
         <View style={styles.waiting}>
-          <Skeleton height={64} radius={16} />
-          <Skeleton height={50} radius={14} />
-          <Skeleton height={190} radius={16} />
+          <Skeleton height={16} width="30%" radius={6} style={styles.summary} />
+          <Skeleton height={66} radius={18} />
+          <Skeleton height={50} radius={25} />
+          <Skeleton height={190} radius={18} style={styles.later} />
         </View>
       </Screen>
     )
@@ -153,27 +155,27 @@ function ChildPage({ registration, onRefresh }: { registration: Registration; on
       <Stack.Screen
         options={{
           title: name,
-          headerLargeTitleEnabled: true,
           // Options merge: an archived child has to take the menu away, not only leave it out
           ...(active ? headerMenu(c, more, items, (list) => menu.open(more, list), 'more') : { headerRight: undefined, unstable_headerRightItems: undefined })
         }}
       />
       {menu.element}
-      <Screen onRefresh={onRefresh} gap={28}>
+      <Screen onRefresh={onRefresh}>
         <View style={styles.top}>
           {registration.student_age ? (
-            <Text variant="sub" tone="ink2" style={styles.summary}>
+            <Text variant="callout" tone="ink2" style={styles.summary}>
               {registration.student_age}
             </Text>
           ) : null}
           <Card>
             <View style={styles.parent}>
               <View style={styles.flex}>
-                <Text variant="body" weight="500" numberOfLines={1}>
+                {/* The one place the parent's whole name is read: a long one takes a second line */}
+                <Text variant="body" weight="500" numberOfLines={2}>
                   {registration.parent_name}
                 </Text>
                 <Text variant="foot" tone="ink2" tabular selectable>
-                  {t.children.detail.parent} · {displayPhone(registration.parent_phone)}
+                  {t.children.detail.parent}{DOT}{displayPhone(registration.parent_phone)}
                 </Text>
               </View>
               <PhoneActions
@@ -257,7 +259,7 @@ function PackageSection({ registration, usage }: { registration: Registration; u
               {free ? t.children.detail.unlimited : formatPeriod(i18n, registration.package_start_date, registration.package_end_date)}
               {active && days !== null && (
                 <Text variant="foot" weight={soon ? '600' : '400'} tone={soon ? 'actionInk' : 'ink3'}>
-                  {' · '}
+                  {DOT}
                   {endText(i18n, days)}
                 </Text>
               )}
@@ -278,7 +280,7 @@ function PackageSection({ registration, usage }: { registration: Registration; u
               <BeadString usage={usage} size="lg" label={beadsLabel(i18n, usage)} />
               {counts.length > 0 && (
                 <Text variant="foot" tone="ink2">
-                  {counts.join(' · ')}
+                  {counts.join(DOT)}
                 </Text>
               )}
               {extras.map((line) => (
@@ -292,7 +294,7 @@ function PackageSection({ registration, usage }: { registration: Registration; u
           {usage && usage.unmarkedPast > 0 && <Notice tone="action">{plural(t.children.detail.unmarked, usage.unmarkedPast)}</Notice>}
 
           {pending && (
-            <View style={[styles.pending, { backgroundColor: c.actionWash }]}>
+            <View style={[styles.pending, { backgroundColor: c.actionWash, borderColor: c.actionLine }]}>
               <Text variant="foot" tone="actionInk" style={styles.flex}>
                 {t.children.detail.pendingLine}
               </Text>
@@ -316,9 +318,10 @@ function PackageSection({ registration, usage }: { registration: Registration; u
 }
 
 const styles = StyleSheet.create({
-  waiting: { gap: 14 },
+  waiting: { gap: 12 },
+  later: { marginTop: 18 },
   top: { gap: 12 },
-  summary: { paddingHorizontal: 4, marginTop: -2 },
+  summary: { marginHorizontal: 4, marginTop: -2 },
   flex: { flex: 1, minWidth: 0 },
   parent: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingLeft: 16, paddingRight: 12, paddingVertical: 12 },
   archived: { gap: 12 },
@@ -326,5 +329,6 @@ const styles = StyleSheet.create({
   notes: { paddingHorizontal: 16, paddingVertical: 12 },
   package: { padding: 16, gap: 14 },
   usage: { gap: 8 },
-  pending: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 12, rowGap: 8, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10 }
+  // Outlined like the kit's Notice, so the two amber lines of the card read as one kind
+  pending: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 12, rowGap: 8, borderRadius: 14, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10 }
 })

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, StyleSheet, View } from 'react-native'
 import { useQuery } from '@tanstack/react-query'
 import * as Haptics from 'expo-haptics'
@@ -36,7 +36,17 @@ export function RecurringSheet({ id }: { id?: string }) {
           <Skeleton height={50} radius={13} />
         </View>
       ) : missing ? (
-        <EmptyState icon="info" title={templates.isError ? t.common.loadFailed : t.finance.template.notFound} />
+        <EmptyState
+          icon="info"
+          title={templates.isError ? t.common.loadFailed : t.finance.template.notFound}
+          action={
+            templates.isError ? (
+              <Button size="sm" busy={templates.isFetching} onPress={() => void templates.refetch()}>
+                {t.common.retry}
+              </Button>
+            ) : undefined
+          }
+        />
       ) : (
         <RecurringForm template={template} onStateChange={setState} />
       )}
@@ -66,7 +76,10 @@ function RecurringForm({ template, onStateChange }: { template: RecurringExpense
   const [method, setMethod] = useState<PaymentMethod | null>(initial.method)
   const [day, setDay] = useState(initial.day)
   const [active, setActive] = useState(initial.active)
-  const [busy, setBusy] = useState(false)
+  // Which button is at work, so only that one spins
+  const [busy, setBusy] = useState<'save' | 'delete' | null>(null)
+  // A second tap before the button turns busy would save twice; state comes too late to stop it
+  const working = useRef(false)
   const [error, setError] = useState<string | null>(null)
 
   const categories = useMemo(
@@ -78,11 +91,17 @@ function RecurringForm({ template, onStateChange }: { template: RecurringExpense
   const valid = Boolean(title.trim() && category && method) && (!amount.trim() || isPositiveAmount(amount))
   const dirty =
     title !== initial.title || category !== initial.category || amount !== initial.amount || method !== initial.method || day !== initial.day || active !== initial.active
-  useEffect(() => onStateChange({ dirty, busy }), [dirty, busy, onStateChange])
+  useEffect(() => onStateChange({ dirty, busy: busy !== null }), [dirty, busy, onStateChange])
+
+  const fail = (message: string) => {
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error)
+    setError(message)
+  }
 
   const save = async () => {
-    if (!valid || busy || !category || !method) return
-    setBusy(true)
+    if (!valid || working.current || !category || !method) return
+    working.current = true
+    setBusy('save')
     setError(null)
     try {
       await saveRecurring(template?.id ?? null, {
@@ -105,9 +124,10 @@ function RecurringForm({ template, onStateChange }: { template: RecurringExpense
         sheet.finish()
         return
       }
-      setError(t.finance.template.failed)
+      fail(t.finance.template.failed)
     } finally {
-      setBusy(false)
+      working.current = false
+      setBusy(null)
     }
   }
 
@@ -119,17 +139,21 @@ function RecurringForm({ template, onStateChange }: { template: RecurringExpense
         text: t.common.delete,
         style: 'destructive',
         onPress: async () => {
-          setBusy(true)
+          if (working.current) return
+          working.current = true
+          setBusy('delete')
           setError(null)
           try {
             await deleteRecurring(template.id)
+            void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
             toast({ title: t.finance.monthly.deleted })
             refresh.finance()
             sheet.finish()
           } catch {
-            setError(t.finance.monthly.deleteFailed)
+            fail(t.finance.monthly.deleteFailed)
           } finally {
-            setBusy(false)
+            working.current = false
+            setBusy(null)
           }
         }
       }
@@ -144,7 +168,8 @@ function RecurringForm({ template, onStateChange }: { template: RecurringExpense
         value={title}
         onChangeText={(text) => setTitle(upperFirst(text) ?? '')}
         autoComplete="off"
-        returnKeyType="next"
+        // The type chips come next, not another box, so the key closes the keyboard
+        returnKeyType="done"
       />
       <View>
         <FieldLabel>{t.finance.expense.category}</FieldLabel>
@@ -176,11 +201,11 @@ function RecurringForm({ template, onStateChange }: { template: RecurringExpense
       </View>
       {template && <SwitchField label={t.finance.template.active} hint={t.finance.template.activeHint} value={active} onChange={setActive} />}
       <SheetActions error={error}>
-        <Button variant="primary" size="lg" disabled={!valid} busy={busy} onPress={() => void save()}>
+        <Button variant="primary" size="lg" disabled={!valid || busy === 'delete'} busy={busy === 'save'} onPress={() => void save()}>
           {t.common.save}
         </Button>
         {template && (
-          <Button variant="danger" size="md" icon="delete" disabled={busy} onPress={remove}>
+          <Button variant="danger" size="md" icon="delete" disabled={busy === 'save'} busy={busy === 'delete'} onPress={remove}>
             {t.finance.template.delete}
           </Button>
         )}

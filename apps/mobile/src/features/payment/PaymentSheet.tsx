@@ -5,13 +5,13 @@ import { byName, isFree, matchesChild } from '@hellokido/core/view'
 import { useActiveUsage, useChildEntries, useLabels, useRegistrations } from '../../data/queries'
 import { useI18n } from '../../providers/I18n'
 import { useColors } from '../../theme/colors'
-import { Notice, Skeleton } from '../../ui/Bits'
-import { SearchField } from '../../ui/Fields'
+import { ListSkeleton, Notice, Skeleton } from '../../ui/Bits'
+import { FieldLabel, SearchField } from '../../ui/Fields'
 import { Icon, type IconName } from '../../ui/Icon'
 import { Card, Row } from '../../ui/Screen'
 import { SheetScreen } from '../../ui/Sheet'
 import { Peg } from '../../ui/signature'
-import { Text } from '../../ui/Text'
+import { DOT, Text } from '../../ui/Text'
 import { UsageLine } from '../../ui/UsageLine'
 import type { FormState } from './fields'
 import { CollectForm, ExtendForm, IncomeForm } from './forms'
@@ -86,10 +86,10 @@ export function PaymentSheet({ params }: { params: PaymentParams }) {
   const choices: Choice[] = []
   if (row) {
     if (periodDue) {
-      choices.push({ id: 'collect', title: t.children.payment.collect, hint: `${labels.packageName(row.package_type)} · ${t.children.payment.collectHint}`, icon: 'money', action: true })
+      choices.push({ id: 'collect', title: t.children.payment.collect, hint: `${labels.packageName(row.package_type)}${DOT}${t.children.payment.collectHint}`, icon: 'money', action: true })
     }
     for (const item of pendingEntries) {
-      const due = item.due_date ? ` · ${fmt(t.children.detail.dueOn, { date: date(`${item.due_date}T00:00:00`, { day: 'numeric', month: 'long' }) })}` : ''
+      const due = item.due_date ? `${DOT}${fmt(t.children.detail.dueOn, { date: date(`${item.due_date}T00:00:00`, { day: 'numeric', month: 'long' }) })}` : ''
       choices.push({
         id: `entry:${item.id}`,
         title: item.description || t.children.detail.fee,
@@ -123,9 +123,8 @@ export function PaymentSheet({ params }: { params: PaymentParams }) {
     <SheetScreen title={title} subtitle={row?.student_name} dirty={state.dirty} busy={state.busy} onBack={back} backLabel={step === 'form' ? t.children.payment.change : undefined}>
       {step === 'wait' && (
         <View style={styles.stack}>
-          <Skeleton height={64} radius={16} />
-          <Skeleton height={52} radius={16} />
-          <Skeleton height={52} radius={16} />
+          <Skeleton height={64} radius={18} />
+          <Skeleton height={132} radius={18} style={styles.later} />
         </View>
       )}
 
@@ -133,11 +132,7 @@ export function PaymentSheet({ params }: { params: PaymentParams }) {
         <View style={styles.stack}>
           <SearchField value={query} onChange={setQuery} placeholder={t.children.payment.searchChild} label={t.children.payment.who} />
           {!registrations ? (
-            <View style={styles.stack}>
-              {[0, 1, 2, 3].map((key) => (
-                <Skeleton key={key} height={52} radius={12} />
-              ))}
-            </View>
+            <ListSkeleton rows={5} />
           ) : active.length === 0 ? (
             <Text variant="sub" tone="ink2" align="center" style={styles.empty}>
               {t.children.payment.noChildren}
@@ -149,7 +144,7 @@ export function PaymentSheet({ params }: { params: PaymentParams }) {
                   key={item.id}
                   leading={<Peg seat={{ id: item.id, name: item.student_name, status: 'scheduled' }} size="md" />}
                   title={item.student_name}
-                  subtitle={`${labels.packageName(item.package_type)} · ${item.parent_name}`}
+                  subtitle={`${labels.packageName(item.package_type)}${DOT}${item.parent_name}`}
                   onPress={() => {
                     void Haptics.selectionAsync()
                     setChildId(item.id)
@@ -175,7 +170,9 @@ export function PaymentSheet({ params }: { params: PaymentParams }) {
             />
           </Card>
           {free && <Notice>{t.children.payment.freeOnly}</Notice>}
-          <View accessibilityLabel={t.children.payment.whatFor}>
+          {/* The child above, the question here: what the money is for */}
+          <View style={styles.choices}>
+            <FieldLabel>{t.children.payment.whatFor}</FieldLabel>
             <Card inset={60}>
               {choices.map((item) => (
                 <Row
@@ -220,6 +217,8 @@ export function PaymentSheet({ params }: { params: PaymentParams }) {
 
 const styles = StyleSheet.create({
   stack: { gap: 12 },
+  later: { marginTop: 18 },
+  choices: { marginTop: 8 },
   empty: { paddingVertical: 28 },
   choiceIcon: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   footnote: { paddingHorizontal: 4 }

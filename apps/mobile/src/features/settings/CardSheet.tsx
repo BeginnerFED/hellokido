@@ -30,7 +30,15 @@ export function CardSheet() {
     <SheetScreen title={t.settings.card.title} dirty={state.dirty} busy={state.busy}>
       {!saved ? (
         catalog.isError ? (
-          <EmptyState icon="info" title={t.common.loadFailed} />
+          <EmptyState
+            icon="info"
+            title={t.common.loadFailed}
+            action={
+              <Button size="sm" icon="refresh" busy={catalog.isFetching} onPress={() => void catalog.refetch()}>
+                {t.common.retry}
+              </Button>
+            }
+          />
         ) : (
           <View style={styles.stack}>
             <Skeleton height={50} radius={13} />
@@ -105,7 +113,8 @@ function CardForm({ saved, onStateChange }: { saved: Saved; onStateChange: (stat
         inputMode="numeric"
         autoComplete="off"
         suffix={t.settings.card.daysUnit}
-        error={days === null ? t.settings.card.daysInvalid : undefined}
+        // An empty box is a number being retyped, not a mistake yet; saving waits for it either way
+        error={days === null && daysInput !== '' ? t.settings.card.daysInvalid : undefined}
       />
       <View>
         <TextField

@@ -417,8 +417,14 @@ isOneToOne: false
               "created_at": string,"email": string,"is_self": boolean,"user_id": string
             }[]
                            },
+"register_push_device":
+{ Args: { "device_locale": string,"device_platform": string,"device_token": string }; Returns: undefined
+                           },
 "set_default_message_template":
 { Args: { "template_id": string }; Returns: undefined
+                           },
+"unregister_push_device":
+{ Args: { "device_token": string }; Returns: undefined
                            },
 "revoke_admin":
 { Args: { "p_user_id": string }; Returns: undefined

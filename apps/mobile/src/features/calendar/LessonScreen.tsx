@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { Alert, StyleSheet, View } from 'react-native'
 import { router, Stack } from 'expo-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -29,7 +29,7 @@ import { EmptyState, LoadError, Mark, Notice, Skeleton } from '../../ui/Bits'
 import { Button, IconButton } from '../../ui/Button'
 import { Card, Screen, Section } from '../../ui/Screen'
 import { AgeTablet, LessonShape, Peg } from '../../ui/signature'
-import { Text } from '../../ui/Text'
+import { DOT, Text } from '../../ui/Text'
 import { useToast } from '../../ui/Toast'
 import { UsageLine, useLessonTitle } from '../../ui/UsageLine'
 import { ChildName } from '../today/sections'
@@ -71,7 +71,7 @@ export function LessonScreen({ id }: { id: string }) {
         <View style={styles.waiting}>
           <Skeleton height={28} width="55%" />
           <Skeleton height={16} width="70%" />
-          <Skeleton height={220} radius={16} />
+          <Skeleton height={220} radius={18} />
         </View>
       </Screen>
     )
@@ -90,6 +90,8 @@ function LessonPage({ detail, onRefresh, onGone }: { detail: LessonDetail; onRef
   const menu = useActionMenu()
   const { now } = useClock()
   const [saving, setSaving] = useState<Set<string>>(() => new Set())
+  // Answers on their way, read at once: a second tap before the next render never sends twice
+  const inFlight = useRef(new Set<string>())
   const [removing, setRemoving] = useState<string | null>(null)
 
   const lesson = detail.lesson
@@ -109,7 +111,8 @@ function LessonPage({ detail, onRefresh, onGone }: { detail: LessonDetail; onRef
 
   // Optimistic, as on Today: the answer shows at once and goes back if it could not be saved
   const mark = async (seat: Seat, status: AttendanceStatus) => {
-    if (seat.status === status || saving.has(seat.id)) return
+    if (seat.status === status || inFlight.current.has(seat.id)) return
+    inFlight.current.add(seat.id)
     const before = seat.status
     setSaving((set) => new Set(set).add(seat.id))
     await client.cancelQueries({ queryKey: key })
@@ -118,6 +121,7 @@ function LessonPage({ detail, onRefresh, onGone }: { detail: LessonDetail; onRef
       await setAttendance(seat.id, status)
     } catch (error) {
       patch(seat.id, before)
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error)
       if (error instanceof LessonError && error.code === 'not_found') {
         toast({ tone: 'info', title: t.today.lessonGone })
         void onRefresh()
@@ -125,6 +129,7 @@ function LessonPage({ detail, onRefresh, onGone }: { detail: LessonDetail; onRef
         toast({ tone: 'error', title: t.children.detail.statusFailed })
       }
     } finally {
+      inFlight.current.delete(seat.id)
       setSaving((set) => {
         const next = new Set(set)
         next.delete(seat.id)
@@ -212,7 +217,6 @@ function LessonPage({ detail, onRefresh, onGone }: { detail: LessonDetail; onRef
       <Stack.Screen
         options={{
           title: title(lesson),
-          headerLargeTitleEnabled: true,
           ...headerMenu(c, t.mobile.lessonActions, actions, (items) => menu.open(t.mobile.lessonActions, items), 'more')
         }}
       />
@@ -222,7 +226,7 @@ function LessonPage({ detail, onRefresh, onGone }: { detail: LessonDetail; onRef
           <View style={styles.line}>
             <LessonShape type={lesson.event_type} size={13} />
             <Text variant="callout" tone="ink2" tabular style={styles.flex}>
-              {date(start, { weekday: 'long', day: 'numeric', month: 'long' })} · {time}
+              {date(start, { weekday: 'long', day: 'numeric', month: 'long' })}{DOT}{time}
             </Text>
           </View>
           <View style={styles.marks}>
@@ -231,7 +235,17 @@ function LessonPage({ detail, onRefresh, onGone }: { detail: LessonDetail; onRef
           </View>
         </View>
 
-        <Section title={t.calendar.lesson.children} aside={seats.length > 0 ? `${holders}/${SEATS_SHOWN}` : undefined}>
+        <Section
+          title={t.calendar.lesson.children}
+          aside={
+            seats.length > 0 ? (
+              // A child past the planned six turns the count red, as on the seat board
+              <Text variant="sub" weight={holders > SEATS_SHOWN ? '600' : undefined} tone={holders > SEATS_SHOWN ? 'negativeInk' : 'ink3'} tabular>
+                {holders}/{SEATS_SHOWN}
+              </Text>
+            ) : undefined
+          }
+        >
           <View style={styles.stack}>
             {unmarked > 0 && <Notice tone="action">{plural(t.calendar.unmarked, unmarked)}</Notice>}
             {holders > SEATS_SHOWN && <Notice tone="action">{fmt(t.calendar.lesson.seats, { count: holders })}</Notice>}
@@ -271,6 +285,7 @@ function LessonPage({ detail, onRefresh, onGone }: { detail: LessonDetail; onRef
                           color={c.ink3}
                           disabled={busy}
                           onPress={() => askTakeOut(seat)}
+                          style={styles.takeOut}
                         />
                       </View>
                       <AttendancePicker
@@ -302,9 +317,11 @@ const styles = StyleSheet.create({
   marks: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 10 },
   stack: { gap: 12 },
   quiet: { paddingHorizontal: 4 },
-  seat: { paddingLeft: 16, paddingRight: 8, paddingVertical: 12, gap: 10 },
+  // The attendance track keeps the same 16 points on both sides; the round close button leans out instead
+  seat: { paddingHorizontal: 16, paddingVertical: 12, gap: 10 },
   seatHead: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   usage: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 10, rowGap: 3, marginTop: 3 },
+  takeOut: { marginRight: -8 },
   busy: { opacity: 0.5 },
   add: { alignSelf: 'flex-start' }
 })

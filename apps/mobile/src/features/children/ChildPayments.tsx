@@ -12,7 +12,7 @@ import { LoadError, Mark, Skeleton } from '../../ui/Bits'
 import { Button } from '../../ui/Button'
 import { Icon } from '../../ui/Icon'
 import { Card, Section } from '../../ui/Screen'
-import { Text } from '../../ui/Text'
+import { DOT, DotLine, Text, together } from '../../ui/Text'
 import { useToast } from '../../ui/Toast'
 
 /** The latest payments tell what matters now; years of monthly renewals wait behind a button. */
@@ -22,7 +22,8 @@ const STEP = 10
 type Line = {
   key: string
   title: string
-  meta: string
+  /** The package and its weeks, or what a fee is; each part takes its own line when they do not fit one. */
+  meta: string[]
   amount: number
   state: 'paid' | 'pending' | 'free'
   /** How and when a received payment came in: "Card · 12 Oct" */
@@ -54,7 +55,7 @@ export function ChildPayments({ registration }: { registration: Registration }) 
   const paidLine = (method: string | null | undefined, date: string | null | undefined) =>
     [method && method !== 'belirlenmedi' ? (t.finance.methodShort[method] ?? labels.method(method)) : '', date ? shortDate(i18n, date) : '']
       .filter(Boolean)
-      .join(' · ')
+      .join(DOT)
 
   const undo = async (extension: ResolvedExtension) => {
     if (busy) return
@@ -81,6 +82,7 @@ export function ChildPayments({ registration }: { registration: Registration }) 
     setBusy(true)
     try {
       const found = await deleteIncomeEntry(entry.id)
+      if (found) void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
       toast(found ? { title: t.finance.entry.deleted } : { tone: 'warning', title: t.finance.entry.notFound })
       refresh.finance(registration.id)
     } catch {
@@ -106,7 +108,7 @@ export function ChildPayments({ registration }: { registration: Registration }) 
     lines.push({
       key: 'initial',
       title: t.children.detail.initial,
-      meta: [labels.packageName(initialType), initialFree ? '' : formatPeriod(i18n, fresh.initial_start_date, fresh.initial_end_date)].filter(Boolean).join(' · '),
+      meta: [labels.packageName(initialType), initialFree ? '' : together(formatPeriod(i18n, fresh.initial_start_date, fresh.initial_end_date))].filter(Boolean),
       amount: Number(initialPayment?.amount ?? fresh.initial_payment_amount ?? 0),
       state: initialFree ? 'free' : extensions.length === 0 && fresh.payment_status === 'beklemede' ? 'pending' : 'paid',
       paid: paidLine(initialPayment?.payment_method ?? fresh.initial_payment_method, initialPayment?.payment_date),
@@ -123,9 +125,7 @@ export function ChildPayments({ registration }: { registration: Registration }) 
       lines.push({
         key: extension.id,
         title: renews ? t.children.payment.renew : t.children.payment.instalment,
-        meta: [labels.packageName(extension.new_package_type), formatPeriod(i18n, extension.new_start_date ?? extension.previous_end_date, extension.new_end_date)]
-          .filter(Boolean)
-          .join(' · '),
+        meta: [labels.packageName(extension.new_package_type), together(formatPeriod(i18n, extension.new_start_date ?? extension.previous_end_date, extension.new_end_date))].filter(Boolean),
         amount: Number(extension.payment_amount ?? 0),
         state: extension.payment_status === 'beklemede' ? 'pending' : 'paid',
         paid: paidLine(extension.payment_method, extension.payment_date),
@@ -145,7 +145,7 @@ export function ChildPayments({ registration }: { registration: Registration }) 
     lines.push({
       key: entry.id,
       title: entry.description || t.children.detail.fee,
-      meta: [entry.description ? t.children.detail.fee : '', due].filter(Boolean).join(' · '),
+      meta: [entry.description ? t.children.detail.fee : '', due].filter(Boolean),
       amount: Number(entry.amount) || 0,
       state: pending ? 'pending' : 'paid',
       paid: paidLine(entry.payment_method, entry.payment_date),
@@ -158,6 +158,8 @@ export function ChildPayments({ registration }: { registration: Registration }) 
     })
   }
   lines.sort((a, b) => b.created - a.created)
+  // Only some lines have things to do; the others keep the room of their dots, so the amounts line up
+  const anyActions = lines.slice(0, shown).some((line) => line.actions)
 
   return (
     <Section title={t.children.detail.historyTitle}>
@@ -172,15 +174,31 @@ export function ChildPayments({ registration }: { registration: Registration }) 
           }}
         />
       ) : !data || !entries.data ? (
-        <View style={[styles.waiting, { backgroundColor: c.surface }]}>
-          <Skeleton height={40} />
-          <Skeleton height={40} />
+        // Shaped like the card that follows: a title with its amount, a line under it
+        <View style={[styles.waiting, { backgroundColor: c.surface, borderColor: c.line }]}>
+          {[0, 1].map((key) => (
+            <View key={key} style={styles.waitingRow}>
+              <View style={styles.waitingTop}>
+                <Skeleton height={15} width="45%" />
+                <Skeleton height={15} width={64} />
+              </View>
+              <Skeleton height={12} width="60%" />
+            </View>
+          ))}
         </View>
       ) : (
         <>
           <Card>
             {lines.slice(0, shown).map((line) => {
               const amountText = line.state === 'free' ? t.children.free : line.amount > 0 || line.state === 'paid' ? money(line.amount) : ''
+              const side =
+                line.state === 'pending' ? (
+                  <Mark tone="action">{labels.paymentStatus('beklemede')}</Mark>
+                ) : line.state === 'paid' && line.paid !== '' ? (
+                  <Text variant="foot" tone="ink3" tabular numberOfLines={1}>
+                    {line.paid}
+                  </Text>
+                ) : null
               const body = (
                 <>
                   <View style={styles.flex}>
@@ -188,32 +206,25 @@ export function ChildPayments({ registration }: { registration: Registration }) 
                       <Text variant="body" weight="500" numberOfLines={1} style={styles.flex}>
                         {line.title}
                       </Text>
-                      <Text variant="body" weight={line.state === 'paid' ? '600' : '400'} tone={line.state === 'paid' ? 'ink' : 'ink3'} tabular>
+                      {/* An amount is never broken between its figures and its ₺ */}
+                      <Text variant="body" weight={line.state === 'paid' ? '600' : '400'} tone={line.state === 'paid' ? 'ink' : 'ink3'} tabular numberOfLines={1}>
                         {amountText}
                       </Text>
                     </View>
-                    <View style={styles.bottom}>
-                      <Text variant="foot" tone="ink3" style={styles.flex}>
-                        {line.meta}
-                      </Text>
-                      {line.state === 'pending' ? (
-                        <Mark tone="action">{labels.paymentStatus('beklemede')}</Mark>
-                      ) : (
-                        line.state === 'paid' &&
-                        line.paid !== '' && (
-                          <Text variant="foot" tone="ink3" tabular>
-                            {line.paid}
-                          </Text>
-                        )
-                      )}
-                    </View>
+                    {/* A fee with no description, due day or payment day has no second line, not an empty one */}
+                    {(line.meta.length > 0 || side) && (
+                      <View style={styles.bottom}>
+                        <DotLine variant="foot" tone="ink3" parts={line.meta} style={styles.flex} />
+                        {side}
+                      </View>
+                    )}
                     {line.collect && (
                       <Button size="sm" onPress={line.collect} style={styles.collect}>
                         {t.children.detail.collect}
                       </Button>
                     )}
                   </View>
-                  {line.actions && <Icon name="more" size={20} color={c.ink3} />}
+                  {line.actions ? <Icon name="more" size={20} color={c.ink3} /> : anyActions ? <View style={styles.noActions} /> : null}
                 </>
               )
               const actions = line.actions
@@ -248,10 +259,13 @@ export function ChildPayments({ registration }: { registration: Registration }) 
 
 const styles = StyleSheet.create({
   flex: { flex: 1, minWidth: 0 },
-  waiting: { borderRadius: 16, padding: 16, gap: 12 },
-  line: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingLeft: 16, paddingRight: 14, paddingVertical: 12 },
+  waiting: { borderRadius: 18, borderWidth: 1, paddingVertical: 2 },
+  waitingRow: { paddingHorizontal: 16, paddingVertical: 12, gap: 8 },
+  waitingTop: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
+  line: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingLeft: 16, paddingRight: 14, paddingVertical: 12, minHeight: 56 },
   top: { flexDirection: 'row', alignItems: 'baseline', gap: 12 },
   bottom: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginTop: 2 },
   collect: { alignSelf: 'flex-start', marginTop: 10 },
-  more: { alignSelf: 'flex-start', marginTop: 6, marginLeft: 4 }
+  more: { alignSelf: 'flex-start', marginTop: 6, marginLeft: 4 },
+  noActions: { width: 20 }
 })

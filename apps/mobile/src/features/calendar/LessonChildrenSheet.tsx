@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { StyleSheet, View } from 'react-native'
 import { useQuery } from '@tanstack/react-query'
 import * as Haptics from 'expo-haptics'
@@ -9,7 +9,7 @@ import { useI18n } from '../../providers/I18n'
 import { EmptyState, LoadError, Notice, Skeleton } from '../../ui/Bits'
 import { Button } from '../../ui/Button'
 import { SheetActions, SheetScreen, WithSheet } from '../../ui/Sheet'
-import { Text } from '../../ui/Text'
+import { DOT, Text } from '../../ui/Text'
 import { useToast } from '../../ui/Toast'
 import { useLessonTitle } from '../../ui/UsageLine'
 import { ChildChooser } from './ChildChooser'
@@ -22,7 +22,7 @@ export function LessonChildrenSheet({ id }: { id: string }) {
   const detail = useQuery({ queryKey: [...keys.lesson(id), 'children'], queryFn: () => loadLesson(id), gcTime: 0, staleTime: Infinity })
   const lesson = detail.data?.lesson
   const subtitle = lesson
-    ? `${lessonTitle(lesson)} · ${date(lesson.event_date, { weekday: 'short', day: 'numeric', month: 'short' })} ${date(lesson.event_date, { hour: '2-digit', minute: '2-digit' })}`
+    ? `${lessonTitle(lesson)}${DOT}${date(lesson.event_date, { weekday: 'short', day: 'numeric', month: 'short' })} ${date(lesson.event_date, { hour: '2-digit', minute: '2-digit' })}`
     : undefined
 
   if (!detail.data) {
@@ -53,6 +53,7 @@ function Chooser({ detail, subtitle }: { detail: LessonDetail; subtitle?: string
   // In the order they were ticked
   const [chosen, setChosen] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
+  const sending = useRef(false)
   const [error, setError] = useState<string | null>(null)
 
   const { lesson, seats } = detail
@@ -63,7 +64,9 @@ function Chooser({ detail, subtitle }: { detail: LessonDetail; subtitle?: string
   const overLimit = seats.length + chosen.length > maxCapacity
 
   const add = async (finish: () => void) => {
-    if (chosen.length === 0 || overLimit || busy) return
+    if (chosen.length === 0 || overLimit || busy || sending.current) return
+    // Set at once, before the next render: a quick second tap never adds the children twice
+    sending.current = true
     setBusy(true)
     setError(null)
     try {
@@ -95,6 +98,7 @@ function Chooser({ detail, subtitle }: { detail: LessonDetail; subtitle?: string
         setError(t.calendar.lesson.saveFailed)
       }
     } finally {
+      sending.current = false
       setBusy(false)
     }
   }

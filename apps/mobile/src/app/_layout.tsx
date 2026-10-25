@@ -74,6 +74,8 @@ function Navigation() {
           <Stack.Screen name="package" options={sheet} />
           <Stack.Screen name="category" options={sheet} />
           <Stack.Screen name="card-settings" options={sheet} />
+          <Stack.Screen name="money-period" options={sheet} />
+          <Stack.Screen name="finance-period" options={sheet} />
           <Stack.Screen name="grant-access" options={sheet} />
           <Stack.Screen name="lesson-form" options={sheet} />
           <Stack.Screen name="lesson-children" options={sheet} />

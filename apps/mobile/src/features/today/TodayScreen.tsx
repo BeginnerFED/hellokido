@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from 'react'
 import { AccessibilityInfo, Pressable, ScrollView, StyleSheet, View, type ScrollViewInstance } from 'react-native'
 import { router, Stack, type Href } from 'expo-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import * as Haptics from 'expo-haptics'
 import { addDays, addMinutes } from 'date-fns'
 import { lessonsBetween, LessonError, SEATS_SHOWN, setAttendance, type AttendanceStatus, type Lesson, type Seat, type UsageMap } from '@hellokido/core/api'
 import { holdsSeat } from '@hellokido/core/rules/attendance.js'
@@ -18,11 +19,14 @@ import { Button } from '../../ui/Button'
 import { Icon, type IconName } from '../../ui/Icon'
 import { Card, Screen, Section } from '../../ui/Screen'
 import { AgeTablet, LessonShape, Peg, SocketBoard } from '../../ui/signature'
-import { Text } from '../../ui/Text'
+import { DOT, Text } from '../../ui/Text'
 import { useToast } from '../../ui/Toast'
 import { UsageLine, useLessonTitle } from '../../ui/UsageLine'
 import { useEndingPackages, usePaymentsDue, useUnmarked } from './data'
 import { ChildName, EndingSection, PaymentsSection, TomorrowSection, UnmarkedSection } from './sections'
+
+/** A count and its word ("12 çocuk") as one unbreakable piece of a sentence. */
+const keepTogether = (text: string) => text.replace(/ /g, ' ')
 
 /**
  * The working day: today's lessons with attendance in one tap, forgotten attendance, tomorrow's
@@ -48,13 +52,16 @@ export function TodayScreen() {
   const tomorrows = useMemo(() => (lessons.data ?? []).filter((lesson) => new Date(lesson.event_date) >= tomorrowStart), [lessons.data, tomorrowStart])
   const usage = useUsageOf(useMemo(() => (lessons.data ?? []).flatMap((lesson) => lesson.seats.map((seat) => seat.child)), [lessons.data]))
   const [saving, setSaving] = useState<Set<string>>(() => new Set())
+  // Answers on their way, read at once: a second tap before the next render never sends twice
+  const inFlight = useRef(new Set<string>())
 
   const patch = (seatId: string, status: AttendanceStatus) =>
     client.setQueryData<Lesson[]>(key, (list) => list?.map((lesson) => ({ ...lesson, seats: lesson.seats.map((seat) => (seat.id === seatId ? { ...seat, status } : seat)) })))
 
   // Optimistic: the answer shows at once and goes back if it could not be saved
   const mark = async (seat: Seat, status: AttendanceStatus) => {
-    if (seat.status === status || saving.has(seat.id)) return
+    if (seat.status === status || inFlight.current.has(seat.id)) return
+    inFlight.current.add(seat.id)
     const before = seat.status
     setSaving((set) => new Set(set).add(seat.id))
     await client.cancelQueries({ queryKey: key })
@@ -63,6 +70,7 @@ export function TodayScreen() {
       await setAttendance(seat.id, status)
     } catch (error) {
       patch(seat.id, before)
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error)
       // The child was taken out of the lesson meanwhile: show the lesson as it is now
       if (error instanceof LessonError && error.code === 'not_found') {
         toast({ tone: 'info', title: t.today.lessonGone })
@@ -71,6 +79,7 @@ export function TodayScreen() {
         toast({ tone: 'error', title: t.children.detail.statusFailed })
       }
     } finally {
+      inFlight.current.delete(seat.id)
       setSaving((set) => {
         const next = new Set(set)
         next.delete(seat.id)
@@ -85,7 +94,9 @@ export function TodayScreen() {
 
   const childCount = new Set(todays.flatMap((lesson) => lesson.seats.map((seat) => seat.registration_id))).size
   const day = date(now, { weekday: 'long', day: 'numeric', month: 'long' })
-  const summary = lessons.data && todays.length > 0 ? `${day} · ${plural(t.today.lessonCount, todays.length)}, ${plural(t.today.childCount, childCount)}` : day
+  // "3 ders" and "12 çocuk" stay whole when the line wraps
+  const counts = lessons.data && todays.length > 0 ? `${keepTogether(plural(t.today.lessonCount, todays.length))}, ${keepTogether(plural(t.today.childCount, childCount))}` : null
+  const summary = counts ? `${day}${DOT}${counts}` : day
 
   // What waits for the admin, counted from the same queries as the sections it jumps to
   const [unmarkedOpen, setUnmarkedOpen] = useState(false)

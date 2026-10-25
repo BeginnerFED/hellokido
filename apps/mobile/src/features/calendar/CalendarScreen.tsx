@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Pressable, StyleSheet, View } from 'react-native'
+import Animated, { FadeIn, useReducedMotion } from 'react-native-reanimated'
 import { Stack } from 'expo-router'
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import { addDays, addMonths, isSameMonth, isSameWeek } from 'date-fns'
@@ -32,6 +33,7 @@ export function CalendarScreen() {
   const client = useQueryClient()
   const openLesson = useOpenLesson()
   const { now, dayKey: todayKey } = useClock()
+  const still = useReducedMotion()
   const [mode, setMode] = useState<Mode>('day')
   const [selected, setSelected] = useState(() => new Date(`${todayKey}T00:00:00`))
 
@@ -80,7 +82,17 @@ export function CalendarScreen() {
             onChange={setMode}
           />
           <View style={styles.nav}>
-            <Text variant="headline" accessibilityRole="header" accessibilityLiveRegion="polite" numberOfLines={1} style={styles.flex}>
+            {/* A week across two years is the longest heading; it narrows a little rather than lose its end */}
+            <Text
+              variant="headline"
+              accessibilityRole="header"
+              accessibilityLiveRegion="polite"
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.82}
+              tabular
+              style={styles.flex}
+            >
               {heading}
             </Text>
             {!showsNow && (
@@ -99,6 +111,8 @@ export function CalendarScreen() {
                 accessibilityRole="button"
                 accessibilityLabel={`${t.calendar.theme.label}: ${theme || t.calendar.theme.none}`}
                 accessibilityHint={theme ? t.calendar.theme.edit : t.calendar.theme.add}
+                // The line stays slim; the fingertip still gets 44 points
+                hitSlop={{ top: 6, bottom: 6 }}
                 style={({ pressed }) => [styles.theme, pressed && { opacity: 0.6 }]}
               >
                 <Text variant="foot" tone="ink3">
@@ -126,31 +140,36 @@ export function CalendarScreen() {
           >
             {waiting ? (
               <AgendaSkeleton />
-            ) : dayLessons.length === 0 ? (
-              <View style={[styles.empty, { borderColor: c.lineStrong }]}>
-                <EmptyState
-                  icon="calendar"
-                  title={t.calendar.noLessonsDay}
-                  action={
-                    <Button size="sm" icon="add" onPress={() => createOn(selected)}>
+            ) : (
+              // Another day's lessons settle in softly instead of jumping into place
+              <Animated.View key={dayKey(selected)} entering={still ? undefined : FadeIn.duration(180)}>
+                {dayLessons.length === 0 ? (
+                  <View style={[styles.empty, { borderColor: c.lineStrong }]}>
+                    <EmptyState
+                      icon="calendar"
+                      title={t.calendar.noLessonsDay}
+                      action={
+                        <Button size="sm" icon="add" onPress={() => createOn(selected)}>
+                          {t.calendar.addLessonDay}
+                        </Button>
+                      }
+                    />
+                  </View>
+                ) : (
+                  <View style={styles.list}>
+                    {dayLessons.map((lesson) => (
+                      <AgendaCard key={lesson.id} lesson={lesson} now={now} onOpen={() => openLesson(lesson.id)} />
+                    ))}
+                    <Button variant="plain" size="sm" icon="add" onPress={() => createOn(selected)} style={styles.addMore}>
                       {t.calendar.addLessonDay}
                     </Button>
-                  }
-                />
-              </View>
-            ) : (
-              <View style={styles.list}>
-                {dayLessons.map((lesson) => (
-                  <AgendaCard key={lesson.id} lesson={lesson} now={now} onOpen={() => openLesson(lesson.id)} />
-                ))}
-                <Button variant="plain" size="sm" icon="add" onPress={() => createOn(selected)} style={styles.addMore}>
-                  {t.calendar.addLessonDay}
-                </Button>
-              </View>
+                  </View>
+                )}
+              </Animated.View>
             )}
           </Section>
         ) : waiting && !lessons.data ? (
-          <Skeleton height={320} radius={16} />
+          <Skeleton height={320} radius={18} />
         ) : (
           <View style={waiting && styles.dim}>
             <MonthDots
@@ -178,7 +197,7 @@ const styles = StyleSheet.create({
   nav: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 4, minHeight: 44 },
   theme: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 4, minHeight: 32 },
   list: { gap: 12 },
-  empty: { borderRadius: 16, borderWidth: 1, borderStyle: 'dashed' },
+  empty: { borderRadius: 18, borderWidth: 1, borderStyle: 'dashed' },
   addMore: { alignSelf: 'flex-start', marginLeft: 4 },
   dim: { opacity: 0.6 }
 })

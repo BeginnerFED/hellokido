@@ -1,5 +1,6 @@
 import { db, unwrap, type Row } from './db'
-import { readWorkshop, type WorkshopInfo } from './reminders'
+import { clampStartDay } from '../view/period'
+import { readEveningReminder, readWorkshop, type EveningReminder, type WorkshopInfo } from './reminders'
 
 export type PackageType = Row<'package_types'>
 export type ExpenseCategory = Row<'expense_categories'>
@@ -9,7 +10,7 @@ export type Catalog = {
   packages: PackageType[]
   expenseCategories: ExpenseCategory[]
   incomeCategories: IncomeCategory[]
-  settings: { cardSettlementDays: number; cardCommissionRate: number; workshop: WorkshopInfo }
+  settings: { cardSettlementDays: number; cardCommissionRate: number; moneyPeriodStartDay: number; workshop: WorkshopInfo; eveningReminder: EveningReminder }
 }
 
 const numberSetting = (rows: { key: string; value: unknown }[], key: string, fallback: number) => {
@@ -33,12 +34,15 @@ export async function loadCatalog(): Promise<Catalog> {
     settings: {
       cardSettlementDays: numberSetting(settingRows, 'card_settlement_days', 30),
       cardCommissionRate: numberSetting(settingRows, 'card_commission_rate', 0),
-      workshop: readWorkshop(settingRows.find((row) => row.key === 'workshop')?.value)
+      // Missing until the money period migration runs: calendar months, as before
+      moneyPeriodStartDay: clampStartDay(numberSetting(settingRows, 'money_period_start_day', 1)),
+      workshop: readWorkshop(settingRows.find((row) => row.key === 'workshop')?.value),
+      eveningReminder: readEveningReminder(settingRows.find((row) => row.key === 'evening_reminder')?.value)
     }
   }
 }
 
-export async function updateSetting(key: 'card_settlement_days' | 'card_commission_rate', value: number) {
+export async function updateSetting(key: 'card_settlement_days' | 'card_commission_rate' | 'money_period_start_day', value: number) {
   const result = await db.from('app_settings').update({ value }).eq('key', key).select('id')
   if (result.error) throw result.error
   if (!result.data?.length) throw new Error('not_found')

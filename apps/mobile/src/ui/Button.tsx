@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
-import { ActivityIndicator, Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native'
+import { ActivityIndicator, Platform, Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native'
+import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated'
 import { useColors, type Colors } from '../theme/colors'
 import { Icon, type IconName } from './Icon'
 import { Text } from './Text'
@@ -13,6 +14,11 @@ const SIZES = {
   md: { height: 44, radius: 22, paddingHorizontal: 16, font: 15, icon: 17 },
   sm: { height: 34, radius: 17, paddingHorizontal: 13, font: 14, icon: 15 }
 } as const
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable)
+
+/** The smallest fingertip each phone asks for: 44pt on the iPhone, 48dp on Android. */
+const TOUCH = Platform.OS === 'android' ? 48 : 44
 
 function tones(c: Colors, variant: Variant) {
   switch (variant) {
@@ -45,16 +51,27 @@ export function Button({ children, onPress, variant = 'tinted', size = 'md', ico
   const c = useColors()
   const s = SIZES[size]
   const tone = tones(c, variant)
-  const inactive = disabled || busy
+  const inactive = Boolean(disabled || busy)
+  const still = useReducedMotion()
+  // 0 at rest, 1 under the finger: the pill dims and gives a little, then settles back
+  const press = useSharedValue(0)
+  const sinks = variant !== 'plain' && !still
+  const pressStyle = useAnimatedStyle(() => ({
+    opacity: disabled ? 0.45 : 1 - press.get() * 0.28,
+    transform: [{ scale: sinks ? 1 - press.get() * 0.025 : 1 }]
+  }))
   return (
-    <Pressable
-      onPress={inactive ? undefined : onPress}
+    <AnimatedPressable
+      onPress={onPress}
+      onPressIn={() => press.set(withTiming(1, { duration: 90 }))}
+      onPressOut={() => press.set(withTiming(0, { duration: 200 }))}
+      disabled={inactive}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       accessibilityState={{ disabled: Boolean(disabled), busy: Boolean(busy) }}
       // Small buttons still take a whole fingertip
-      hitSlop={size === 'sm' ? { top: 5, bottom: 5, left: 4, right: 4 } : undefined}
-      style={({ pressed }) => [
+      hitSlop={s.height < TOUCH ? { top: (TOUCH - s.height) / 2, bottom: (TOUCH - s.height) / 2, left: 4, right: 4 } : undefined}
+      style={[
         styles.base,
         {
           height: s.height,
@@ -62,20 +79,21 @@ export function Button({ children, onPress, variant = 'tinted', size = 'md', ico
           paddingHorizontal: variant === 'plain' ? 4 : s.paddingHorizontal,
           backgroundColor: tone.background,
           borderWidth: 1,
-          borderColor: tone.line,
-          opacity: disabled ? 0.45 : pressed ? 0.72 : 1
+          borderColor: tone.line
         },
-        style
+        style,
+        pressStyle
       ]}
     >
       <View style={[styles.content, busy && styles.hidden]}>
         {icon && <Icon name={icon} size={s.icon} color={tone.ink} weight="semibold" />}
-        <Text numberOfLines={1} weight="500" style={{ fontSize: s.font, lineHeight: s.font + 5, color: tone.ink }}>
+        {/* A long Turkish label gives up a little size before it gives up its last word */}
+        <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85} weight="500" style={[styles.label, { fontSize: s.font, lineHeight: s.font + 5, color: tone.ink }]}>
           {children}
         </Text>
       </View>
       {busy && <ActivityIndicator color={tone.ink} style={StyleSheet.absoluteFill} />}
-    </Pressable>
+    </AnimatedPressable>
   )
 }
 
@@ -101,10 +119,12 @@ export function IconButton({
 }) {
   const c = useColors()
   const background = variant === 'tinted' ? c.surface : variant === 'well' ? c.well : 'transparent'
-  const slop = Math.max(0, (44 - size) / 2)
+  // Every round button answers to a whole fingertip, however small it is drawn
+  const slop = Math.max(0, (TOUCH - size) / 2)
   return (
     <Pressable
-      onPress={disabled ? undefined : onPress}
+      onPress={onPress}
+      disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityState={{ disabled: Boolean(disabled) }}
@@ -130,7 +150,8 @@ export function IconButton({
 
 const styles = StyleSheet.create({
   base: { alignItems: 'center', justifyContent: 'center', flexDirection: 'row' },
-  content: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  content: { flexDirection: 'row', alignItems: 'center', gap: 7, maxWidth: '100%' },
+  label: { flexShrink: 1 },
   hidden: { opacity: 0 },
   round: { alignItems: 'center', justifyContent: 'center' }
 })

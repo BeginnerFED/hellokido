@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { isSameMonth, startOfMonth } from 'date-fns'
 import { CheckIcon, DotsThreeIcon, PencilSimpleIcon, PlusIcon, ReceiptIcon } from '@phosphor-icons/react'
 import { addExpense, deleteExpense, listRecurring, type Expense, type RecurringExpense } from '@hellokido/core/api'
 import { keys, useLabels, useRefresh } from '../../data/queries'
@@ -15,24 +14,25 @@ import { useSheet } from '../../ui/useSheet'
 import { cx } from '../../ui/cx'
 import { ListSkeleton, Rows, methodName } from './bits'
 import type { VisibleRange } from './Moves'
-import { dueDayIn } from './period'
+import { dueDayInPeriod, inPeriod, type Period } from './period'
 import { RecurringSheet } from './RecurringSheet'
 
 /**
- * Rent, salaries and bills of the month on screen. A fixed amount is recorded with one tap (and can
- * be undone from the message); an amount that changes opens the expense form filled in.
+ * Rent, salaries and bills of the period on screen (a month long: 1–31 Oct, or 10 Oct – 9 Nov when
+ * periods start on the 10th). A fixed amount is recorded with one tap (and can be undone from the
+ * message); an amount that changes opens the expense form filled in.
  */
 export function MonthlySection({
-  month,
+  period,
   expenses,
   waiting,
   today,
   visible,
   className
 }: {
-  /** Any day of the month on screen. */
-  month: Date
-  /** The month's expenses; undefined while they load. */
+  /** The period on screen, one month long. */
+  period: Period
+  /** The period's expenses; undefined while they load. */
   expenses: Expense[] | undefined
   waiting: boolean
   today: Date
@@ -48,11 +48,11 @@ export function MonthlySection({
   const sheet = useSheet<RecurringExpense | null>()
   const [busy, setBusy] = useState<string | null>(null)
 
-  const current = isSameMonth(month, today)
-  const future = startOfMonth(month) > today
+  const current = inPeriod(period, today)
+  const future = period.start > today
   const active = useMemo(() => (templates.data ?? []).filter((row) => row.is_active), [templates.data])
 
-  // The latest expense each template produced in this month
+  // The latest expense each template produced in this period
   const recorded = useMemo(() => {
     const map = new Map<string, Expense>()
     for (const row of expenses ?? []) {
@@ -64,10 +64,10 @@ export function MonthlySection({
   }, [expenses])
   const done = active.filter((row) => recorded.has(row.id)).length
 
-  // This month: the day it is recorded is the day it was paid. Another month: its usual day there.
+  // This period: the day it is recorded is the day it was paid. Another period: its usual day there.
   const dayFor = (row: RecurringExpense) => {
     if (current) return new Date()
-    const day = dueDayIn(month, row.day_of_month)
+    const day = dueDayInPeriod(period, row.day_of_month)
     day.setHours(12, 0, 0, 0)
     return day
   }
@@ -137,8 +137,8 @@ export function MonthlySection({
           <Rows className={cx('transition-opacity duration-200', waiting && 'opacity-60')}>
             {active.map((row) => {
               const expense = recorded.get(row.id)
-              const due = dueDayIn(month, row.day_of_month)
-              const late = !expense && !future && (!current || today.getDate() > due.getDate())
+              const due = dueDayInPeriod(period, row.day_of_month)
+              const late = !expense && !future && (!current || today > due)
               const method = methodName(t, labels, row.payment_method)
               return (
                 <li key={row.id} className="flex items-center gap-3 py-2.5">

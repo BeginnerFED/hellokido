@@ -1,7 +1,8 @@
-import { useCallback, useMemo, useState } from 'react'
-import { FlatList, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native'
-import { Stack } from 'expo-router'
+import { useCallback, useMemo, useRef, useState } from 'react'
+import { BackHandler, FlatList, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native'
+import { Stack, useFocusEffect } from 'expo-router'
 import { useQueryClient } from '@tanstack/react-query'
+import type { SearchBarCommands } from 'react-native-screens'
 import type { Registration, UsageMap } from '@hellokido/core/api'
 import { byName, daysLeft, endText, ENDING_WINDOW_DAYS, isEnding, isFree, isPaymentDue, isRunningLow, matchesChild } from '@hellokido/core/view'
 import { useActiveUsage, useLabels, useRegistrations } from '../../data/queries'
@@ -16,7 +17,7 @@ import { Icon } from '../../ui/Icon'
 import { OfflineNotice } from '../../ui/OfflineNotice'
 import { usePullRefresh } from '../../ui/Screen'
 import { Peg } from '../../ui/signature'
-import { Text } from '../../ui/Text'
+import { DOT, Text } from '../../ui/Text'
 import { UsageLine } from '../../ui/UsageLine'
 import { usePackageOptions } from '../payment/fields'
 
@@ -34,6 +35,8 @@ const TESTS: Record<Filter, (row: Registration, usage: UsageMap | undefined) => 
  * Every child, found by name, parent or phone from the search bar of the phone. The filters say how
  * many children each one leaves; a child opens on its own page and back returns to the same place.
  */
+import { BackHandler as DbgBack } from 'react-native'
+DbgBack.addEventListener('hardwareBackPress', () => { console.log('SRCHDBG global back'); return false })
 export function ChildrenScreen() {
   const c = useColors()
   const { t, plural } = useI18n()
@@ -48,6 +51,29 @@ export function ChildrenScreen() {
   const [filter, setFilter] = useState<Filter | null>(null)
   const [pkg, setPkg] = useState<string>(ANY_PACKAGE)
   const [query, setQuery] = useState('')
+  const search = useRef<SearchBarCommands | null>(null)
+  const [searching, setSearching] = useState(false)
+
+  // On Android back hides the keyboard, then leaves the field; an empty search closes there, and
+  // a search with words closes on the next back. The bar's own back only emptied the words. Only
+  // while the list is on screen: a child's page opened from the search goes back as usual.
+  useFocusEffect(
+    useCallback(() => {
+      if (Platform.OS !== 'android' || !searching) return
+      console.log('SRCHDBG add')
+      const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+        console.log('SRCHDBG back')
+        search.current?.cancelSearch()
+        return true
+      })
+      return () => {
+        console.log('SRCHDBG remove')
+        subscription.remove()
+        // The field would keep the focus under a child's page and swallow its back
+        search.current?.blur()
+      }
+    }, [searching])
+  )
 
   const rows = registrations.data
   const inView = useMemo(() => (rows ?? []).filter((row) => (view === 'active' ? row.is_active === true : row.is_active !== true)), [rows, view])
@@ -85,7 +111,7 @@ export function ChildrenScreen() {
   const choosePackage = () =>
     menu.open(t.children.anyPackage, [
       { label: t.children.anyPackage, onPress: () => setPkg(ANY_PACKAGE) },
-      ...packages.map(({ code, count: total }) => ({ label: `${labels.packageName(code)} · ${total}`, onPress: () => setPkg(code) }))
+      ...packages.map(({ code, count: total }) => ({ label: `${labels.packageName(code)}${DOT}${total}`, onPress: () => setPkg(code) }))
     ])
 
   const changeView = (next: ListView) => {
@@ -167,10 +193,18 @@ export function ChildrenScreen() {
         options={{
           ...headerButton(c, t.children.newRegistration, 'add', () => tasks.registration()),
           headerSearchBarOptions: {
+            ref: search,
             placeholder: t.children.searchPlaceholder,
             onChangeText: (event) => setQuery(event.nativeEvent.text),
             onCancelButtonPress: () => setQuery(''),
-            onClose: () => setQuery(''),
+            onOpen: () => setSearching(true),
+            onBlur: () => {
+              if (Platform.OS === 'android' && !query.trim()) search.current?.cancelSearch()
+            },
+            onClose: () => {
+              setSearching(false)
+              setQuery('')
+            },
             autoCapitalize: 'none',
             hideWhenScrolling: false,
             placement: 'stacked',
@@ -195,7 +229,7 @@ export function ChildrenScreen() {
         windowSize={11}
         style={{ backgroundColor: c.ground }}
         contentContainerStyle={styles.content}
-        refreshControl={<RefreshControl refreshing={pull.refreshing} onRefresh={pull.onRefresh} tintColor={c.ink3} colors={[c.accent]} />}
+        refreshControl={<RefreshControl refreshing={pull.refreshing} onRefresh={pull.onRefresh} tintColor={c.ink3} colors={[c.accent]} progressBackgroundColor={c.surface} />}
       />
     </>
   )
@@ -215,14 +249,13 @@ function ChildRow({ row, usage, first, last }: { row: Registration; usage: Usage
   ) : days !== null && days <= ENDING_WINDOW_DAYS ? (
     <Mark tone={days < 0 ? 'action' : 'neutral'}>{endText(i18n, days)}</Mark>
   ) : null
-  const corners = [first && styles.first, last && styles.last]
-
+  // The rows of a long list draw the phone card between them: its edge, its corners and its rules
   return (
-    <View style={[{ backgroundColor: c.surface }, corners]}>
+    <View style={[styles.card, { backgroundColor: c.surface, borderColor: c.line }, first && styles.first, first && !last && styles.overlap, last && styles.last]}>
       <Pressable
         onPress={() => openChild(row.id)}
         accessibilityRole="button"
-        style={({ pressed }) => [styles.row, corners, pressed && { backgroundColor: c.well }]}
+        style={({ pressed }) => [styles.row, pressed && { backgroundColor: c.well }]}
       >
         <Peg seat={{ id: row.id, name: row.student_name, status: 'scheduled' }} size="md" />
         <View style={styles.text}>
@@ -234,14 +267,14 @@ function ChildRow({ row, usage, first, last }: { row: Registration; usage: Usage
           </View>
           {active && !free && <UsageLine usage={usage?.[row.id]} />}
           <Text variant="foot" tone="ink3" numberOfLines={1}>
-            {labels.packageName(row.package_type)} · {row.parent_name}
+            {labels.packageName(row.package_type)}{DOT}{row.parent_name}
           </Text>
         </View>
         <Icon name="chevronRight" size={13} color={c.ink3} weight="semibold" />
       </Pressable>
       {/* On the top edge of the row below: a line on a row's bottom edge can lose its last pixel row
-          to the next row when heights fall between pixels, and a hairline then vanishes. */}
-      {!first && <View pointerEvents="none" style={[styles.separator, { backgroundColor: c.line }]} />}
+          to the next row when heights fall between pixels, and the rule then vanishes. */}
+      {!first && <View pointerEvents="none" style={[styles.separator, { backgroundColor: c.line2 }]} />}
     </View>
   )
 }
@@ -252,11 +285,16 @@ const styles = StyleSheet.create({
   chipsScroll: { marginHorizontal: -16 },
   chips: { paddingHorizontal: 16, paddingVertical: 3, gap: 8 },
   count: { paddingHorizontal: 4, marginTop: 2 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingLeft: 16, paddingRight: 14, paddingVertical: 11, minHeight: 64 },
-  first: { borderTopLeftRadius: 16, borderTopRightRadius: 16 },
-  last: { borderBottomLeftRadius: 16, borderBottomRightRadius: 16 },
+  // Card and Row of the kit: 1px edge, 18px corners, 14 × 12 padding, rules from 60px like Card inset 60
+  card: { borderLeftWidth: 1, borderRightWidth: 1, overflow: 'hidden' },
+  first: { borderTopWidth: 1, borderTopLeftRadius: 18, borderTopRightRadius: 18 },
+  last: { borderBottomWidth: 1, borderBottomLeftRadius: 18, borderBottomRightRadius: 18 },
+  // Android softens the straight bottom edge of the rounded first row, which showed as a faint rule
+  // across the whole card; the row below covers that edge by a point
+  overlap: { marginBottom: -1 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, paddingVertical: 12, minHeight: 56 },
   text: { flex: 1, minWidth: 0, gap: 3 },
   nameLine: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   name: { flexShrink: 1 },
-  separator: { position: 'absolute', left: 60, right: 0, top: 0, height: StyleSheet.hairlineWidth }
+  separator: { position: 'absolute', left: 60, right: 0, top: 0, height: 1 }
 })

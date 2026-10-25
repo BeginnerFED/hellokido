@@ -1,9 +1,10 @@
-import { ActionSheetIOS, Alert, Platform, Pressable, StyleSheet, View } from 'react-native'
+import { Pressable, StyleSheet, View } from 'react-native'
 import * as Haptics from 'expo-haptics'
 import type { AttendanceStatus } from '@hellokido/core/api'
 import { useLabels } from '../data/queries'
 import { useI18n } from '../providers/I18n'
 import { useColors, type Colors } from '../theme/colors'
+import { useActionMenu } from './ActionMenu'
 import { Icon } from './Icon'
 import { Text } from './Text'
 
@@ -44,19 +45,14 @@ export function AttendancePicker({
     onChange(next)
   }
 
+  // The iPhone's own action sheet; on Android the app's sheet, since its alert puts "Cancel" where "OK" goes
+  const menu = useActionMenu()
   const openOther = () => {
     if (disabled) return
-    const names = OTHER.map((mark) => labels.attendance(mark))
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        { title: label, options: [...names, t.common.cancel], cancelButtonIndex: names.length },
-        (index) => index < OTHER.length && choose(OTHER[index])
-      )
-    } else {
-      Alert.alert(label, undefined, [...OTHER.map((mark, index) => ({ text: names[index], onPress: () => choose(mark) })), { text: t.common.cancel, style: 'cancel' }], {
-        cancelable: true
-      })
-    }
+    menu.open(
+      label,
+      OTHER.map((mark) => ({ label: labels.attendance(mark), onPress: () => choose(mark) }))
+    )
   }
 
   const part = (mark: AttendanceStatus | 'other', text: string, onPress: () => void, isOn: boolean, grow: boolean) => {
@@ -91,6 +87,7 @@ export function AttendancePicker({
       {part('attended', labels.attendance('attended'), () => choose('attended'), status === 'attended', true)}
       {part('no_show', labels.attendance('no_show'), () => choose('no_show'), status === 'no_show', true)}
       {part('other', other ? labels.attendance(status) : t.today.otherStatus, openOther, other, false)}
+      {menu.element}
     </View>
   )
 }

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Alert, StyleSheet, View } from 'react-native'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Alert, StyleSheet, View, type TextInputInstance } from 'react-native'
 import { useQuery } from '@tanstack/react-query'
 import * as Haptics from 'expo-haptics'
 import { startOfDay } from 'date-fns'
@@ -37,7 +37,17 @@ export function WaitlistSheet({ id }: { id?: string }) {
           <Skeleton height={50} radius={13} />
         </View>
       ) : missing ? (
-        <EmptyState icon="info" title={list.isError ? t.common.loadFailed : t.waitlist.form.notFound} />
+        <EmptyState
+          icon="info"
+          title={list.isError ? t.common.loadFailed : t.waitlist.form.notFound}
+          action={
+            list.isError ? (
+              <Button size="sm" icon="refresh" busy={list.isFetching} onPress={() => void list.refetch()}>
+                {t.common.retry}
+              </Button>
+            ) : undefined
+          }
+        />
       ) : (
         <WaitlistForm entry={entry} onStateChange={setState} />
       )}
@@ -74,6 +84,12 @@ function WaitlistForm({ entry, onStateChange }: { entry: WaitlistEntry | null; o
   const [note, setNote] = useState(initial.note)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // The number is checked once the person leaves the box, not at the first digit typed
+  const [phoneLeft, setPhoneLeft] = useState(false)
+  // "Next" on the keyboard goes on to the following box
+  const ageRef = useRef<TextInputInstance>(null)
+  const parentRef = useRef<TextInputInstance>(null)
+  const phoneRef = useRef<TextInputInstance>(null)
 
   // An old number that is too short does not block other edits; only a changed one is checked
   const phoneEdited = !entry || phoneDigits(phone) !== phoneDigits(entry.parent_phone)
@@ -176,8 +192,11 @@ function WaitlistForm({ entry, onStateChange }: { entry: WaitlistEntry | null; o
         autoCorrect={false}
         autoFocus={!entry}
         returnKeyType="next"
+        submitBehavior="submit"
+        onSubmitEditing={() => ageRef.current?.focus()}
       />
       <TextField
+        ref={ageRef}
         label={t.waitlist.form.age}
         placeholder={t.waitlist.form.agePlaceholder}
         value={age}
@@ -185,9 +204,12 @@ function WaitlistForm({ entry, onStateChange }: { entry: WaitlistEntry | null; o
         autoCapitalize="words"
         autoComplete="off"
         returnKeyType="next"
+        submitBehavior="submit"
+        onSubmitEditing={() => parentRef.current?.focus()}
       />
       <View style={styles.break} />
       <TextField
+        ref={parentRef}
         label={t.waitlist.form.parentName}
         value={parent}
         onChangeText={(text) => setParent(capitalizeName(text) ?? '')}
@@ -195,16 +217,20 @@ function WaitlistForm({ entry, onStateChange }: { entry: WaitlistEntry | null; o
         autoComplete="off"
         autoCorrect={false}
         returnKeyType="next"
+        submitBehavior="submit"
+        onSubmitEditing={() => phoneRef.current?.focus()}
       />
       <TextField
+        ref={phoneRef}
         label={t.waitlist.form.phone}
         value={phone}
         onChangeText={(text) => setPhone(phoneDigits(text))}
+        onBlur={() => setPhoneLeft(true)}
         keyboardType="phone-pad"
         inputMode="tel"
         autoComplete="tel"
         textContentType="telephoneNumber"
-        error={phone && !phoneOk ? t.waitlist.form.phoneHint : undefined}
+        error={phone && !phoneOk && phoneLeft ? t.waitlist.form.phoneHint : undefined}
       />
       <View style={styles.break} />
       <SelectField label={t.waitlist.form.package} placeholder={t.waitlist.form.package} options={packageOptions} value={pkg} onChange={setPkg} />
@@ -241,5 +267,6 @@ function WaitlistForm({ entry, onStateChange }: { entry: WaitlistEntry | null; o
 
 const styles = StyleSheet.create({
   stack: { gap: 14 },
-  break: { height: 6 }
+  // A step more room between the child, the parent and the package (28pt instead of the sheet's 20)
+  break: { marginVertical: -6 }
 })

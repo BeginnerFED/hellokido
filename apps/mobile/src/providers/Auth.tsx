@@ -1,7 +1,9 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { Session, User } from '@supabase/supabase-js'
+import { forgetThisPhone, registerForReminders } from '../lib/push'
 import { supabase } from '../lib/supabase'
 import { queryClient } from '../lib/query'
+import { useI18n } from './I18n'
 
 type AuthValue = {
   user: User | null
@@ -59,6 +61,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [userId])
 
+  // An admin's phone gets the evening reminder; again on each start, so a new token or language is sent along
+  const { locale, t } = useI18n()
+  const channel = t.messages.evening.channel
+  useEffect(() => {
+    if (userId && isAdmin === true) void registerForReminders({ locale, channel })
+  }, [userId, isAdmin, locale, channel])
+
   const value = useMemo<AuthValue>(
     () => ({
       user,
@@ -67,6 +76,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAdmin,
       // This phone only: the default would end the account's sessions everywhere
       signOut: async () => {
+        await forgetThisPhone()
         const { error } = await supabase.auth.signOut({ scope: 'local' })
         if (!error) queryClient.clear()
         return !error

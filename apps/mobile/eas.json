@@ -9,12 +9,17 @@
       "autoIncrement": true,
       "ios": {
         "resourceClass": "default"
-      }
+      },
+      "channel": "production"
     }
   },
   "submit": {
     "production": {
-      "ios": {}
+      "ios": {
+        "ascAppId": "6826784495",
+        "appName": "HelloKido Panel",
+        "language": "tr"
+      }
     }
   }
 }

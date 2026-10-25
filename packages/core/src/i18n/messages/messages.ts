@@ -114,7 +114,19 @@ const tr = {
   evening: {
     channel: 'Ders hatırlatmaları',
     title: 'Yarınki dersler',
-    body: { one: '{count} aileye daha hatırlatma gitmedi. Bugün ekranından sırayla gönderebilirsin.', other: '{count} aileye daha hatırlatma gitmedi. Bugün ekranından sırayla gönderebilirsin.' }
+    body: { one: '{count} aileye daha hatırlatma gitmedi. Bugün ekranından sırayla gönderebilirsin.', other: '{count} aileye daha hatırlatma gitmedi. Bugün ekranından sırayla gönderebilirsin.' },
+    setting: {
+      title: 'Akşam hatırlatması',
+      on: 'Her gün {time}',
+      off: 'Kapalı',
+      body: 'Yarın dersi olup hatırlatması gitmemiş aile varsa, her yöneticinin telefonuna kaç aile kaldığını söyleyen bir bildirim gelir. Herkese gönderildiyse bildirim gelmez.',
+      enabled: 'Bildirim gönder',
+      time: 'Saat',
+      timeHint: 'İstanbul saatiyle, ör. 16:00',
+      invalid: 'Saati 16:00 gibi yaz.',
+      saved: 'Akşam hatırlatması kaydedildi.',
+      failed: 'Kaydedilemedi. Bağlantını kontrol edip tekrar dene.'
+    }
   }
 }
 
@@ -229,7 +241,19 @@ const en: Widen<typeof tr> = {
   evening: {
     channel: 'Lesson reminders',
     title: 'Tomorrow’s lessons',
-    body: { one: '{count} family has not been reminded yet. Send them in order from Today.', other: '{count} families have not been reminded yet. Send them in order from Today.' }
+    body: { one: '{count} family has not been reminded yet. Send them in order from Today.', other: '{count} families have not been reminded yet. Send them in order from Today.' },
+    setting: {
+      title: 'Evening reminder',
+      on: 'Every day at {time}',
+      off: 'Off',
+      body: 'When families with a lesson tomorrow have not been reminded yet, every admin’s phone gets a notification saying how many are left. Nothing comes once everyone was reminded.',
+      enabled: 'Send the notification',
+      time: 'Time',
+      timeHint: 'Istanbul time, e.g. 16:00',
+      invalid: 'Write the time like 16:00.',
+      saved: 'Evening reminder saved.',
+      failed: 'Could not save. Check your connection and try again.'
+    }
   }
 }
 
@@ -349,6 +373,18 @@ const uk: Widen<typeof tr> = {
       few: 'Ще {count} родинам не нагадали. Надішліть по черзі з екрана «Сьогодні».',
       many: 'Ще {count} родинам не нагадали. Надішліть по черзі з екрана «Сьогодні».',
       other: 'Ще {count} родини не нагадали. Надішліть по черзі з екрана «Сьогодні».'
+    },
+    setting: {
+      title: 'Вечірнє нагадування',
+      on: 'Щодня о {time}',
+      off: 'Вимкнено',
+      body: 'Якщо родинам із заняттям завтра ще не нагадали, на телефон кожного адміністратора прийде сповіщення, скільки їх лишилося. Коли нагадали всім, сповіщення не приходить.',
+      enabled: 'Надсилати сповіщення',
+      time: 'Час',
+      timeHint: 'За Стамбулом, напр. 16:00',
+      invalid: 'Напишіть час, як 16:00.',
+      saved: 'Вечірнє нагадування збережено.',
+      failed: 'Не вдалося зберегти. Перевірте з’єднання і спробуйте ще раз.'
     }
   }
 }

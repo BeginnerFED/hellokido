@@ -17,6 +17,8 @@ const tr = {
   loadFailed: 'Takvim yüklenemedi. Bağlantını kontrol edip tekrar dene.',
   lessonCount: { one: '{count} ders', other: '{count} ders' },
   unmarked: { one: '{count} çocuğun yoklaması girilmedi', other: '{count} çocuğun yoklaması girilmedi' },
+  /** The same on a small mark beside a lesson, where the long sentence does not fit. */
+  unmarkedShort: { one: '{count} yoklama girilmedi', other: '{count} yoklama girilmedi' },
   locked: 'Geçmiş ya da yoklaması girilmiş ders sürüklenemez; tarihini dersin içinden değiştirebilirsin.',
   moved: 'Ders taşındı',
   moveFailed: 'Ders taşınamadı. Bağlantını kontrol edip tekrar dene.',
@@ -156,6 +158,7 @@ const en: Widen<typeof tr> = {
   loadFailed: 'The calendar could not be loaded. Check your connection and try again.',
   lessonCount: { one: '{count} lesson', other: '{count} lessons' },
   unmarked: { one: 'Attendance not marked for {count} child', other: 'Attendance not marked for {count} children' },
+  unmarkedShort: { one: '{count} not marked', other: '{count} not marked' },
   locked: 'Past lessons and lessons with attendance cannot be dragged; change the date inside the lesson.',
   moved: 'Lesson moved',
   moveFailed: 'The lesson could not be moved. Check your connection and try again.',
@@ -300,6 +303,7 @@ const uk: Widen<typeof tr> = {
     many: 'Не відмічено відвідування: {count} дітей',
     other: 'Не відмічено відвідування: {count} дитини'
   },
+  unmarkedShort: { one: 'Не відмічено: {count}', few: 'Не відмічено: {count}', many: 'Не відмічено: {count}', other: 'Не відмічено: {count}' },
   locked: 'Минулі заняття і заняття з відміченим відвідуванням не можна перетягнути; змініть дату в самому занятті.',
   moved: 'Заняття перенесено',
   moveFailed: 'Не вдалося перенести заняття. Перевірте з’єднання і спробуйте ще раз.',

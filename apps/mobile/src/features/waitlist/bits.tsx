@@ -23,7 +23,10 @@ export function askedAgo({ t, plural }: Pick<I18n, 't' | 'plural'>, day: Date, t
   return plural(ago.years, Math.floor(past / 365))
 }
 
-/** A seat not taken yet: the peg of a child who has no place, an empty socket with initials. */
+/**
+ * A seat not taken yet: the peg of a child who has no place, an empty socket with initials. Square
+ * like every other child's tile; the dashed edge is what says "no seat yet".
+ */
 export function WaitPeg({ name }: { name: string }) {
   const c = useColors()
   return (
@@ -36,6 +39,6 @@ export function WaitPeg({ name }: { name: string }) {
 }
 
 const styles = StyleSheet.create({
-  peg: { width: 32, height: 32, borderRadius: 16, borderWidth: 1.5, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center' },
+  peg: { width: 32, height: 32, borderRadius: 9, borderWidth: 1.5, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center' },
   initials: { fontSize: 11, lineHeight: 14, letterSpacing: 0.2 }
 })

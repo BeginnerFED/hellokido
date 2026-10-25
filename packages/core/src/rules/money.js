@@ -59,12 +59,15 @@ export const isPositiveAmount = (input) => {
 export const sanitizeAmountInput = (text) => String(text ?? '').replace(/[^\d.,]/g, '');
 
 // Tutarı Türkçe yazımla gösterir: 13850 → "13.850", 13.85 → "13,85". Kart ve listelerde
-// ham sayı basıldığında 13.85 ile 13850 birbirine karışıyordu.
-const moneyFormatter = new Intl.NumberFormat('tr-TR', { maximumFractionDigits: 2 });
+// ham sayı basıldığında 13.85 ile 13850 birbirine karışıyordu. Tam tutar kuruşsuz, kuruşlu
+// tutar her zaman iki haneyle yazılır: 2748.4 → "2.748,40" ("2.748,4" değil).
+const wholeFormatter = new Intl.NumberFormat('tr-TR', { maximumFractionDigits: 0 });
+const centsFormatter = new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 export const formatMoney = (value) => {
   const number = Number(value);
   if (value === null || value === undefined || value === '' || !Number.isFinite(number)) return '0';
-  return moneyFormatter.format(number);
+  const cents = Math.round(number * 100) || 0;
+  return cents % 100 === 0 ? wholeFormatter.format(cents / 100) : centsFormatter.format(cents / 100);
 };
 
 // Kayıtlı bir tutarı düzenleme kutusuna geri yazarken kullanılır: yeniden okunduğunda

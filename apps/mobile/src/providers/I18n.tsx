@@ -75,7 +75,8 @@ export function I18nProvider({ children }: { children: ReactNode }) {
         }
         return formatter.format(day)
       },
-      money: (amount) => `${formatMoney(Number(amount) || 0)} ₺`
+      // A no-break space: "₺" never wraps away from its number in a sentence
+      money: (amount) => `${formatMoney(Number(amount) || 0)} ₺`
     }
   }, [locale, setLocale])
 

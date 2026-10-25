@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { View } from 'react-native'
 import { useQuery } from '@tanstack/react-query'
 import * as Haptics from 'expo-haptics'
 import {
@@ -24,14 +25,32 @@ import { upperFirst } from '@hellokido/core/rules/text.js'
 import { FREE, fromDateKey, periodHint, sameInstant, type DateRange } from '@hellokido/core/view'
 import { useCatalog, useLabels, useRefresh } from '../../data/queries'
 import { useI18n } from '../../providers/I18n'
-import { Notice, type NoticeTone } from '../../ui/Bits'
+import { Notice, Skeleton, type NoticeTone } from '../../ui/Bits'
 import { Button } from '../../ui/Button'
-import { AmountField, Chip, DateField, PeriodField, SelectField, Segmented, Stepper, TextField } from '../../ui/Fields'
+import { AmountField, Chip, DateField, FieldLabel, PeriodField, SelectField, Segmented, Stepper, TextField } from '../../ui/Fields'
 import { SheetActions, useSheet } from '../../ui/Sheet'
 import { useToast } from '../../ui/Toast'
 import { amountError, PaymentFields, usePackageOptions, usePackagePrice, type FormState } from './fields'
 
 const saved = () => void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
+const failed = () => void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error)
+
+/**
+ * Money is never written twice: `busy` reaches the button only after a render, so a second tap in
+ * the same moment is stopped here.
+ */
+function useSaveOnce() {
+  const saving = useRef(false)
+  return async (work: () => Promise<void>) => {
+    if (saving.current) return
+    saving.current = true
+    try {
+      await work()
+    } finally {
+      saving.current = false
+    }
+  }
+}
 
 type CollectProps = {
   registration: Registration
@@ -57,7 +76,8 @@ export function CollectForm({ registration, entry, onStateChange }: CollectProps
   const dirty = method !== null || date !== null || amount !== (entry ? formatAmountForInput(entry.amount) : '')
   useEffect(() => onStateChange({ dirty, busy }), [dirty, busy, onStateChange])
 
-  const save = async () => {
+  const once = useSaveOnce()
+  const write = async () => {
     if (!valid || busy || !method || !date) return
     const value = parseAmount(amount) ?? 0
     setBusy(true)
@@ -85,11 +105,13 @@ export function CollectForm({ registration, entry, onStateChange }: CollectProps
         sheet.finish()
         return
       }
+      failed()
       setError(t.children.form.updateFailed)
     } finally {
       setBusy(false)
     }
   }
+  const save = () => once(write)
 
   return (
     <>
@@ -240,7 +262,8 @@ export function ExtendForm({ registration, mode, extension, onStateChange }: Ext
     extra !== 0
   useEffect(() => onStateChange({ dirty, busy }), [dirty, busy, onStateChange])
 
-  const save = async () => {
+  const once = useSaveOnce()
+  const write = async () => {
     if (!valid || busy || !range || !packageType) return
     // A sheet left open on another child must never write under this child's name
     if (editing && extension?.registration_id !== registration.id) return
@@ -280,6 +303,7 @@ export function ExtendForm({ registration, mode, extension, onStateChange }: Ext
         sheet.finish()
         return
       }
+      failed()
       setError(
         kind === 'pending_payment'
           ? t.children.extend.pendingBlocked
@@ -293,6 +317,7 @@ export function ExtendForm({ registration, mode, extension, onStateChange }: Ext
       setBusy(false)
     }
   }
+  const save = () => once(write)
 
   return (
     <>
@@ -441,7 +466,8 @@ export function IncomeForm({ kind, registrationId, entry, collect, onStateChange
     note !== initial.note
   useEffect(() => onStateChange({ dirty, busy }), [dirty, busy, onStateChange])
 
-  const save = async () => {
+  const once = useSaveOnce()
+  const write = async () => {
     if (!valid || busy) return
     const value = parseAmount(amount) ?? 0
     const fields = {
@@ -478,17 +504,26 @@ export function IncomeForm({ kind, registrationId, entry, collect, onStateChange
         sheet.finish()
         return
       }
+      failed()
       setError(t.finance.entry.failed)
     } finally {
       setBusy(false)
     }
   }
+  const save = () => once(write)
 
   return (
     <>
-      {kind === 'other' && (
-        <SelectField label={t.finance.entry.category} placeholder={t.finance.entry.categoryPlaceholder} options={categoryOptions} value={category} onChange={setCategory} />
-      )}
+      {kind === 'other' &&
+        (catalog ? (
+          <SelectField label={t.finance.entry.category} placeholder={t.finance.entry.categoryPlaceholder} options={categoryOptions} value={category} onChange={setCategory} />
+        ) : (
+          // Until the categories are here an open list would be an empty box
+          <View>
+            <FieldLabel>{t.finance.entry.category}</FieldLabel>
+            <Skeleton height={50} radius={18} />
+          </View>
+        ))}
       <TextField
         label={t.finance.entry.description}
         placeholder={kind === 'child' ? t.finance.entry.descriptionChild : t.finance.entry.descriptionOther}

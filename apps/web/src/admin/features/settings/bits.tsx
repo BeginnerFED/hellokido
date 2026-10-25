@@ -1,6 +1,6 @@
-import { useRef, type ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { Button as AriaButton } from 'react-aria-components'
-import { CaretRightIcon } from '@phosphor-icons/react'
+import { CaretDownIcon, CaretRightIcon } from '@phosphor-icons/react'
 import { useI18n } from '../../providers/I18n'
 import { TextField } from '../../ui/Field'
 import { keepCaret } from '../../ui/caret'
@@ -66,9 +66,13 @@ export function SettingRow({ title, onPress, lead, mark, meta, trail, muted }: R
   )
 }
 
-/** A name in the three languages: Turkish is required, the others fall back to it. */
+/**
+ * The name, in Turkish. English and Ukrainian names wait behind a closed row: empty, they show the
+ * Turkish name, so most rows never need them.
+ */
 export function NameFields({ value, onChange, errorMessage, autoFocus }: { value: Names; onChange: (next: Names) => void; errorMessage?: string; autoFocus?: boolean }) {
   const { t } = useI18n()
+  const [open, setOpen] = useState(false)
   const trRef = useRef<HTMLInputElement>(null)
   const enRef = useRef<HTMLInputElement>(null)
   const ukRef = useRef<HTMLInputElement>(null)
@@ -77,7 +81,7 @@ export function NameFields({ value, onChange, errorMessage, autoFocus }: { value
   const field = (lang: keyof Names, extra?: { errorMessage?: string; autoFocus?: boolean }) => (
     <TextField
       ref={refs[lang]}
-      label={t.settings.names[lang]}
+      label={lang === 'tr' ? t.settings.names.name : t.settings.names[lang]}
       value={value[lang]}
       onChange={(text) => keepCaret(refs[lang].current, text, (typed) => capitalFirst(typed, lang), (next) => onChange({ ...value, [lang]: next }))}
       autoComplete="off"
@@ -88,13 +92,26 @@ export function NameFields({ value, onChange, errorMessage, autoFocus }: { value
   return (
     <div className="flex flex-col gap-4">
       {field('tr', { errorMessage, autoFocus })}
-      <div className="flex flex-col gap-1.5">
-        <div className="grid items-start gap-4 sm:grid-cols-2">
-          {field('en')}
-          {field('uk')}
+      {open ? (
+        <div className="flex flex-col gap-1.5">
+          <div className="grid items-start gap-4 sm:grid-cols-2">
+            {field('en')}
+            {field('uk')}
+          </div>
+          <p className="text-[0.8125rem] text-ink-3">{t.settings.names.hint}</p>
         </div>
-        <p className="text-[0.8125rem] text-ink-3">{t.settings.names.hint}</p>
-      </div>
+      ) : (
+        <AriaButton
+          onPress={() => {
+            setOpen(true)
+            requestAnimationFrame(() => enRef.current?.focus())
+          }}
+          className="-mt-1.5 inline-flex w-fit items-center gap-1.5 rounded-control text-sm font-medium text-accent-ink outline-none data-hovered:underline data-focus-visible:ring-2 data-focus-visible:ring-focus"
+        >
+          {t.settings.names.more}
+          <CaretDownIcon aria-hidden weight="bold" className="size-3.5" />
+        </AriaButton>
+      )}
     </div>
   )
 }

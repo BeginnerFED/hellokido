@@ -5,7 +5,7 @@ import { useColors } from '../../../theme/colors'
 
 export const unstable_settings = { anchor: 'more' }
 
-/** The More tab: its list first, the waitlist, notes and settings pushed on top with their own large titles. */
+/** The More tab: its list first, the waitlist, notes and settings pushed on top with their own titles. */
 export default function MoreStack() {
   const c = useColors()
   const { t } = useI18n()

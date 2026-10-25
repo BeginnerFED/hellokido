@@ -1,8 +1,11 @@
-import { useCallback, useState } from 'react'
-import { Alert, StyleSheet, View } from 'react-native'
+import { useCallback, useRef, useState } from 'react'
+import { ActivityIndicator, Alert, Platform, StyleSheet, Switch, View } from 'react-native'
+import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker'
 import Constants from 'expo-constants'
+import * as Haptics from 'expo-haptics'
+import * as Updates from 'expo-updates'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { listAdmins, listRecurring, revokeAdmin, type Admin, type PackageType } from '@hellokido/core/api'
+import { listAdmins, listRecurring, revokeAdmin, updateEveningReminder, type Admin, type EveningReminder, type PackageType } from '@hellokido/core/api'
 import { LANGUAGE_NAMES, LOCALES, type Locale } from '@hellokido/core/i18n'
 import { rateText } from '@hellokido/core/view'
 import { keys, useCatalog, useLabels, useRefresh } from '../../data/queries'
@@ -16,7 +19,7 @@ import { Button } from '../../ui/Button'
 import { Segmented } from '../../ui/Fields'
 import { Icon, type IconName } from '../../ui/Icon'
 import { Card, Row, Screen, Section } from '../../ui/Screen'
-import { Text } from '../../ui/Text'
+import { DOT, Text } from '../../ui/Text'
 import { useToast } from '../../ui/Toast'
 import { CategoryTablet, IncomeTablet, methodName } from '../finance/bits'
 import { SettingTitle } from './bits'
@@ -52,6 +55,9 @@ export function SettingsScreen() {
       <Section title={copy.packages.title} description={copy.packages.body}>
         <Packages />
       </Section>
+      <Section title={copy.period.title} description={copy.period.body}>
+        <MoneyPeriod />
+      </Section>
       <Section title={copy.card.title} description={copy.card.body}>
         <CardMoney />
       </Section>
@@ -63,6 +69,9 @@ export function SettingsScreen() {
       </Section>
       <Section title={copy.categories.incomeTitle} description={copy.categories.incomeBody}>
         <Categories kind="income" />
+      </Section>
+      <Section title={t.messages.evening.setting.title} description={t.messages.evening.setting.body}>
+        <EveningReminderSetting />
       </Section>
       <Section title={copy.access.title} description={copy.access.body}>
         <Access />
@@ -85,10 +94,31 @@ function AddButton({ label, icon = 'add', onPress }: { label: string; icon?: Ico
   )
 }
 
-/** A value at the end of a row, in the quieter ink the phone's own settings use. */
+/**
+ * A value at the end of a row, in the quieter ink the phone's own settings use. It never takes more
+ * than half the row, so the name beside it is not cut to a few letters.
+ */
 function Value({ children, strong, quiet }: { children: string; strong?: boolean; quiet?: boolean }) {
   return (
-    <Text variant="sub" weight={strong ? '600' : '400'} tone={quiet ? 'ink3' : strong ? 'ink' : 'ink2'} tabular numberOfLines={1}>
+    <Text variant="sub" weight={strong ? '600' : '400'} tone={quiet ? 'ink3' : strong ? 'ink' : 'ink2'} tabular numberOfLines={1} style={styles.value}>
+      {children}
+    </Text>
+  )
+}
+
+/** The name of a row that has a value at its end: a long one (English, Ukrainian) wraps instead of being cut. */
+function Label({ children }: { children: string }) {
+  return (
+    <Text variant="body" numberOfLines={2}>
+      {children}
+    </Text>
+  )
+}
+
+/** An email cut in the middle, so both the name and the domain stay readable. */
+function Email({ children }: { children: string }) {
+  return (
+    <Text variant="body" numberOfLines={1} ellipsizeMode="middle">
       {children}
     </Text>
   )
@@ -154,6 +184,138 @@ function Packages() {
   )
 }
 
+function MoneyPeriod() {
+  const { t, fmt } = useI18n()
+  const catalog = useCatalog()
+  const day = catalog.data?.settings.moneyPeriodStartDay
+
+  if (catalog.isError) return <LoadError message={t.common.loadFailed} retryLabel={t.common.retry} onRetry={() => void catalog.refetch()} />
+  if (day === undefined) return <ListSkeleton rows={1} />
+
+  return (
+    <Card>
+      <Row
+        title={<Label>{t.settings.period.start}</Label>}
+        trailing={<Value>{day === 1 ? t.settings.period.calendar : fmt(t.settings.period.value, { day })}</Value>}
+        chevron
+        onPress={tasks.moneyPeriod}
+      />
+    </Card>
+  )
+}
+
+const timeOfDay = (time: string) => {
+  const [hours, minutes] = time.split(':').map(Number)
+  const day = new Date()
+  day.setHours(hours, minutes, 0, 0)
+  return day
+}
+
+const timeText = (day: Date) => `${String(day.getHours()).padStart(2, '0')}:${String(day.getMinutes()).padStart(2, '0')}`
+
+/**
+ * The note every admin phone gets from the server about tomorrow's families still waiting. Shared by
+ * all admins and the web; each change is saved at once, as the phone's own settings are.
+ */
+function EveningReminderSetting() {
+  const c = useColors()
+  const { t, tag } = useI18n()
+  const catalog = useCatalog()
+  const refresh = useRefresh()
+  const toast = useToast()
+  const copy = t.messages.evening.setting
+  // What was just chosen shows at once; the saved setting takes over once it is read back
+  const [draft, setDraft] = useState<EveningReminder | null>(null)
+  const pending = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const saved = catalog.data?.settings.eveningReminder
+
+  if (catalog.isError) return <LoadError message={t.common.loadFailed} retryLabel={t.common.retry} onRetry={() => void catalog.refetch()} />
+  if (!saved) return <ListSkeleton rows={2} />
+  const shown = draft ?? saved
+
+  const save = async (next: EveningReminder) => {
+    try {
+      await updateEveningReminder(next)
+      await refresh.catalog()
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
+    } catch {
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error)
+      toast({ tone: 'error', title: copy.failed })
+    } finally {
+      setDraft(null)
+    }
+  }
+
+  // The iPhone's time wheel reports every turn; only where it stops is saved
+  const choose = (next: EveningReminder, wait = 0) => {
+    setDraft(next)
+    if (pending.current) clearTimeout(pending.current)
+    pending.current = setTimeout(() => void save(next), wait)
+  }
+
+  const pickTime = (picked: Date) => {
+    const time = timeText(picked)
+    if (time !== shown.time) choose({ ...shown, time }, Platform.OS === 'ios' ? 900 : 0)
+  }
+
+  return (
+    <Card>
+      <Row
+        title={<Label>{copy.enabled}</Label>}
+        trailing={
+          <Switch
+            value={shown.enabled}
+            onValueChange={(enabled) => choose({ ...shown, enabled })}
+            accessibilityLabel={copy.enabled}
+            trackColor={{ false: c.lineStrong, true: c.accentSolid }}
+            // The phone's own switches keep a white knob in both themes
+            thumbColor="#ffffff"
+            ios_backgroundColor={c.lineStrong}
+          />
+        }
+      />
+      {shown.enabled && (
+        <Row
+          title={<Label>{copy.time}</Label>}
+          subtitle={copy.timeHint}
+          trailing={
+            Platform.OS === 'ios' ? (
+              <DateTimePicker
+                value={timeOfDay(shown.time)}
+                mode="time"
+                display="compact"
+                // tr-TR, en-GB and uk-UA all read the day in 24 hours
+                locale={tag}
+                minuteInterval={5}
+                accentColor={c.accentSolid}
+                onChange={(event, picked) => {
+                  if (event.type === 'set' && picked) pickTime(picked)
+                }}
+              />
+            ) : (
+              <Value strong>{shown.time}</Value>
+            )
+          }
+          chevron={Platform.OS === 'android'}
+          onPress={
+            Platform.OS === 'android'
+              ? () =>
+                  DateTimePickerAndroid.open({
+                    value: timeOfDay(shown.time),
+                    mode: 'time',
+                    is24Hour: true,
+                    onChange: (event, picked) => {
+                      if (event.type === 'set' && picked) pickTime(picked)
+                    }
+                  })
+              : undefined
+          }
+        />
+      )}
+    </Card>
+  )
+}
+
 function CardMoney() {
   const { t, fmt, locale } = useI18n()
   const catalog = useCatalog()
@@ -164,9 +326,14 @@ function CardMoney() {
 
   return (
     <Card>
-      <Row title={t.settings.card.days} trailing={<Value>{`${saved.cardSettlementDays} ${t.settings.card.daysUnit}`}</Value>} chevron onPress={tasks.cardSettings} />
       <Row
-        title={t.settings.card.commission}
+        title={<Label>{t.settings.card.days}</Label>}
+        trailing={<Value>{`${saved.cardSettlementDays} ${t.settings.card.daysUnit}`}</Value>}
+        chevron
+        onPress={tasks.cardSettings}
+      />
+      <Row
+        title={<Label>{t.settings.card.commission}</Label>}
         trailing={<Value>{fmt(t.mobile.percent, { rate: rateText(saved.cardCommissionRate, locale) })}</Value>}
         chevron
         onPress={tasks.cardSettings}
@@ -190,7 +357,7 @@ function Monthly() {
       {templates.data.length > 0 && (
         <Card inset={60}>
           {templates.data.map((row) => {
-            const meta = [labels.expenseCategory(row.expense_type), methodName(t, labels, row.payment_method)].filter(Boolean).join(' · ')
+            const meta = [labels.expenseCategory(row.expense_type), methodName(t, labels, row.payment_method)].filter(Boolean).join(DOT)
             const amount = row.amount != null ? money(row.amount) : t.finance.monthly.varies
             return (
               <Row
@@ -268,26 +435,33 @@ function Access() {
   const toast = useToast()
   const refresh = useRefresh()
   const admins = useQuery({ queryKey: keys.admins, queryFn: listAdmins })
+  // The account being taken off: its button spins and the others wait, so nothing is sent twice
+  const [removing, setRemoving] = useState<string | null>(null)
   const copy = t.settings.access
 
-  const revoke = (admin: Admin) =>
+  const revoke = (admin: Admin) => {
+    if (removing) return
     Alert.alert(copy.removeTitle, fmt(copy.removeBody, { email: admin.email }), [
       { text: t.common.cancel, style: 'cancel' },
       {
         text: copy.remove,
         style: 'destructive',
         onPress: async () => {
+          setRemoving(admin.user_id)
           try {
             await revokeAdmin(admin.user_id)
+            void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
             toast({ title: copy.removed })
           } catch (failure) {
             toast({ tone: 'error', title: failedWith(failure, 'cannot_revoke_self') ? copy.cannotRemoveSelf : copy.removeFailed })
           } finally {
-            void refresh.admins()
+            await refresh.admins()
+            setRemoving(null)
           }
         }
       }
     ])
+  }
 
   if (admins.isError) return <LoadError message={t.common.loadFailed} retryLabel={t.common.retry} onRetry={() => void admins.refetch()} />
   if (!admins.data) return <ListSkeleton rows={2} />
@@ -299,18 +473,26 @@ function Access() {
           <Row
             key={admin.user_id}
             leading={
-              <View style={[styles.avatar, { backgroundColor: c.accentWash2 }]}>
-                <Text variant="caption" weight="600" tone="accentInk">
+              // People are square tiles; the one round avatar is the signed-in account below
+              <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={[styles.tile, { backgroundColor: c.surface2, borderColor: c.line }]}>
+                <Text variant="caption" weight="600" tone="ink2">
                   {initialsOfEmail(admin.email)}
                 </Text>
               </View>
             }
-            title={admin.email}
+            title={<Email>{admin.email}</Email>}
             trailing={
               admin.is_self ? (
                 <Mark tone="neutral">{copy.you}</Mark>
               ) : (
-                <Button variant="plain" size="sm" accessibilityLabel={fmt(copy.removeLabel, { email: admin.email })} onPress={() => revoke(admin)}>
+                <Button
+                  variant="plain"
+                  size="sm"
+                  accessibilityLabel={fmt(copy.removeLabel, { email: admin.email })}
+                  busy={removing === admin.user_id}
+                  disabled={removing !== null && removing !== admin.user_id}
+                  onPress={() => revoke(admin)}
+                >
                   {copy.remove}
                 </Button>
               )
@@ -358,12 +540,12 @@ function Account() {
             </Text>
           </View>
         }
-        title={email}
+        title={<Email>{email}</Email>}
       />
       <Row
         leading={
           <View style={styles.avatar}>
-            <Icon name="logout" size={18} color={busy ? c.ink3 : c.accentInk} />
+            {busy ? <ActivityIndicator size="small" color={c.ink3} /> : <Icon name="logout" size={18} color={c.accentInk} />}
           </View>
         }
         title={
@@ -378,10 +560,18 @@ function Account() {
 }
 
 function About() {
-  const { t } = useI18n()
+  const { t, date } = useI18n()
+  // An update sent over the air keeps the store version, so its day tells which one is running
+  const updated = !Updates.isEmbeddedLaunch ? Updates.createdAt : null
   return (
     <Card>
       <Row title={t.mobile.version} trailing={<Value>{Constants.expoConfig?.version ?? ''}</Value>} />
+      {updated && (
+        <Row
+          title={<Label>{t.settings.about.updated}</Label>}
+          trailing={<Value>{date(updated, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</Value>}
+        />
+      )}
     </Card>
   )
 }
@@ -389,6 +579,8 @@ function About() {
 const styles = StyleSheet.create({
   appearance: { gap: 16 },
   add: { alignSelf: 'flex-start', marginTop: 6, marginLeft: 4 },
+  value: { flexShrink: 1, maxWidth: '50%' },
   dayTablet: { width: 32, height: 32, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
+  tile: { width: 32, height: 32, borderRadius: 9, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   avatar: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' }
 })

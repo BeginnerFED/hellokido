@@ -8,16 +8,25 @@ const tr = {
   otherIncome: 'Başka gelir ekle',
   period: {
     thisMonth: 'Bu ay',
+    thisPeriod: 'Bu dönem',
     otherPeriod: 'Başka dönem',
     lastMonth: 'Geçen ay',
+    lastPeriod: 'Geçen dönem',
     last14: 'Son 14 gün',
     today: 'Bugün',
     custom: 'Tarih aralığı seç…',
     customTitle: 'Dönem seç',
     customField: 'İlk ve son gün',
+    length: { one: '{count} gün', other: '{count} gün' },
     show: 'Göster',
     previous: 'Önceki dönem',
-    next: 'Sonraki dönem'
+    next: 'Sonraki dönem',
+    startsOn: 'Dönem her ayın {day}. günü başlar',
+    calendarMonths: 'Dönem takvim ayı',
+    changeStart: 'Dönem başlangıcı…',
+    firstDay: 'İlk gün',
+    lastDay: 'Son gün',
+    backToCurrent: 'Bu döneme dön'
   },
   balance: {
     label: 'Dönemin özeti',
@@ -28,7 +37,19 @@ const tr = {
     byMethod: 'Gelen para',
     onTheWay: 'Kartla alınan {amount} henüz bankaya geçmedi.',
     onTheWayLink: 'Ne zaman geçecek?',
-    empty: 'Bu dönemde gelir ya da gider yok.'
+    empty: 'Bu dönemde gelir ya da gider yok.',
+    payments: { one: '{count} ödeme', other: '{count} ödeme' },
+    expenses: { one: '{count} gider', other: '{count} gider' },
+    before: 'önceki dönem {amount}',
+    beforeLabel: 'önceki dönem',
+    beforeShort: 'önceki dönem {amount} açık',
+    leftHint: 'Gelen eksi giden',
+    bank: 'Bankaya yolda',
+    bankHint: 'henüz hesapta değil',
+    bankNone: 'Hepsi hesaba geçti',
+    showIn: 'Gelen hareketleri göster',
+    showOut: 'Giden hareketleri göster',
+    showBank: 'Bankaya yoldaki parayı göster'
   },
   moves: {
     title: 'Hareketler',
@@ -43,6 +64,7 @@ const tr = {
     empty: 'Bu dönemde hareket yok.',
     emptyBody: 'Gider eklediğinde ya da ödeme aldığında burada görünür.',
     noMatch: 'Aramaya ya da filtrelere uyan hareket yok.',
+    noMatchFilter: 'Bu filtreye uyan hareket yok.',
     showMore: { one: '{count} hareket daha göster', other: '{count} hareket daha göster' },
     monthly: 'Aylık'
   },
@@ -94,15 +116,18 @@ const tr = {
   },
   months: {
     title: 'Aylar',
+    periodsTitle: 'Dönemler',
     six: '6 ay',
     twelve: '12 ay',
     rangeLabel: 'Kaç ay',
     table: 'Tablo olarak göster',
     chart: 'Grafik olarak göster',
     month: 'Ay',
+    period: 'Dönem',
     difference: 'Fark',
     show: '{month} dönemini göster',
-    chartLabel: 'Son {count} ayın geleni ve gideni'
+    chartLabel: 'Son {count} ayın geleni ve gideni',
+    periodsLabel: 'Son {count} dönemin geleni ve gideni'
   },
   expense: {
     newTitle: 'Gider ekle',
@@ -123,7 +148,7 @@ const tr = {
     saved: 'Gider kaydedildi',
     savedBody: '{date} · {amount}',
     outside: '{date} ekrandaki dönemin dışında; listede görünmüyor.',
-    showMonth: 'O ayı göster',
+    showMonth: 'O dönemi göster',
     updated: 'Değişiklikler kaydedildi',
     failed: 'Kaydedilemedi; hiçbir şey değişmedi.',
     repeatFailed: 'Gider kaydedildi ama aylık listeye eklenemedi.',
@@ -195,16 +220,25 @@ const en: Widen<typeof tr> = {
   otherIncome: 'Other income',
   period: {
     thisMonth: 'This month',
+    thisPeriod: 'This period',
     otherPeriod: 'Other period',
     lastMonth: 'Last month',
+    lastPeriod: 'Last period',
     last14: 'Last 14 days',
     today: 'Today',
     custom: 'Choose dates…',
     customTitle: 'Choose a period',
     customField: 'First and last day',
+    length: { one: '{count} day', other: '{count} days' },
     show: 'Show',
     previous: 'Previous period',
-    next: 'Next period'
+    next: 'Next period',
+    startsOn: 'Periods start on day {day} of each month',
+    calendarMonths: 'Periods are calendar months',
+    changeStart: 'Period start…',
+    firstDay: 'First day',
+    lastDay: 'Last day',
+    backToCurrent: 'Back to this period'
   },
   balance: {
     label: 'Period summary',
@@ -215,7 +249,19 @@ const en: Widen<typeof tr> = {
     byMethod: 'Money in by',
     onTheWay: '{amount} taken by card has not reached the bank yet.',
     onTheWayLink: 'When will it arrive?',
-    empty: 'No income or expenses in this period.'
+    empty: 'No income or expenses in this period.',
+    payments: { one: '{count} payment', other: '{count} payments' },
+    expenses: { one: '{count} expense', other: '{count} expenses' },
+    before: 'period before: {amount}',
+    beforeLabel: 'period before',
+    beforeShort: 'period before: {amount} short',
+    leftHint: 'Money in minus money out',
+    bank: 'On the way to the bank',
+    bankHint: 'not in the account yet',
+    bankNone: 'All of it is in the account',
+    showIn: 'Show money in',
+    showOut: 'Show money out',
+    showBank: 'Show the money on its way'
   },
   moves: {
     title: 'Transactions',
@@ -230,6 +276,7 @@ const en: Widen<typeof tr> = {
     empty: 'No transactions in this period.',
     emptyBody: 'Expenses you add and payments you take show up here.',
     noMatch: 'No transactions match the search or filters.',
+    noMatchFilter: 'No transactions match this filter.',
     showMore: { one: 'Show {count} more transaction', other: 'Show {count} more transactions' },
     monthly: 'Monthly'
   },
@@ -281,15 +328,18 @@ const en: Widen<typeof tr> = {
   },
   months: {
     title: 'Month by month',
+    periodsTitle: 'Period by period',
     six: '6 months',
     twelve: '12 months',
     rangeLabel: 'How many months',
     table: 'Show as a table',
     chart: 'Show as a chart',
     month: 'Month',
+    period: 'Period',
     difference: 'Difference',
     show: 'Show {month}',
-    chartLabel: 'Money in and out over the last {count} months'
+    chartLabel: 'Money in and out over the last {count} months',
+    periodsLabel: 'Money in and out over the last {count} periods'
   },
   expense: {
     newTitle: 'Add an expense',
@@ -310,7 +360,7 @@ const en: Widen<typeof tr> = {
     saved: 'Expense recorded',
     savedBody: '{date} · {amount}',
     outside: '{date} is outside the period on screen, so it is not in the list.',
-    showMonth: 'Show that month',
+    showMonth: 'Show that period',
     updated: 'Changes saved',
     failed: 'Could not save; nothing was changed.',
     repeatFailed: 'The expense was recorded, but it could not be added to the monthly list.',
@@ -382,16 +432,25 @@ const uk: Widen<typeof tr> = {
   otherIncome: 'Інший дохід',
   period: {
     thisMonth: 'Цей місяць',
+    thisPeriod: 'Цей період',
     otherPeriod: 'Інший період',
     lastMonth: 'Минулий місяць',
+    lastPeriod: 'Минулий період',
     last14: 'Останні 14 днів',
     today: 'Сьогодні',
     custom: 'Вибрати дати…',
     customTitle: 'Виберіть період',
     customField: 'Перший і останній день',
+    length: { one: '{count} день', few: '{count} дні', many: '{count} днів', other: '{count} дня' },
     show: 'Показати',
     previous: 'Попередній період',
-    next: 'Наступний період'
+    next: 'Наступний період',
+    startsOn: 'Період починається {day}-го числа щомісяця',
+    calendarMonths: 'Періоди — календарні місяці',
+    changeStart: 'Початок періоду…',
+    firstDay: 'Перший день',
+    lastDay: 'Останній день',
+    backToCurrent: 'До поточного періоду'
   },
   balance: {
     label: 'Підсумок періоду',
@@ -402,7 +461,19 @@ const uk: Widen<typeof tr> = {
     byMethod: 'Як надійшло',
     onTheWay: '{amount}, отримані карткою, ще не надійшли на рахунок.',
     onTheWayLink: 'Коли надійдуть?',
-    empty: 'У цьому періоді немає ні доходів, ні витрат.'
+    empty: 'У цьому періоді немає ні доходів, ні витрат.',
+    payments: { one: '{count} оплата', few: '{count} оплати', many: '{count} оплат', other: '{count} оплати' },
+    expenses: { one: '{count} витрата', few: '{count} витрати', many: '{count} витрат', other: '{count} витрати' },
+    before: 'попередній період: {amount}',
+    beforeLabel: 'попередній період',
+    beforeShort: 'попередній період: нестача {amount}',
+    leftHint: 'Надійшло мінус витрачено',
+    bank: 'На шляху до рахунку',
+    bankHint: 'ще не на рахунку',
+    bankNone: 'Усе вже на рахунку',
+    showIn: 'Показати надходження',
+    showOut: 'Показати витрати',
+    showBank: 'Показати гроші в дорозі'
   },
   moves: {
     title: 'Операції',
@@ -417,6 +488,7 @@ const uk: Widen<typeof tr> = {
     empty: 'У цьому періоді немає операцій.',
     emptyBody: 'Тут з’являться витрати, які ви додасте, і оплати, які ви отримаєте.',
     noMatch: 'Немає операцій за цим пошуком або фільтрами.',
+    noMatchFilter: 'Немає операцій за цим фільтром.',
     showMore: {
       one: 'Показати ще {count} операцію',
       few: 'Показати ще {count} операції',
@@ -478,15 +550,18 @@ const uk: Widen<typeof tr> = {
   },
   months: {
     title: 'По місяцях',
+    periodsTitle: 'По періодах',
     six: '6 місяців',
     twelve: '12 місяців',
     rangeLabel: 'Скільки місяців',
     table: 'Показати таблицею',
     chart: 'Показати графіком',
     month: 'Місяць',
+    period: 'Період',
     difference: 'Різниця',
     show: 'Показати: {month}',
-    chartLabel: 'Надходження і витрати за останні {count} місяців'
+    chartLabel: 'Надходження і витрати за останні {count} місяців',
+    periodsLabel: 'Надходження і витрати за останні {count} періодів'
   },
   expense: {
     newTitle: 'Додати витрату',
@@ -507,7 +582,7 @@ const uk: Widen<typeof tr> = {
     saved: 'Витрату записано',
     savedBody: '{date} · {amount}',
     outside: '{date} поза періодом на екрані, тому її немає в списку.',
-    showMonth: 'Показати той місяць',
+    showMonth: 'Показати той період',
     updated: 'Зміни збережено',
     failed: 'Не вдалося зберегти; нічого не змінено.',
     repeatFailed: 'Витрату записано, але не вдалося додати її до щомісячного списку.',

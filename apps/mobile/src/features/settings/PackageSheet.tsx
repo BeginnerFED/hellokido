@@ -30,7 +30,15 @@ export function PackageSheet({ code }: { code: string }) {
     <SheetScreen title={t.settings.packages.form.title} subtitle={pkg ? labels.packageName(pkg.code) : undefined} dirty={state.dirty} busy={state.busy}>
       {!catalog.data ? (
         catalog.isError ? (
-          <EmptyState icon="info" title={t.common.loadFailed} />
+          <EmptyState
+            icon="info"
+            title={t.common.loadFailed}
+            action={
+              <Button size="sm" icon="refresh" busy={catalog.isFetching} onPress={() => void catalog.refetch()}>
+                {t.common.retry}
+              </Button>
+            }
+          />
         ) : (
           <View style={styles.stack}>
             <Skeleton height={50} radius={13} />

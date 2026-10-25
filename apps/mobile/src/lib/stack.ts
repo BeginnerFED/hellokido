@@ -1,17 +1,17 @@
 import type { NativeStackNavigationOptions } from 'expo-router'
 import type { Colors } from '../theme/colors'
 
-/** Every tab's stack: the phone's large title on a white header with a hairline, over the warm canvas. */
+/**
+ * Every tab's stack: the title in the white bar with a hairline, over the warm canvas. Compact on
+ * purpose: the iPhone's large title left an empty white band above the page (owner, 2026-10-25).
+ */
 export function stackOptions(c: Colors): NativeStackNavigationOptions {
   return {
-    headerLargeTitleEnabled: true,
+    headerLargeTitleEnabled: false,
     headerShadowVisible: true,
-    headerLargeTitleShadowVisible: true,
     headerStyle: { backgroundColor: c.surface },
-    headerLargeStyle: { backgroundColor: c.surface },
     headerTintColor: c.accentInk,
     headerTitleStyle: { color: c.ink },
-    headerLargeTitleStyle: { color: c.ink },
     headerBackButtonDisplayMode: 'minimal',
     contentStyle: { backgroundColor: c.ground }
   }

@@ -14,6 +14,7 @@ import {
 } from '@hellokido/core/api'
 import { formatAmountForInput, isPositiveAmount, parseAmount } from '@hellokido/core/rules/money.js'
 import { upperFirst } from '@hellokido/core/rules/text.js'
+import { cycleOf } from '@hellokido/core/view'
 import { useCatalog, useLabels, useRefresh } from '../../data/queries'
 import { useI18n } from '../../providers/I18n'
 import { useToast } from '../../providers/Toasts'
@@ -28,7 +29,7 @@ import { keepCaret } from '../../ui/caret'
 import { amountError, METHODS } from '../money/PaymentFields'
 import { onDay } from './bits'
 import type { VisibleRange } from './Moves'
-import { monthOf, periodParams } from './period'
+import { periodParams } from './period'
 import { visibleRange } from './visible'
 
 export type ExpenseParams = {
@@ -65,6 +66,7 @@ function ExpenseForm({ params, onDone, onStateChange }: { params: ExpenseParams;
   const { t, fmt, money, date } = useI18n()
   const labels = useLabels()
   const catalog = useCatalog().data
+  const startDay = catalog?.settings.moneyPeriodStartDay
   const toast = useToast()
   const refresh = useRefresh()
   const navigate = useNavigate()
@@ -118,7 +120,7 @@ function ExpenseForm({ params, onDone, onStateChange }: { params: ExpenseParams;
   const tellSaved = (when: Date, value: number, edited: boolean) => {
     const visible = params.visible ?? visibleRange()
     const outside = visible ? when < new Date(visible.from) || when > new Date(visible.to) : false
-    const range = periodParams(monthOf(when))
+    const range = periodParams(cycleOf(when, startDay ?? 1))
     toast({
       tone: 'success',
       title: edited ? t.finance.expense.updated : t.finance.expense.saved,

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { StyleSheet, View } from 'react-native'
 import { useQuery } from '@tanstack/react-query'
 import * as Haptics from 'expo-haptics'
@@ -47,14 +47,17 @@ function ThemeForm({ week, current, onStateChange }: { week: string; current: st
   const sheet = useSheet()
   const [draft, setDraft] = useState(current)
   const [busy, setBusy] = useState(false)
+  const sending = useRef(false)
   const [error, setError] = useState<string | null>(null)
   const next = draft.trim()
   const dirty = next !== current
   useEffect(() => onStateChange({ dirty, busy }), [dirty, busy, onStateChange])
 
   const save = async (value: string) => {
-    if (busy) return
+    if (busy || sending.current) return
     if (value === current) return sheet.finish()
+    // The return key and the button can both fire before the next render
+    sending.current = true
     setBusy(true)
     setError(null)
     try {
@@ -66,6 +69,7 @@ function ThemeForm({ week, current, onStateChange }: { week: string; current: st
     } catch {
       setError(t.calendar.theme.saveFailed)
     } finally {
+      sending.current = false
       setBusy(false)
     }
   }

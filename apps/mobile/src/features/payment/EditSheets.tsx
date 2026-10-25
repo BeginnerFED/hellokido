@@ -15,9 +15,10 @@ const IDLE: FormState = { dirty: false, busy: false }
 function Waiting() {
   return (
     <View style={styles.stack}>
-      <Skeleton height={50} radius={13} />
-      <Skeleton height={104} radius={14} />
-      <Skeleton height={50} radius={13} />
+      {/* The form's own shapes: a field, the period card, a field */}
+      <Skeleton height={50} radius={14} />
+      <Skeleton height={104} radius={18} />
+      <Skeleton height={50} radius={14} />
     </View>
   )
 }

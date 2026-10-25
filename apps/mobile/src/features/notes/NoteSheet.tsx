@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, Pressable, StyleSheet, View } from 'react-native'
+import { Alert, Pressable, StyleSheet, View, type TextInputInstance } from 'react-native'
 import { useQuery } from '@tanstack/react-query'
 import * as Haptics from 'expo-haptics'
 import { addNote, deleteNote, listNotes, NOTE_COLORS, updateNote, type Note, type NoteFields } from '@hellokido/core/api'
@@ -37,7 +37,17 @@ export function NoteSheet({ id }: { id?: string }) {
           <Skeleton height={180} radius={13} />
         </View>
       ) : missing ? (
-        <EmptyState icon="info" title={list.isError ? t.common.loadFailed : t.notes.form.notFound} />
+        <EmptyState
+          icon="info"
+          title={list.isError ? t.common.loadFailed : t.notes.form.notFound}
+          action={
+            list.isError ? (
+              <Button size="sm" icon="refresh" busy={list.isFetching} onPress={() => void list.refetch()}>
+                {t.common.retry}
+              </Button>
+            ) : undefined
+          }
+        />
       ) : (
         <NoteForm note={note} onStateChange={setState} />
       )}
@@ -66,6 +76,7 @@ function NoteForm({ note, onStateChange }: { note: Note | null; onStateChange: (
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const contentRef = useRef<TextInputInstance>(null)
   useEffect(() => () => {
     if (copiedTimer.current) clearTimeout(copiedTimer.current)
   }, [])
@@ -162,8 +173,11 @@ function NoteForm({ note, onStateChange }: { note: Note | null; onStateChange: (
         autoComplete="off"
         autoFocus={!note}
         returnKeyType="next"
+        submitBehavior="submit"
+        onSubmitEditing={() => contentRef.current?.focus()}
       />
       <TextField
+        ref={contentRef}
         label={t.notes.form.content}
         placeholder={t.notes.form.contentPlaceholder}
         value={content}
