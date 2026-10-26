@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-nativ
 import { format, isSameYear } from 'date-fns'
 import type { Expense, IncomeLine } from '@hellokido/core/api'
 import { upperFirst } from '@hellokido/core/rules/text.js'
-import { formatPeriod } from '@hellokido/core/view'
+import { packageStartText } from '@hellokido/core/view'
 import { useLabels, type Labels } from '../../data/queries'
 import { tasks, useOpenChild } from '../../lib/navigation'
 import { useI18n, type I18n } from '../../providers/I18n'
@@ -53,7 +53,7 @@ function incomeMove(i18n: I18n, labels: Labels, line: IncomeLine, openChild: (id
         : line.description
           ? labels.incomeCategory(line.category)
           : ''
-  const period = line.source === 'package' ? formatPeriod(i18n, line.periodStart, line.periodEnd) : ''
+  const period = line.source === 'package' ? packageStartText(i18n, line.periodStart, line.packageType) : ''
   const registrationId = line.registrationId
   return {
     key: line.key,

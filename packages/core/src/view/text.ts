@@ -28,6 +28,16 @@ export function formatPeriod(i18n: Pick<ViewI18n, 'date'>, start: string | Date 
   return `${i18n.date(from, sameYear ? short : long)} – ${i18n.date(to, long)}`
 }
 
+/**
+ * "Start: 21 Oct": a package has a first day only. Families finish later than planned, so the last
+ * day the database keeps is never shown. A single session shows just its day.
+ */
+export function packageStartText(i18n: Pick<ViewI18n, 't' | 'fmt' | 'date'>, start: string | Date | null | undefined, packageType?: string | null) {
+  if (!start) return ''
+  const day = shortDate(i18n, start)
+  return packageType === 'tek-seferlik' ? day : i18n.fmt(i18n.t.children.detail.startsOn, { date: day })
+}
+
 /** "24 Oct", with the year only when it is not this year. */
 export function shortDate(i18n: Pick<ViewI18n, 'date'>, value: string | Date) {
   const day = new Date(value)

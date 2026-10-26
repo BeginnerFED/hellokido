@@ -16,20 +16,20 @@ import {
 } from '@hellokido/core/api'
 import { MAX_EXTRA_LESSONS } from '@hellokido/core/rules/lessonUsage.js'
 import { formatAmountForInput, isPositiveAmount, parseAmount } from '@hellokido/core/rules/money.js'
-import { isMissingPeriodEnd } from '@hellokido/core/rules/packagePeriod.js'
+import { packageEndFor } from '@hellokido/core/rules/packagePeriod.js'
 import { isValidPhone, normalizePhone, phoneDigits } from '@hellokido/core/rules/phone.js'
 import { findRegistrationByPhone } from '@hellokido/core/rules/registrationLookup.js'
 import { capitalizeName, capitalizeWords, upperFirst } from '@hellokido/core/rules/text.js'
-import { FREE, periodHint, sameInstant, UNDECIDED } from '@hellokido/core/view'
+import { FREE, sameInstant, UNDECIDED } from '@hellokido/core/view'
 import { keys, useLabels, useRefresh, useRegistrations } from '../../data/queries'
 import { useI18n } from '../../providers/I18n'
 import { EmptyState, Skeleton } from '../../ui/Bits'
-import { PeriodField, Segmented, SelectField, Stepper, TextField } from '../../ui/Fields'
+import { DateField, Segmented, SelectField, Stepper, TextField } from '../../ui/Fields'
 import { FormGroup } from '../../ui/Screen'
 import { formAction, SheetActions, SheetScreen, useReportForm, useSheet, type FormState } from '../../ui/Sheet'
 import { DOT, Text } from '../../ui/Text'
 import { useToast } from '../../ui/Toast'
-import { groupNotes, usePackageOptions, usePackagePrice, usePaymentRows } from '../payment/fields'
+import { usePackageOptions, usePackagePrice, usePaymentRows } from '../payment/fields'
 import { useTakeOffWaitlist } from '../waitlist/handoff'
 
 const IDLE: FormState = { dirty: false, busy: false }
@@ -112,7 +112,6 @@ function RegistrationForm({ registration: row, fromWaitlist, onStateChange }: Fo
       phone: row?.parent_phone ?? prefill?.phone ?? '',
       packageType: row?.package_type ?? prefill?.packageType ?? null,
       start: row ? new Date(row.package_start_date) : null,
-      end: row ? new Date(row.package_end_date) : null,
       status: (row?.payment_status as PaymentStatus | undefined) ?? null,
       method: row?.payment_status === 'odendi' ? (row.payment_method as PaymentMethod) : null,
       amount: row?.payment_status === 'odendi' ? formatAmountForInput(row.payment_amount) : '',
@@ -128,7 +127,6 @@ function RegistrationForm({ registration: row, fromWaitlist, onStateChange }: Fo
   const [phone, setPhone] = useState(initial.phone)
   const [packageType, setPackageType] = useState<string | null>(initial.packageType)
   const [start, setStart] = useState<Date | null>(initial.start)
-  const [end, setEnd] = useState<Date | null>(initial.end)
   const [status, setStatus] = useState<PaymentStatus | null>(initial.status)
   const [method, setMethod] = useState<PaymentMethod | null>(initial.method)
   const [amount, setAmount] = useState(initial.amount)
@@ -149,27 +147,20 @@ function RegistrationForm({ registration: row, fromWaitlist, onStateChange }: Fo
   const packageOptions = usePackageOptions({ includeFree: true, current: initial.packageType })
   const price = usePackagePrice(packageType)
   const free = packageType === FREE
-  const range = start && end ? { start, end } : null
 
   const changePackage = (next: string) => {
     const wasFree = packageType === FREE
     setPackageType(next)
     if (next === FREE) {
       // Free participation has no period and no payment
-      if (!editing) {
-        setStart(null)
-        setEnd(null)
-      }
+      if (!editing) setStart(null)
       setStatus('ucretsiz')
       setMethod(null)
       setAmount('')
       setDate(null)
     } else if (wasFree) {
-      // Back to a paid package: the payment is chosen again, and a new child needs a real period
-      if (!editing) {
-        setStart(null)
-        setEnd(null)
-      }
+      // Back to a paid package: the payment is chosen again, and a new child needs a real first day
+      if (!editing) setStart(null)
       setStatus(null)
       setMethod(null)
       setAmount('')
@@ -199,7 +190,11 @@ function RegistrationForm({ registration: row, fromWaitlist, onStateChange }: Fo
     if (packageType && packageType !== row.package_type) diff.package_type = packageType
     if (packageType && packageType !== FREE) {
       if (start && !sameInstant(start, row.package_start_date)) diff.package_start_date = start.toISOString()
-      if (end && !sameInstant(end, row.package_end_date)) diff.package_end_date = end.toISOString()
+      // The last day is never chosen: it follows the first day and the package
+      if (start && ('package_start_date' in diff || 'package_type' in diff)) {
+        const end = packageEndFor(packageType, start)
+        if (!sameInstant(end, row.package_end_date)) diff.package_end_date = end.toISOString()
+      }
       if (status && status !== row.payment_status) diff.payment_status = status
       const pending = status === 'beklemede'
       const nextMethod = pending ? 'belirlenmedi' : method
@@ -211,17 +206,13 @@ function RegistrationForm({ registration: row, fromWaitlist, onStateChange }: Fo
       if (extra !== (row.extra_lessons || 0)) diff.extra_lessons = extra
     }
     return diff
-  }, [row, studentName, parentName, age, note, phone, packageType, start, end, status, method, amount, date, extra])
+  }, [row, studentName, parentName, age, note, phone, packageType, start, status, method, amount, date, extra])
 
-  const packageChanged = 'package_type' in changes || 'package_start_date' in changes || 'package_end_date' in changes
   const paymentChanged = ['payment_status', 'payment_method', 'payment_amount', 'payment_date'].some((key) => key in changes)
 
   // ---- checks
   const phoneEdited = !row || phone !== row.parent_phone
   const phoneOk = phoneEdited ? isValidPhone(phone) : phone.trim() !== ''
-  const checkPeriod = !free && (!row || packageChanged)
-  const missingEnd = Boolean(checkPeriod && range && packageType && isMissingPeriodEnd(packageType, range.start, range.end))
-  const hint = !free && !missingEnd ? periodHint(packageType, range) : null
   const paidComplete = Boolean(method && method !== 'belirlenmedi' && isPositiveAmount(amount) && date)
   const paymentOk = free || status === 'beklemede' || (status === 'odendi' && paidComplete)
   const valid = Boolean(
@@ -230,7 +221,7 @@ function RegistrationForm({ registration: row, fromWaitlist, onStateChange }: Fo
       age.trim() &&
       phoneOk &&
       packageType &&
-      (free || (range && !missingEnd)) &&
+      (free || start) &&
       paymentOk &&
       (free || status === 'odendi' || status === 'beklemede')
   )
@@ -244,7 +235,7 @@ function RegistrationForm({ registration: row, fromWaitlist, onStateChange }: Fo
       phone !== initial.phone ||
       packageType !== initial.packageType ||
       note !== initial.note ||
-      Boolean(start || end || status || amount || extra)
+      Boolean(start || status || amount || extra)
 
   const describePayment = (values: { status: string | null; amount: number | null; method: string | null; date: Date | string | null }) =>
     values.status !== 'odendi'
@@ -288,7 +279,7 @@ function RegistrationForm({ registration: row, fromWaitlist, onStateChange }: Fo
         refresh.children(row.id)
         sheet.finish()
       } else {
-        const period = free ? freeDay() : range!
+        const period = free ? freeDay() : { start: start!, end: packageEndFor(packageType, start!) }
         const pending = free || status === 'beklemede'
         const created = (await createRegistration({
           student_name: studentName.trim(),
@@ -349,10 +340,6 @@ function RegistrationForm({ registration: row, fromWaitlist, onStateChange }: Fo
   // The sheet puts "Add" or "Save" in its bar; a child's details wait for a change before "Save" can be pressed
   useReportForm(onStateChange, { dirty, busy, ready: valid && (!row || dirty) }, () => void save())
   const paymentRows = usePaymentRows({ method, onMethod: setMethod, amount, onAmount: setAmount, date, onDate: setDate, suggestion: price })
-  const periodNotes = groupNotes([
-    missingEnd && { tone: 'negative', text: row ? t.children.form.missingEndEdit : t.children.form.missingEnd },
-    hint && { tone: 'action', text: fmt(t.children.form[hint.key], { days: hint.days }) }
-  ])
 
   return (
     <>
@@ -426,6 +413,7 @@ function RegistrationForm({ registration: row, fromWaitlist, onStateChange }: Fo
 
       <FormGroup footer={free ? t.children.form.freeNote : undefined}>
         <SelectField label={t.children.form.packageType} placeholder={t.children.form.packagePlaceholder} options={packageOptions} value={packageType} onChange={changePackage} />
+        {!free && <DateField label={t.children.form.start} value={start} onChange={setStart} hint={start ? undefined : t.children.form.startHelp} shortcuts />}
         {!free && (
           <Stepper
             label={t.children.form.extraLessons}
@@ -437,23 +425,6 @@ function RegistrationForm({ registration: row, fromWaitlist, onStateChange }: Fo
           />
         )}
       </FormGroup>
-
-      {!free && (
-        <PeriodField
-          label={t.children.form.period}
-          hint={range ? undefined : t.children.form.periodHelp}
-          startLabel={t.mobile.periodStart}
-          endLabel={t.mobile.periodEnd}
-          start={start}
-          end={end}
-          onStart={(next) => {
-            setStart(next)
-            if (end && end < next) setEnd(null)
-          }}
-          onEnd={setEnd}
-          footer={periodNotes}
-        />
-      )}
 
       {!free && (
         <FormGroup>

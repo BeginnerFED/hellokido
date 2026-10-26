@@ -5,7 +5,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import * as Haptics from 'expo-haptics'
 import { releaseSeats, remainingTone, setRegistrationActive, upcomingSeats, type Registration, type Usage } from '@hellokido/core/api'
 import { phoneDigits, whatsAppLink } from '@hellokido/core/rules/phone.js'
-import { beadsLabel, formatPeriod, isFree, lessonsLeftText, needsRenewal } from '@hellokido/core/view'
+import { beadsLabel, isFree, lessonsLeftText, needsRenewal, packageStartText } from '@hellokido/core/view'
 import { keys, useActiveUsage, useChildUsage, useLabels, useRefresh, useRegistrations } from '../../data/queries'
 import { headerMenu, tasks } from '../../lib/navigation'
 import { useI18n } from '../../providers/I18n'
@@ -410,7 +410,7 @@ function PackageCard({ registration, usage, failed, onRetry }: { registration: R
           {labels.packageName(registration.package_type)}
         </Text>
         <Text variant="sub" tone="ink3" tabular numberOfLines={1}>
-          {free ? t.children.detail.unlimited : formatPeriod(i18n, registration.package_start_date, registration.package_end_date)}
+          {free ? t.children.detail.unlimited : packageStartText(i18n, registration.package_start_date, registration.package_type)}
         </Text>
       </View>
       {body}

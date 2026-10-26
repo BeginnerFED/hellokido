@@ -7,6 +7,5 @@ export {
   isRunningLow,
   matchesChild,
   needsRenewal,
-  periodHint,
   sameInstant
 } from '@hellokido/core/view'

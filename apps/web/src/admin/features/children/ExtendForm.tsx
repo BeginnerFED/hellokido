@@ -1,7 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Button as AriaButton } from 'react-aria-components'
-import { addDays, addMonths, startOfDay } from 'date-fns'
 import {
   carrySource,
   extendRegistration,
@@ -15,23 +13,22 @@ import {
 } from '@hellokido/core/api'
 import { MAX_EXTRA_LESSONS } from '@hellokido/core/rules/lessonUsage.js'
 import { formatAmountForInput, isPositiveAmount, parseAmount } from '@hellokido/core/rules/money.js'
-import { isMissingPeriodEnd } from '@hellokido/core/rules/packagePeriod.js'
+import { packageEndFor } from '@hellokido/core/rules/packagePeriod.js'
 import { upperFirst } from '@hellokido/core/rules/text.js'
 import { useRefresh } from '../../data/queries'
 import { useI18n } from '../../providers/I18n'
 import { useToast } from '../../providers/Toasts'
 import { Button } from '../../ui/Button'
 import { Segmented, Select } from '../../ui/Choice'
-import { DateRangeField, type DateRange } from '../../ui/DateRangeField'
+import { DateField } from '../../ui/DateField'
 import { TextArea } from '../../ui/Field'
 import { FormRule, Notice, type NoticeTone } from '../../ui/Notice'
 import { SheetActions, SheetFooter } from '../../ui/Sheet'
 import { Stepper } from '../../ui/Stepper'
 import { keepCaret } from '../../ui/caret'
-import { dateRange } from '../calendar/labels'
 import { PaymentFields } from '../money/PaymentFields'
 import { usePackageOptions, usePackagePrice } from './packageOptions'
-import { FREE, periodHint, sameInstant } from './rules'
+import { FREE, sameInstant } from './rules'
 
 export type ExtendMode = 'renew' | 'instalment' | 'edit'
 
@@ -49,7 +46,10 @@ type Props = {
 
 const dateOf = (value: string | null | undefined) => (value ? new Date(value) : null)
 
-const periodOf = (row: Pick<Registration, 'package_start_date' | 'package_end_date'>): DateRange => ({
+type Period = { type: string; start: Date; end: Date }
+
+const periodOf = (row: Pick<Registration, 'package_type' | 'package_start_date' | 'package_end_date'>): Period => ({
+  type: row.package_type,
   start: new Date(row.package_start_date),
   end: new Date(row.package_end_date)
 })
@@ -73,7 +73,8 @@ export function ExtendForm({ registration, mode, extension, onDone, onStateChang
       const end = dateOf(extension.new_end_date)
       return {
         packageType: extension.new_package_type as string | null,
-        range: start && end ? { start, end } : null,
+        start,
+        period: start && end ? ({ type: extension.new_package_type, start, end } as Period) : null,
         status: (pending ? 'beklemede' : 'odendi') as 'odendi' | 'beklemede',
         method: pending ? null : (extension.payment_method as PaymentMethod),
         amount: pending ? '' : formatAmountForInput(extension.payment_amount),
@@ -83,7 +84,8 @@ export function ExtendForm({ registration, mode, extension, onDone, onStateChang
     }
     return {
       packageType: registration.package_type === FREE ? null : registration.package_type,
-      range: mode === 'instalment' ? periodOf(registration) : null,
+      start: mode === 'instalment' ? new Date(registration.package_start_date) : null,
+      period: null as Period | null,
       status: 'odendi' as 'odendi' | 'beklemede',
       method: null as PaymentMethod | null,
       amount: '',
@@ -95,8 +97,8 @@ export function ExtendForm({ registration, mode, extension, onDone, onStateChang
   }, [])
 
   const [packageType, setPackageType] = useState(initial.packageType)
-  const [range, setRange] = useState<DateRange | null>(initial.range)
-  const [rangeTouched, setRangeTouched] = useState(false)
+  const [start, setStart] = useState<Date | null>(initial.start)
+  const [startTouched, setStartTouched] = useState(false)
   const [status, setStatus] = useState(initial.status)
   const [method, setMethod] = useState<PaymentMethod | null>(initial.method)
   const [amount, setAmount] = useState(initial.amount)
@@ -117,8 +119,14 @@ export function ExtendForm({ registration, mode, extension, onDone, onStateChang
 
   // An instalment pays for the period as the database has it now, not as the list showed it
   useEffect(() => {
-    if (mode === 'instalment' && source.data && !rangeTouched) setRange(periodOf(source.data.registration))
-  }, [mode, source.data, rangeTouched])
+    if (mode === 'instalment' && source.data && !startTouched) setStart(new Date(source.data.registration.package_start_date))
+  }, [mode, source.data, startTouched])
+
+  // The last day is never chosen. A payment that keeps its period (an instalment, a correction)
+  // keeps the stored last day; any other follows the first day and the package.
+  const kept = mode === 'edit' ? initial.period : periodOf(current)
+  const endFor = (type: string, first: Date) =>
+    kept && kept.type === type && sameInstant(first, kept.start) ? kept.end : packageEndFor(type, first)
 
   const packageOptions = usePackageOptions({ includeFree: false, current: initial.packageType })
   const price = usePackagePrice(packageType)
@@ -131,21 +139,11 @@ export function ExtendForm({ registration, mode, extension, onDone, onStateChang
     if (next === 'beklemede') setAmount('')
   }
 
-  const periodEdited =
-    mode !== 'edit' ||
-    packageType !== initial.packageType ||
-    !sameInstant(range?.start, initial.range?.start) ||
-    !sameInstant(range?.end, initial.range?.end)
-  const missingEnd = Boolean(range && packageType && periodEdited && isMissingPeriodEnd(packageType, range.start, range.end))
-  const hint = !missingEnd ? periodHint(packageType, range) : null
-
-  const movesPeriod = startsNewPeriod(current.package_start_date, range?.start ?? null)
-  const preview = mode === 'edit' ? null : previewExtension(source.data ?? null, packageType, range?.start ?? null, extra)
+  const movesPeriod = startsNewPeriod(current.package_start_date, start)
+  const preview = mode === 'edit' ? null : previewExtension(source.data ?? null, packageType, start, extra)
 
   let notice: { tone: NoticeTone; text: string } | null = null
-  if (missingEnd) {
-    notice = { tone: 'negative', text: t.children.form.missingEnd }
-  } else if (mode !== 'edit' && range && packageType) {
+  if (mode !== 'edit' && start && packageType) {
     const extraNote = preview && preview.extra > 0 ? fmt(t.children.extend.extraNote, { count: preview.extra }) : ''
     const numbers = { total: preview?.total ?? 0, remaining: preview?.remaining ?? 0, carried: preview?.carried ?? 0, extra: extraNote }
     if (source.data && !movesPeriod && packageType === 'tek-seferlik') notice = { tone: 'info', text: t.children.extend.singleSameDay }
@@ -165,12 +163,11 @@ export function ExtendForm({ registration, mode, extension, onDone, onStateChang
   }, [mode, extension, current.package_start_date])
 
   const paidComplete = status === 'beklemede' || Boolean(method && method !== 'belirlenmedi' && isPositiveAmount(amount) && date)
-  const valid = Boolean(packageType && range && range.start <= range.end && !missingEnd && paidComplete)
+  const valid = Boolean(packageType && start && paidComplete)
 
   const dirty =
     packageType !== initial.packageType ||
-    !sameInstant(range?.start, initial.range?.start) ||
-    !sameInstant(range?.end, initial.range?.end) ||
+    !sameInstant(start, initial.start) ||
     status !== initial.status ||
     method !== initial.method ||
     amount !== initial.amount ||
@@ -181,14 +178,14 @@ export function ExtendForm({ registration, mode, extension, onDone, onStateChang
   useEffect(() => onStateChange?.({ dirty, busy }), [dirty, busy, onStateChange])
 
   const save = async () => {
-    if (!valid || busy || !range || !packageType) return
+    if (!valid || busy || !start || !packageType) return
     // A panel left open on another child must never write under this child's name
     if (mode === 'edit' && extension?.registration_id !== registration.id) return
     setBusy(true)
     const payment = {
       packageType,
-      startDate: range.start,
-      endDate: range.end,
+      startDate: start,
+      endDate: endFor(packageType, start),
       paymentStatus: status,
       paymentMethod: (method ?? 'belirlenmedi') as PaymentMethod,
       paymentAmount: parseAmount(amount) ?? 0,
@@ -234,34 +231,6 @@ export function ExtendForm({ registration, mode, extension, onDone, onStateChang
     }
   }
 
-  // A renewal usually runs on from the day after the current period, as long as the package lasts;
-  // a period that ended weeks ago starts again today instead
-  const nextPeriod = useMemo(() => {
-    if (mode !== 'renew' || !packageType) return null
-    const today = startOfDay(new Date())
-    const after = addDays(startOfDay(new Date(current.package_end_date)), 1)
-    const start = after < addDays(today, -14) ? today : after
-    const months = packageType.startsWith('3ay-') ? 3 : packageType.startsWith('hafta-') ? 1 : 0
-    return { start, end: months ? addDays(addMonths(start, months), -1) : start }
-  }, [mode, packageType, current.package_end_date])
-  const showNext = nextPeriod && !(sameInstant(range?.start, nextPeriod.start) && sameInstant(range?.end, nextPeriod.end))
-
-  const currentPeriodButton =
-    mode === 'edit'
-      ? undefined
-      : (close: () => void) => (
-          <AriaButton
-            onPress={() => {
-              setRange(periodOf(current))
-              setRangeTouched(true)
-              close()
-            }}
-            className="w-full rounded-[0.5rem] px-2.5 py-2 text-left text-sm font-medium text-accent-ink outline-none data-hovered:bg-accent-wash data-focus-visible:ring-2 data-focus-visible:ring-focus"
-          >
-            {t.children.extend.useCurrent}
-          </AriaButton>
-        )
-
   return (
     <div className="flex flex-col gap-5">
       <Select
@@ -271,33 +240,17 @@ export function ExtendForm({ registration, mode, extension, onDone, onStateChang
         value={packageType}
         onChange={setPackageType}
       />
-      <DateRangeField
-        label={t.children.form.period}
-        value={range}
+      <DateField
+        label={t.children.form.start}
+        value={start}
         onChange={(next) => {
-          setRange(next)
-          setRangeTouched(true)
+          setStart(next)
+          setStartTouched(true)
         }}
         minValue={minDate}
-        description={range ? undefined : t.children.form.periodHelp}
-        popoverFooter={currentPeriodButton}
+        description={start ? undefined : t.children.form.startHelp}
+        shortcuts={mode === 'renew'}
       />
-      {showNext && (
-        <div className="-mt-2 flex flex-col items-start gap-1">
-          <Button
-            size="sm"
-            variant="secondary"
-            onPress={() => {
-              setRange(nextPeriod)
-              setRangeTouched(true)
-            }}
-          >
-            {fmt(t.children.extend.nextPeriod, { range: dateRange(i18n, nextPeriod.start, nextPeriod.end, { day: 'numeric', month: 'short', year: 'numeric' }) })}
-          </Button>
-          <p className="text-[0.8125rem] text-ink-3">{t.children.extend.nextPeriodHint}</p>
-        </div>
-      )}
-      {hint && <Notice tone="action">{fmt(t.children.form[hint.key], { days: hint.days })}</Notice>}
       {notice && <Notice tone={notice.tone}>{notice.text}</Notice>}
       {mode !== 'edit' && (
         <Stepper

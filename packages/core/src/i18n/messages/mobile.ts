@@ -2,8 +2,6 @@ import type { Widen } from '../types'
 
 // Words only the iPhone app needs; everything else is shared with the web panel
 const tr = {
-  periodStart: 'İlk gün',
-  periodEnd: 'Son gün',
   clearSearch: 'Aramayı temizle',
   // Archiving asks in the phone's own alert, so the seat question becomes two buttons
   archiveSeats: { one: 'İleri tarihli {count} derste yeri var.', other: 'İleri tarihli {count} derste yeri var.' },
@@ -46,8 +44,6 @@ const tr = {
 }
 
 const en: Widen<typeof tr> = {
-  periodStart: 'First day',
-  periodEnd: 'Last day',
   clearSearch: 'Clear search',
   archiveSeats: { one: 'Holds a seat in {count} upcoming lesson.', other: 'Holds a seat in {count} upcoming lessons.' },
   archiveReleaseHint: 'Freeing the seats takes the child out of lessons still to come; past lessons do not change.',
@@ -85,8 +81,6 @@ const en: Widen<typeof tr> = {
 }
 
 const uk: Widen<typeof tr> = {
-  periodStart: 'Перший день',
-  periodEnd: 'Останній день',
   clearSearch: 'Очистити пошук',
   archiveSeats: {
     one: 'Має місце на {count} майбутньому занятті.',

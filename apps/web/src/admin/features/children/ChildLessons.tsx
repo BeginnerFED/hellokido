@@ -78,21 +78,13 @@ export function ChildLessons({ registration, level }: { registration: Registrati
     void client.invalidateQueries({ queryKey: ['lessons'] })
   }
 
-  const period = useMemo(() => {
-    const start = startOfDay(new Date(registration.package_start_date))
-    // A period never draws backwards, even from a damaged row
-    return { start, end: latest([start, startOfDay(new Date(registration.package_end_date))]) }
-  }, [registration.package_start_date, registration.package_end_date])
+  // A package has no last day: its lessons count from the first day until the next package starts
+  const start = useMemo(() => startOfDay(new Date(registration.package_start_date)), [registration.package_start_date])
   const rows = lessons.data ?? []
   const total = rows.length
-  const inPeriod = useMemo(
-    () =>
-      (lessons.data ?? []).filter((row) => {
-        const day = startOfDay(new Date(row.events!.event_date))
-        return day >= period.start && day <= period.end
-      }),
-    [lessons.data, period]
-  )
+  const inPeriod = useMemo(() => (lessons.data ?? []).filter((row) => startOfDay(new Date(row.events!.event_date)) >= start), [lessons.data, start])
+  // The calendar runs on to the period's last lesson, however late that falls
+  const period = useMemo(() => ({ start, end: latest([start, ...inPeriod.map((row) => startOfDay(new Date(row.events!.event_date)))]) }), [start, inPeriod])
 
   const showCalendar = !free && mode === 'calendar'
   const outside = total - inPeriod.length

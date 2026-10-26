@@ -25,7 +25,7 @@ import { Card } from '../../ui/Page'
 import { displayPhone, PhoneActions } from '../../ui/PhoneActions'
 import { Beads } from '../../ui/signature'
 import { cx } from '../../ui/cx'
-import { beadsLabel, formatPeriod, lessonsLeftText } from './ChildBits'
+import { beadsLabel, lessonsLeftText, packageStartText } from './ChildBits'
 import { ChildLessons } from './ChildLessons'
 import { MessageHistory, SendMessageSheet } from './ChildMessages'
 import { ChildPayments } from './ChildPayments'
@@ -276,7 +276,7 @@ function PackageCard({
       ].filter(Boolean)
     : []
 
-  const period = free ? t.children.detail.unlimited : formatPeriod(i18n, registration.package_start_date, registration.package_end_date)
+  const period = free ? t.children.detail.unlimited : packageStartText(i18n, registration.package_start_date, registration.package_type)
 
   return (
     <Card

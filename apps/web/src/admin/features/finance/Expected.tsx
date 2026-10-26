@@ -6,7 +6,7 @@ import { useActions } from '../../shell/Actions'
 import { Avatar, LoadError } from '../../ui/Bits'
 import { Button } from '../../ui/Button'
 import { Card, CardLink } from '../../ui/Page'
-import { formatPeriod, shortDate } from '../children/ChildBits'
+import { packageStartText, shortDate } from '../children/ChildBits'
 import { FREE } from '../children/rules'
 import { ChildLink } from '../today/sections'
 import { IncomeTablet, ListSkeleton, Rows, cardPad, sumOf } from './bits'
@@ -114,7 +114,7 @@ export function ExpectedSection({ todayKey, id, className }: { todayKey: string;
               ) : (
                 fmt(t.finance.expected.due, { date: shortDate(i18n, `${line.dueDate}T00:00:00`) })
               ))
-            const period = line.source === 'package' ? formatPeriod(i18n, line.periodStart, line.periodEnd) : null
+            const period = line.source === 'package' ? packageStartText(i18n, line.periodStart, line.packageType) : null
             const what =
               line.source === 'package'
                 ? labels.packageName(line.packageType)

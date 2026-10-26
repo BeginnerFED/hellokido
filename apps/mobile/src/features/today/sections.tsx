@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import * as Haptics from 'expo-haptics'
 import { LessonError, setAttendance, type AttendanceStatus, type Lesson, type Registration, type Seat, type UnmarkedSeat } from '@hellokido/core/api'
 import { whatsAppLink } from '@hellokido/core/rules/phone.js'
-import { byName, formatPeriod, lessonsLeftText, shortDate } from '@hellokido/core/view'
+import { byName, lessonsLeftText, packageStartText, shortDate } from '@hellokido/core/view'
 import { useMessageWriter, useRecentReminders, useReminderLog, useRemindedText, useSeatReminders } from '../../data/messages'
 import { keys, useActiveUsage, useLabels } from '../../data/queries'
 import { tasks, useOpenChild } from '../../lib/navigation'
@@ -261,7 +261,7 @@ export function PaymentsSection({ dayKey, open, onClose, onLayout }: { dayKey: s
       <OpenHead title={t.today.payments.title} onClose={onClose} />
       <Card>
         {packages.map((child) =>
-          row(child, child.id, dots(labels.packageName(child.package_type), together(formatPeriod(i18n, child.package_start_date, child.package_end_date))), () =>
+          row(child, child.id, dots(labels.packageName(child.package_type), together(packageStartText(i18n, child.package_start_date, child.package_type))), () =>
             tasks.payment({ registrationId: child.id, choice: 'collect' })
           )
         )}

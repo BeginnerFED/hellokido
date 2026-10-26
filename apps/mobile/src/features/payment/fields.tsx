@@ -119,6 +119,6 @@ export function usePackagePrice(code: string | null) {
 }
 
 const styles = StyleSheet.create({
-  // Also used in PeriodField's footer, a row: the lines take its width and wrap
+  // Also used as a group's footnote: the lines take its width and wrap
   notes: { flexGrow: 1, flexShrink: 1, minWidth: 0, gap: 4 }
 })

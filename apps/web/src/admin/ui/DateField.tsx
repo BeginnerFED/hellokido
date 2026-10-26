@@ -67,7 +67,7 @@ export function DateField({
   const quick = [
     { label: t.common.today, date: today },
     { label: t.common.yesterday, date: addDays(today, -1) }
-  ]
+  ].filter((item) => (!minValue || item.date >= startOfDay(minValue)) && (!maxValue || item.date <= maxValue))
   return (
     <DatePicker
       aria-label={aria['aria-label']}

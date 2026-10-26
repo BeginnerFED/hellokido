@@ -26,7 +26,6 @@ export type IncomeLine = {
   isActive: boolean | null
   packageType: string | null
   periodStart: string | null
-  periodEnd: string | null
   transactionType: string | null
   category: string | null
   description: string | null
@@ -50,34 +49,30 @@ type LedgerJoined = {
     parent_name: string
     package_type: string
     package_start_date: string
-    package_end_date: string
     is_active: boolean | null
     initial_start_date: string | null
-    initial_end_date: string | null
     initial_package_type: string | null
   } | null
-  extension_history: { new_start_date: string | null; new_end_date: string; new_package_type: string; previous_end_date: string } | null
+  extension_history: { new_start_date: string | null; new_package_type: string; previous_end_date: string } | null
 }
 
 const LEDGER_FIELDS = (inner: boolean) => `id, amount, payment_method, payment_status, payment_date, created_at, transaction_type, registration_id, notes,
-  registrations${inner ? '!inner' : ''}(student_name, parent_name, package_type, package_start_date, package_end_date, is_active, initial_start_date, initial_end_date, initial_package_type),
-  extension_history(new_start_date, new_end_date, new_package_type, previous_end_date)`
+  registrations${inner ? '!inner' : ''}(student_name, parent_name, package_type, package_start_date, is_active, initial_start_date, initial_package_type),
+  extension_history(new_start_date, new_package_type, previous_end_date)`
 
-/** The package and period a ledger payment belongs to (first payment, an extension, or the current package). */
+/** The package a ledger payment belongs to and the day it started (first payment, an extension, or the current package). */
 function fromLedger(row: LedgerJoined): IncomeLine {
   const reg = row.registrations
   const ext = row.extension_history
   let packageType = reg?.package_type ?? null
   let periodStart = reg?.package_start_date ?? null
-  let periodEnd = reg?.package_end_date ?? null
   if (row.transaction_type === 'initial_payment' && reg) {
     packageType = reg.initial_package_type ?? reg.package_type
     periodStart = reg.initial_start_date ?? reg.package_start_date
-    periodEnd = reg.initial_end_date ?? reg.package_end_date
   } else if (ext) {
     packageType = ext.new_package_type
+    // Older rows did not keep the start: the new period began where the previous one ended
     periodStart = ext.new_start_date ?? ext.previous_end_date
-    periodEnd = ext.new_end_date
   }
   return {
     key: `p:${row.id}`,
@@ -95,7 +90,6 @@ function fromLedger(row: LedgerJoined): IncomeLine {
     isActive: reg?.is_active ?? null,
     packageType,
     periodStart,
-    periodEnd,
     transactionType: row.transaction_type,
     category: null,
     description: null,
@@ -124,7 +118,6 @@ function fromEntry(joined: EntryJoined): IncomeLine {
     isActive: registrations?.is_active ?? null,
     packageType: null,
     periodStart: null,
-    periodEnd: null,
     transactionType: null,
     category: row.category,
     description: row.description,

@@ -544,12 +544,10 @@ type PeriodFieldProps = {
   onStart: (day: Date) => void
   onEnd: (day: Date) => void
   minimumDate?: Date | null
-  /** A shortcut under the card, such as keeping the current period. */
-  footer?: ReactNode
 }
 
-/** A package period as the phone's calendar shows an event: a group of its own with the first and last day. */
-export function PeriodField({ label, hint, startLabel, endLabel, start, end, onStart, onEnd, minimumDate, footer }: PeriodFieldProps) {
+/** A span of days as the phone's calendar shows an event: a group of its own with the first and last day. */
+export function PeriodField({ label, hint, startLabel, endLabel, start, end, onStart, onEnd, minimumDate }: PeriodFieldProps) {
   const today = startOfDay(new Date())
   // An empty day opens on today, or on the first day allowed
   const from = (min: Date | null | undefined) => (min && min > today ? startOfDay(min) : today)
@@ -561,7 +559,6 @@ export function PeriodField({ label, hint, startLabel, endLabel, start, end, onS
         <PickerRow label={endLabel} mode="date" value={end} onPick={onEnd} start={end ?? from(start ?? minimumDate)} minimumDate={start ?? minimumDate} />
       </Card>
       {hint && <GroupFooter>{hint}</GroupFooter>}
-      {footer && <View style={styles.periodFooter}>{footer}</View>}
     </View>
   )
 }
@@ -731,7 +728,6 @@ const styles = StyleSheet.create({
   pill: { minHeight: 36, borderRadius: 10, paddingHorizontal: 13, justifyContent: 'center' },
   compact: { marginRight: -10 },
   calendar: { alignItems: 'center', paddingHorizontal: 8, paddingBottom: 8 },
-  periodFooter: { flexDirection: 'row', marginTop: 10, paddingHorizontal: 16 },
   flex: { flex: 1, minWidth: 0 },
   selectValue: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 6 },
   stepControl: { flexDirection: 'row', alignItems: 'center', borderRadius: 18, height: 36 },

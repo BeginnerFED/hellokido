@@ -12,7 +12,7 @@ import {
 } from '@hellokido/core/api'
 import { MAX_EXTRA_LESSONS } from '@hellokido/core/rules/lessonUsage.js'
 import { formatAmountForInput, isPositiveAmount, parseAmount } from '@hellokido/core/rules/money.js'
-import { isMissingPeriodEnd } from '@hellokido/core/rules/packagePeriod.js'
+import { packageEndFor } from '@hellokido/core/rules/packagePeriod.js'
 import { isValidPhone, normalizePhone, phoneDigits } from '@hellokido/core/rules/phone.js'
 import { findRegistrationByPhone } from '@hellokido/core/rules/registrationLookup.js'
 import { capitalizeName, capitalizeWords, upperFirst } from '@hellokido/core/rules/text.js'
@@ -22,7 +22,7 @@ import { useToast } from '../../providers/Toasts'
 import { Button } from '../../ui/Button'
 import { Segmented, Select } from '../../ui/Choice'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
-import { DateRangeField, type DateRange } from '../../ui/DateRangeField'
+import { DateField } from '../../ui/DateField'
 import { TextArea, TextField } from '../../ui/Field'
 import { FormRule, Notice } from '../../ui/Notice'
 import { SheetActions, SheetFooter } from '../../ui/Sheet'
@@ -31,7 +31,7 @@ import { keepCaret } from '../../ui/caret'
 import { PaymentFields } from '../money/PaymentFields'
 import type { FormState } from './ExtendForm'
 import { usePackageOptions, usePackagePrice } from './packageOptions'
-import { FREE, periodHint, sameInstant } from './rules'
+import { FREE, sameInstant } from './rules'
 
 /** What a new registration starts with, e.g. a family taken from the waitlist. */
 export type RegistrationPrefill = {
@@ -83,7 +83,7 @@ export function RegistrationForm({ registration: row, prefill, onDone, onStateCh
       parentName: row?.parent_name ?? prefill?.parentName ?? '',
       phone: row?.parent_phone ?? prefill?.phone ?? '',
       packageType: row?.package_type ?? prefill?.packageType ?? null,
-      range: row ? { start: new Date(row.package_start_date), end: new Date(row.package_end_date) } : null,
+      start: row ? new Date(row.package_start_date) : null,
       status: (row?.payment_status as PaymentStatus | undefined) ?? null,
       method: row?.payment_status === 'odendi' ? (row.payment_method as PaymentMethod) : null,
       amount: row?.payment_status === 'odendi' ? formatAmountForInput(row.payment_amount) : '',
@@ -101,7 +101,7 @@ export function RegistrationForm({ registration: row, prefill, onDone, onStateCh
   const [parentName, setParentName] = useState(initial.parentName)
   const [phone, setPhone] = useState(initial.phone)
   const [packageType, setPackageType] = useState<string | null>(initial.packageType)
-  const [range, setRange] = useState<DateRange | null>(initial.range)
+  const [start, setStart] = useState<Date | null>(initial.start)
   const [status, setStatus] = useState<PaymentStatus | null>(initial.status)
   const [method, setMethod] = useState<PaymentMethod | null>(initial.method)
   const [amount, setAmount] = useState(initial.amount)
@@ -121,14 +121,14 @@ export function RegistrationForm({ registration: row, prefill, onDone, onStateCh
     setPackageType(next)
     if (next === FREE) {
       // Free participation has no period and no payment
-      if (!editing) setRange(null)
+      if (!editing) setStart(null)
       setStatus('ucretsiz')
       setMethod(null)
       setAmount('')
       setDate(null)
     } else if (wasFree) {
-      // Back to a paid package: the payment is chosen again, and a new child needs a real period
-      if (!editing) setRange(null)
+      // Back to a paid package: the payment is chosen again, and a new child needs a real first day
+      if (!editing) setStart(null)
       setStatus(null)
       setMethod(null)
       setAmount('')
@@ -157,8 +157,12 @@ export function RegistrationForm({ registration: row, prefill, onDone, onStateCh
     }
     if (packageType && packageType !== row.package_type) diff.package_type = packageType
     if (packageType && packageType !== FREE) {
-      if (range && !sameInstant(range.start, row.package_start_date)) diff.package_start_date = range.start.toISOString()
-      if (range && !sameInstant(range.end, row.package_end_date)) diff.package_end_date = range.end.toISOString()
+      if (start && !sameInstant(start, row.package_start_date)) diff.package_start_date = start.toISOString()
+      // The last day is never chosen: it follows the first day and the package
+      if (start && ('package_start_date' in diff || 'package_type' in diff)) {
+        const end = packageEndFor(packageType, start)
+        if (!sameInstant(end, row.package_end_date)) diff.package_end_date = end.toISOString()
+      }
       if (status && status !== row.payment_status) diff.payment_status = status
       const pending = status === 'beklemede'
       const nextMethod = pending ? 'belirlenmedi' : method
@@ -170,17 +174,13 @@ export function RegistrationForm({ registration: row, prefill, onDone, onStateCh
       if (extra !== (row.extra_lessons || 0)) diff.extra_lessons = extra
     }
     return diff
-  }, [row, studentName, parentName, age, note, phone, packageType, range, status, method, amount, date, extra])
+  }, [row, studentName, parentName, age, note, phone, packageType, start, status, method, amount, date, extra])
 
-  const packageChanged = 'package_type' in changes || 'package_start_date' in changes || 'package_end_date' in changes
   const paymentChanged = ['payment_status', 'payment_method', 'payment_amount', 'payment_date'].some((key) => key in changes)
 
   // ---- checks
   const phoneEdited = !row || phone !== row.parent_phone
   const phoneOk = phoneEdited ? isValidPhone(phone) : phone.trim() !== ''
-  const checkPeriod = !free && (!row || packageChanged)
-  const missingEnd = Boolean(checkPeriod && range && packageType && isMissingPeriodEnd(packageType, range.start, range.end))
-  const hint = !free && !missingEnd ? periodHint(packageType, range) : null
   const paidComplete = Boolean(method && method !== 'belirlenmedi' && isPositiveAmount(amount) && date)
   const paymentOk = free || status === 'beklemede' || (status === 'odendi' && paidComplete)
   const valid = Boolean(
@@ -189,7 +189,7 @@ export function RegistrationForm({ registration: row, prefill, onDone, onStateCh
       age.trim() &&
       phoneOk &&
       packageType &&
-      (free || (range && !missingEnd)) &&
+      (free || start) &&
       paymentOk &&
       (free || status === 'odendi' || status === 'beklemede')
   )
@@ -203,7 +203,7 @@ export function RegistrationForm({ registration: row, prefill, onDone, onStateCh
       phone !== initial.phone ||
       packageType !== initial.packageType ||
       note !== initial.note ||
-      Boolean(range || status || amount || extra)
+      Boolean(start || status || amount || extra)
   useEffect(() => onStateChange?.({ dirty, busy }), [dirty, busy, onStateChange])
 
   const describePayment = (values: { status: string | null; amount: number | null; method: string | null; date: Date | string | null }) =>
@@ -233,7 +233,7 @@ export function RegistrationForm({ registration: row, prefill, onDone, onStateCh
         refresh.children(row.id)
         onDone(saved)
       } else {
-        const period = free ? freeDay() : range!
+        const period = free ? freeDay() : { start: start!, end: packageEndFor(packageType, start!) }
         const pending = free || status === 'beklemede'
         const created = (await createRegistration({
           student_name: studentName.trim(),
@@ -357,14 +357,7 @@ export function RegistrationForm({ registration: row, prefill, onDone, onStateCh
         <Notice>{t.children.form.freeNote}</Notice>
       ) : (
         <>
-          <DateRangeField
-            label={t.children.form.period}
-            value={range}
-            onChange={setRange}
-            description={range ? undefined : t.children.form.periodHelp}
-            errorMessage={missingEnd ? (row ? t.children.form.missingEndEdit : t.children.form.missingEnd) : undefined}
-          />
-          {hint && <Notice tone="action">{fmt(t.children.form[hint.key], { days: hint.days })}</Notice>}
+          <DateField label={t.children.form.start} value={start} onChange={setStart} description={start ? undefined : t.children.form.startHelp} shortcuts />
           <Stepper
             label={t.children.form.extraLessons}
             value={extra}

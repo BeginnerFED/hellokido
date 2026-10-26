@@ -5,7 +5,7 @@ import * as Haptics from 'expo-haptics'
 import { format, isSameDay, subDays } from 'date-fns'
 import { addExpense, cardPaymentsSince, deleteExpense, listRecurring, type Expense, type IncomeLine, type RecurringExpense } from '@hellokido/core/api'
 import { upperFirst } from '@hellokido/core/rules/text.js'
-import { arrivalOf, dueDayInPeriod, formatPeriod, FREE, inPeriod, shortDate, type Period } from '@hellokido/core/view'
+import { arrivalOf, dueDayInPeriod, FREE, inPeriod, packageStartText, shortDate, type Period } from '@hellokido/core/view'
 import { keys, useCatalog, useLabels, usePendingIncome, useRefresh, useRegistrations } from '../../data/queries'
 import { tasks } from '../../lib/navigation'
 import { useI18n } from '../../providers/I18n'
@@ -259,7 +259,7 @@ export function ExpectedSection({ todayKey, onLayout }: { todayKey: string; onLa
             ...shown.map((line) => {
               const overdue = Boolean(line.dueDate && line.dueDate < todayKey)
               const due = line.dueDate ? fmt(overdue ? t.finance.expected.overdue : t.finance.expected.due, { date: together(shortDate(i18n, `${line.dueDate}T00:00:00`)) }) : ''
-              const period = line.source === 'package' ? formatPeriod(i18n, line.periodStart, line.periodEnd) : ''
+              const period = line.source === 'package' ? packageStartText(i18n, line.periodStart, line.packageType) : ''
               const what =
                 line.source === 'package'
                   ? labels.packageName(line.packageType)

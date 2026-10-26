@@ -17,7 +17,7 @@ import { Band, Card, CardLink } from '../../ui/Page'
 import { WhatsAppLink } from '../../ui/PhoneActions'
 import { LessonShape } from '../../ui/signature'
 import { cx } from '../../ui/cx'
-import { formatPeriod, lessonsLeftText, ParentName, shortDate } from '../children/ChildBits'
+import { lessonsLeftText, packageStartText, ParentName, shortDate } from '../children/ChildBits'
 import { byName } from '../children/rules'
 import { AttendancePicker } from '../lessons/AttendancePicker'
 import { useLessonTitle } from '../lessons/LessonBits'
@@ -437,7 +437,7 @@ function PaymentRows({ waiting }: { waiting: Waiting }) {
             key={child.id}
             now={now}
             child={child}
-            meta={[labels.packageName(child.package_type), amount ?? formatPeriod(i18n, child.package_start_date, child.package_end_date)].join(', ')}
+            meta={[labels.packageName(child.package_type), amount ?? packageStartText(i18n, child.package_start_date, child.package_type)].join(', ')}
             remind={{
               kind: 'payment',
               ...write('payment', { parentName: child.parent_name, childName: child.student_name, packageCode: child.package_type, endDate: child.package_end_date, amount, now }),

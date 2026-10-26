@@ -15,7 +15,7 @@ import { SearchField } from '../../ui/Field'
 import { Band, Card, CardLink } from '../../ui/Page'
 import { useWideLayout } from '../../ui/useMediaQuery'
 import { cx } from '../../ui/cx'
-import { formatPeriod } from '../children/ChildBits'
+import { packageStartText } from '../children/ChildBits'
 import { METHODS } from '../money/PaymentFields'
 import { CategoryTablet, IncomeTablet, MINUS, methodName } from './bits'
 
@@ -61,7 +61,7 @@ function incomeMove(i18n: I18n, labels: Labels, line: IncomeLine, startTask: Sta
         : line.description
           ? labels.incomeCategory(line.category)
           : ''
-  const period = line.source === 'package' ? formatPeriod(i18n, line.periodStart, line.periodEnd) || undefined : undefined
+  const period = line.source === 'package' ? packageStartText(i18n, line.periodStart, line.packageType) || undefined : undefined
   const method = methodName(t, labels, line.method)
   return {
     key: line.key,

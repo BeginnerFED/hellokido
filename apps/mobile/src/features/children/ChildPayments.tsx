@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Alert, Pressable, StyleSheet, View } from 'react-native'
 import * as Haptics from 'expo-haptics'
 import { deleteIncomeEntry, deleteLastExtension, startsNewPeriod, type IncomeEntry, type Registration, type ResolvedExtension } from '@hellokido/core/api'
-import { FREE, formatPeriod, isFree, shortDate } from '@hellokido/core/view'
+import { FREE, isFree, packageStartText, shortDate } from '@hellokido/core/view'
 import { useChildEntries, useHistory, useLabels, useRefresh } from '../../data/queries'
 import { tasks } from '../../lib/navigation'
 import { useI18n } from '../../providers/I18n'
@@ -108,7 +108,7 @@ export function ChildPayments({ registration }: { registration: Registration }) 
     lines.push({
       key: 'initial',
       title: t.children.detail.initial,
-      meta: [labels.packageName(initialType), initialFree ? '' : together(formatPeriod(i18n, fresh.initial_start_date, fresh.initial_end_date))].filter(Boolean),
+      meta: [labels.packageName(initialType), initialFree ? '' : together(packageStartText(i18n, fresh.initial_start_date, initialType))].filter(Boolean),
       amount: Number(initialPayment?.amount ?? fresh.initial_payment_amount ?? 0),
       state: initialFree ? 'free' : extensions.length === 0 && fresh.payment_status === 'beklemede' ? 'pending' : 'paid',
       paid: paidLine(initialPayment?.payment_method ?? fresh.initial_payment_method, initialPayment?.payment_date),
@@ -125,7 +125,7 @@ export function ChildPayments({ registration }: { registration: Registration }) 
       lines.push({
         key: extension.id,
         title: renews ? t.children.payment.renew : t.children.payment.instalment,
-        meta: [labels.packageName(extension.new_package_type), together(formatPeriod(i18n, extension.new_start_date ?? extension.previous_end_date, extension.new_end_date))].filter(Boolean),
+        meta: [labels.packageName(extension.new_package_type), together(packageStartText(i18n, extension.new_start_date ?? extension.previous_end_date, extension.new_package_type))].filter(Boolean),
         amount: Number(extension.payment_amount ?? 0),
         state: extension.payment_status === 'beklemede' ? 'pending' : 'paid',
         paid: paidLine(extension.payment_method, extension.payment_date),

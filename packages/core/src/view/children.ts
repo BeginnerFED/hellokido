@@ -1,5 +1,4 @@
 import { remainingTone, type Registration, type Usage } from '../api'
-import { getPeriodTypeHint, periodDays } from '../rules/packagePeriod.js'
 import { phoneDigits } from '../rules/phone.js'
 import { matchesSearch } from '../rules/text.js'
 
@@ -47,17 +46,6 @@ export const byName = (a: Pick<Registration, 'student_name'>, b: Pick<Registrati
   a.student_name.localeCompare(b.student_name, 'tr')
 
 export type DateRange = { start: Date; end: Date }
-
-/**
- * A soft warning when the period does not fit the package (a 40-day "3 months", a 60-day "monthly").
- * The thresholds live in the period rules; this only picks the translated sentence.
- */
-export function periodHint(type: string | null, range: DateRange | null) {
-  if (!type || !range || !getPeriodTypeHint(type, range.start, range.end)) return null
-  const days = periodDays(range.start, range.end)
-  const key = type === 'tek-seferlik' ? 'hintSingle' : type.startsWith('hafta-') ? 'hintMonthly' : 'hintQuarter'
-  return { key, days } as const
-}
 
 export const sameInstant = (a: Date | string | null | undefined, b: Date | string | null | undefined) => {
   if (!a || !b) return !a && !b

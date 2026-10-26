@@ -19,7 +19,7 @@ import { Menu, MenuItem, MenuSeparator } from '../../ui/Menu'
 import { Card, CardLink } from '../../ui/Page'
 import { useSheet } from '../../ui/useSheet'
 import { cx } from '../../ui/cx'
-import { formatPeriod, shortDate } from './ChildBits'
+import { packageStartText, shortDate } from './ChildBits'
 import { FREE, isFree } from './rules'
 import { ExtensionEditSheet } from './sheets'
 
@@ -76,7 +76,7 @@ export function ChildPayments({ registration, level }: { registration: Registrat
     lines.push({
       key: 'initial',
       title: t.children.detail.initial,
-      meta: [labels.packageName(initialType), initialFree ? '' : formatPeriod(i18n, fresh.initial_start_date, fresh.initial_end_date)]
+      meta: [labels.packageName(initialType), initialFree ? '' : packageStartText(i18n, fresh.initial_start_date, initialType)]
         .filter(Boolean)
         .join(', '),
       amount: Number(initialPayment?.amount ?? fresh.initial_payment_amount ?? 0),
@@ -97,7 +97,7 @@ export function ChildPayments({ registration, level }: { registration: Registrat
         title: renews ? t.children.payment.renew : t.children.payment.instalment,
         meta: [
           labels.packageName(extension.new_package_type),
-          formatPeriod(i18n, extension.new_start_date ?? extension.previous_end_date, extension.new_end_date)
+          packageStartText(i18n, extension.new_start_date ?? extension.previous_end_date, extension.new_package_type)
         ]
           .filter(Boolean)
           .join(', '),
