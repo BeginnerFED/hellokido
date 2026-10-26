@@ -17,7 +17,8 @@ import { Band, Card, CardLink } from '../../ui/Page'
 import { WhatsAppLink } from '../../ui/PhoneActions'
 import { LessonShape } from '../../ui/signature'
 import { cx } from '../../ui/cx'
-import { endText, formatPeriod, ParentName, shortDate } from '../children/ChildBits'
+import { formatPeriod, lessonsLeftText, ParentName, shortDate } from '../children/ChildBits'
+import { byName } from '../children/rules'
 import { AttendancePicker } from '../lessons/AttendancePicker'
 import { useLessonTitle } from '../lessons/LessonBits'
 import type { useWaiting } from './data'
@@ -117,8 +118,8 @@ export function WaitingCard({
   const show = (which: Exclude<WorkTab, 'all'>) => tab === 'all' || tab === which
 
   const payTotal = payments.packages.reduce((sum, child) => sum + (Number(child.payment_amount) || 0), 0) + payments.fees.reduce((sum, line) => sum + line.amount, 0)
-  const soon = ending.rows.filter((row) => row.days >= 0).sort((a, b) => a.days - b.days)
-  const ended = ending.rows.filter((row) => row.days < 0).sort((a, b) => b.days - a.days)
+  const soon = ending.rows.filter((row) => row.remaining > 0).sort((a, b) => a.remaining - b.remaining || byName(a.child, b.child))
+  const ended = ending.rows.filter((row) => row.remaining === 0).sort((a, b) => byName(a.child, b.child))
 
   const loading = !waiting.ready
   const loadError = waiting.unmarked.query.isError || payments.registrations.isError
@@ -195,7 +196,7 @@ export function WaitingCard({
               </Group>
             )}
             {show('renew') && soon.length > 0 && (
-              <Group label={t.today.web.soonGroup} aside={t.today.web.withinWeek}>
+              <Group label={t.today.web.soonGroup} aside={String(soon.length)}>
                 <RenewRows rows={soon} now={waiting.now} dayKey={waiting.dayKey} />
               </Group>
             )}
@@ -470,7 +471,7 @@ function PaymentRows({ waiting }: { waiting: Waiting }) {
   )
 }
 
-function RenewRows({ rows, now, dayKey, fold }: { rows: { child: Registration; days: number }[]; now: Date; dayKey: string; fold?: boolean }) {
+function RenewRows({ rows, now, dayKey, fold }: { rows: { child: Registration; remaining: number }[]; now: Date; dayKey: string; fold?: boolean }) {
   const i18n = useI18n()
   const { t, fmt, plural } = i18n
   const labels = useLabels()
@@ -482,16 +483,23 @@ function RenewRows({ rows, now, dayKey, fold }: { rows: { child: Registration; d
   return (
     <>
       <ul>
-        {shown.map(({ child, days }) => (
+        {shown.map(({ child, remaining }) => (
           <WorkRow
             key={child.id}
             now={now}
             child={child}
             meta={labels.packageName(child.package_type)}
-            mark={<Mark tone="action">{endText(i18n, days)}</Mark>}
+            mark={<Mark tone="action">{lessonsLeftText(i18n, remaining)}</Mark>}
             remind={{
               kind: 'package_end',
-              ...write('package_end', { parentName: child.parent_name, childName: child.student_name, packageCode: child.package_type, endDate: child.package_end_date, now }),
+              ...write('package_end', {
+                parentName: child.parent_name,
+                childName: child.student_name,
+                packageCode: child.package_type,
+                remaining,
+                endDate: child.package_end_date,
+                now
+              }),
               label: fmt(t.today.ending.remindLabel, { name: child.student_name }),
               sentAt: ends.get(child.id)?.sent_at
             }}

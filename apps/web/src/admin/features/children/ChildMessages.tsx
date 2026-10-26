@@ -14,7 +14,7 @@ import { Notice } from '../../ui/Notice'
 import { Card, CardLink } from '../../ui/Page'
 import { Sheet, SheetActions, SheetFooter } from '../../ui/Sheet'
 import { copyText } from '../notes/bits'
-import { isEnding, isFree, isPaymentDue } from './rules'
+import { isFree, isPaymentDue, needsRenewal } from './rules'
 
 type Choice = { id: string; kind: MessageKind; title: string; body: string; templateId: string | null }
 
@@ -77,10 +77,10 @@ function SendMessageForm({ registration, usage, onDone }: { registration: Regist
       .sort((a, b) => new Date(a.events!.event_date).getTime() - new Date(b.events!.event_date).getTime())[0]
   }, [lessons.data])
 
-  // What the family most likely needs to hear: a payment, a package that ends, else the next lesson
+  // What the family most likely needs to hear: a payment, lessons running out, else the next lesson
   const suggested = useMemo(() => {
     const free = isFree(registration)
-    const want: MessageKind = !free && isPaymentDue(registration) ? 'payment' : !free && (isEnding(registration) || usage?.remaining === 0) ? 'package_end' : 'lesson'
+    const want: MessageKind = !free && isPaymentDue(registration) ? 'payment' : needsRenewal(registration, usage) ? 'package_end' : 'lesson'
     const usable = (choice: Choice) => choice.kind !== 'lesson' || Boolean(next)
     return choices.find((choice) => choice.kind === want && usable(choice)) ?? choices.find(usable)
   }, [choices, registration, usage, next])

@@ -14,7 +14,6 @@ import { fieldLabelClass } from '../../ui/Field'
 import { Notice } from '../../ui/Notice'
 import { Sheet, SheetActions } from '../../ui/Sheet'
 import { cx } from '../../ui/cx'
-import { shortDate } from '../children/ChildBits'
 import { byName, isFree } from '../children/rules'
 import { dateRange } from './labels'
 
@@ -78,7 +77,7 @@ export function CopyWeekSheet({
     return {
       exhausted: rows
         .filter((row) => row.is_active === true && !isFree(row) && (usage?.[row.id]?.remaining ?? 1) <= 0)
-        .sort((a, b) => (a.package_end_date ?? '').localeCompare(b.package_end_date ?? '') || byName(a, b)),
+        .sort(byName),
       archived: rows.filter((row) => row.is_active !== true).sort(byName)
     }
   }, [children.data, usage])
@@ -227,7 +226,7 @@ export function CopyWeekSheet({
                       <div className="min-w-0 flex-1 basis-56">
                         <p className={cx('truncate text-[0.9375rem] font-medium', out && 'text-ink-3 line-through')}>{row.student_name}</p>
                         <p className="text-[0.8125rem] text-ink-3">
-                          {out ? t.calendar.copy.excluded : fmt(t.calendar.copy.exhaustedRow, { date: row.package_end_date ? shortDate(i18n, row.package_end_date) : '–' })}
+                          {out ? t.calendar.copy.excluded : t.calendar.copy.exhaustedRow}
                         </p>
                       </div>
                       <div className="flex shrink-0 gap-1.5">

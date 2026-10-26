@@ -40,34 +40,27 @@ Sizleri ve çocuğunuzu atölyemizde görmek için sabırsızlanıyoruz!
 Sevgilerle,
 HelloKido Oyun Atölyesi`,
   payment: 'Merhabalar {veli}. {çocuk} için ödeme beklemekteyiz. Bilginize sunarız.',
-  package_end: 'Merhabalar {veli}. {çocuk} adlı öğrencinizin paket süresi {bitiş} tarihinde {bitiş durumu}. Bilginize sunarız.'
+  package_end: 'Merhabalar {veli}. {çocuk} adlı öğrencinizin paketinde kalan ders sayısı: {kalan}. Bilginize sunarız.'
 }
 
-/** Every variable a template can hold, in the order the editor offers them. */
-export const MESSAGE_VARIABLES = [
-  'veli',
-  'çocuk',
-  'tarih',
-  'gün',
-  'saat',
-  'ders',
-  'yer',
-  'konum',
-  'süre',
-  'paket',
-  'kalan',
-  'bitiş',
-  'bitiş durumu',
-  'tutar'
-] as const
+/** Every variable the editor offers, in its order. */
+export const MESSAGE_VARIABLES = ['veli', 'çocuk', 'tarih', 'gün', 'saat', 'ders', 'yer', 'konum', 'süre', 'paket', 'kalan', 'tutar'] as const
 export type MessageVariable = (typeof MESSAGE_VARIABLES)[number]
+
+/**
+ * Variables older texts may still hold: they are still filled in, but the editor no longer offers
+ * them. A package ends when its lessons run out, not on the day its period was planned to end
+ * (families often come later), so messages speak of the lessons left.
+ */
+const RETIRED_VARIABLES = ['bitiş', 'bitiş durumu'] as const
+type KnownVariable = MessageVariable | (typeof RETIRED_VARIABLES)[number]
 
 /** The variables that mean something for a kind; the editor shows these first. */
 export const VARIABLES_FOR: Record<MessageKind, MessageVariable[]> = {
   lesson: ['veli', 'çocuk', 'tarih', 'gün', 'saat', 'ders', 'yer', 'konum', 'süre', 'kalan'],
-  payment: ['veli', 'çocuk', 'paket', 'tutar', 'bitiş', 'yer', 'konum'],
-  package_end: ['veli', 'çocuk', 'paket', 'bitiş', 'bitiş durumu', 'kalan', 'yer', 'konum'],
-  custom: ['veli', 'çocuk', 'paket', 'kalan', 'bitiş', 'yer', 'konum', 'süre']
+  payment: ['veli', 'çocuk', 'paket', 'tutar', 'yer', 'konum'],
+  package_end: ['veli', 'çocuk', 'paket', 'kalan', 'yer', 'konum'],
+  custom: ['veli', 'çocuk', 'paket', 'kalan', 'yer', 'konum', 'süre']
 }
 
 const LESSON_TYPES_TR: Record<string, string> = {
@@ -91,7 +84,7 @@ export type MessageContext = {
 
 const day = (date: Date) => format(date, 'd MMMM yyyy', { locale: tr })
 
-export function messageValues(context: MessageContext): Record<MessageVariable, string> {
+export function messageValues(context: MessageContext): Record<KnownVariable, string> {
   const now = context.now ?? new Date()
   const workshop = context.workshop ?? DEFAULT_WORKSHOP
   const lessonDate = context.lesson ? new Date(context.lesson.date) : null
@@ -128,7 +121,7 @@ export function renderMessage(body: string, context: MessageContext) {
 
 /** The words in braces that are not variables, so the editor can point at a typo. */
 export function unknownVariables(body: string) {
-  const known = new Set<string>(MESSAGE_VARIABLES)
+  const known = new Set<string>([...MESSAGE_VARIABLES, ...RETIRED_VARIABLES])
   return [...body.matchAll(TOKEN)].map((match) => match[1].trim()).filter((name) => !known.has(name.toLocaleLowerCase('tr-TR')))
 }
 
@@ -151,9 +144,9 @@ export function paymentReminderText(parentName: string, studentName: string) {
   return renderMessage(DEFAULT_MESSAGES.payment, { parentName, childName: studentName })
 }
 
-/** Tells the family the package has ended or is about to. */
-export function packageEndText(parentName: string, studentName: string, endDate: string | Date, now = new Date()) {
-  return renderMessage(DEFAULT_MESSAGES.package_end, { parentName, childName: studentName, endDate, now })
+/** Tells the family how many lessons are left in the package. */
+export function packageEndText(parentName: string, studentName: string, remaining: number) {
+  return renderMessage(DEFAULT_MESSAGES.package_end, { parentName, childName: studentName, remaining })
 }
 
 // ---------------------------------------------------------------------------------------------

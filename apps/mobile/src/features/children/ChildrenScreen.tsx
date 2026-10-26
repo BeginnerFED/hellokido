@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useQueryClient } from '@tanstack/react-query'
 import { remainingTone, type Registration, type Usage, type UsageMap } from '@hellokido/core/api'
 import { phoneDigits, whatsAppLink } from '@hellokido/core/rules/phone.js'
-import { byName, daysLeft, ENDING_WINDOW_DAYS, isEnding, isFree, isPaymentDue, isRunningLow, matchesChild, remainingText } from '@hellokido/core/view'
+import { byName, isFree, isPaymentDue, isRunningLow, matchesChild, remainingText } from '@hellokido/core/view'
 import { useTemplates } from '../../data/messages'
 import { useActiveUsage, useCatalog, useChildLessons, useChildUsage, useLabels, useRegistrations } from '../../data/queries'
 import { headerButton, tasks, useOpenChild } from '../../lib/navigation'
@@ -20,17 +20,15 @@ import { Card, RoundButton, ScreenHeader, usePullRefresh, useTabHeader } from '.
 import { closeSwipedRow, SwipeRow, type RowAction } from '../../ui/SwipeRow'
 import { DOT, Text } from '../../ui/Text'
 import { usePackageOptions } from '../payment/fields'
-import { packageEndText } from './ChildDetailScreen'
 import { useMessageItems } from './ChildMessages'
 
 type ListView = 'active' | 'archived'
-type Filter = 'pending' | 'low' | 'ending'
+type Filter = 'pending' | 'low'
 const ANY_PACKAGE = 'all'
 
 const TESTS: Record<Filter, (row: Registration, usage: UsageMap | undefined) => boolean> = {
   pending: (row) => isPaymentDue(row),
-  low: (row, usage) => !isFree(row) && isRunningLow(usage?.[row.id]),
-  ending: (row) => isEnding(row)
+  low: (row, usage) => !isFree(row) && isRunningLow(usage?.[row.id])
 }
 
 /**
@@ -79,9 +77,6 @@ export function ChildrenScreen() {
 
   const shown = useMemo(() => {
     const list = view === 'active' && filter ? inPackage.filter((row) => TESTS[filter](row, usage)) : [...inPackage]
-    if (view === 'active' && filter === 'ending') {
-      return list.sort((a, b) => new Date(a.package_end_date).getTime() - new Date(b.package_end_date).getTime() || byName(a, b))
-    }
     if (view === 'active' && filter === 'low') {
       return list.sort((a, b) => (usage?.[a.id]?.remaining ?? 0) - (usage?.[b.id]?.remaining ?? 0) || byName(a, b))
     }
@@ -92,8 +87,7 @@ export function ChildrenScreen() {
   const count = (id: Filter) => (rows && (id !== 'low' || usage) ? inPackage.filter((row) => TESTS[id](row, usage)).length : undefined)
   const filters: { id: Filter; label: string }[] = [
     { id: 'pending', label: t.children.filters.pending },
-    { id: 'low', label: t.children.filters.low },
-    { id: 'ending', label: t.children.filters.ending }
+    { id: 'low', label: t.children.filters.low }
   ]
 
   // Only the packages children in this view actually have, in the catalog's order
@@ -319,7 +313,6 @@ function ChildRow({ row, usage, first, last, onOpen, openMenu, onMessage }: Chil
   const labels = useLabels()
   const active = row.is_active === true
   const free = isFree(row)
-  const days = active ? daysLeft(row) : null
   // The child's page's own buttons, a swipe or a hold away: call and take a payment behind the row
   const digits = phoneDigits(row.parent_phone)
   const offered: (RowAction | null)[] = [
@@ -330,18 +323,18 @@ function ChildRow({ row, usage, first, last, onOpen, openMenu, onMessage }: Chil
     active ? { key: 'pay', label: t.children.detail.actions.takePayment, icon: 'money', swipe: 'positive', onPress: () => tasks.payment({ registrationId: row.id }) } : null
   ]
   const actions = offered.filter((action): action is RowAction => action !== null)
-  // Under the name: the one thing that asks for a look, else the package and the parent
+  // Under the name: a payment due, else the package and the parent. The lessons left at the right
+  // say when the package runs out
   const about = [labels.packageName(row.package_type), row.parent_name ? fmt(t.children.phone.parentOf, { name: firstNameOf(row.parent_name) }) : ''].filter(Boolean).join(' · ')
-  const kind = !active ? 'about' : isPaymentDue(row) ? 'due' : days !== null && days < 0 ? 'ended' : days !== null && days <= ENDING_WINDOW_DAYS ? 'ending' : 'about'
-  const subText = kind === 'due' ? t.children.pendingPayment : (kind === 'ended' || kind === 'ending') && days !== null ? packageEndText(i18n, days) : about
-  const sub =
-    kind === 'due' || kind === 'ended' ? (
-      <Mark tone="action">{subText}</Mark>
-    ) : (
-      <Text variant="sub" tone={kind === 'ending' ? 'ink2' : 'ink3'} numberOfLines={1}>
-        {subText}
-      </Text>
-    )
+  const due = active && isPaymentDue(row)
+  const subText = due ? t.children.pendingPayment : about
+  const sub = due ? (
+    <Mark tone="action">{subText}</Mark>
+  ) : (
+    <Text variant="sub" tone="ink3" numberOfLines={1}>
+      {subText}
+    </Text>
+  )
   // The row reads as one sentence to a screen reader: name, what asks for a look, lessons left
   const left = active && !free ? usage?.[row.id] : undefined
   const label = [row.student_name, subText, left && !left.isFree && left.total !== null ? remainingText(i18n, left) : ''].filter(Boolean).join(', ')

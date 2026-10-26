@@ -16,16 +16,15 @@ import { cx } from '../../ui/cx'
 import { ParentName, remainingText } from './ChildBits'
 import { ChildDetail, ChildDetailSkeleton } from './ChildDetail'
 import { usePackageOptions } from './packageOptions'
-import { byName, daysLeft, ENDING_WINDOW_DAYS, isEnding, isFree, isPaymentDue, isRunningLow, matchesChild } from './rules'
+import { byName, isFree, isPaymentDue, isRunningLow, matchesChild } from './rules'
 
 type View = 'active' | 'archived'
-type Filter = 'all' | 'pending' | 'low' | 'ending'
+type Filter = 'all' | 'pending' | 'low'
 const ANY_PACKAGE = 'all'
 
 const TESTS: Record<Exclude<Filter, 'all'>, (row: Registration, usage: UsageMap | undefined) => boolean> = {
   pending: (row) => isPaymentDue(row),
-  low: (row, usage) => !isFree(row) && isRunningLow(usage?.[row.id]),
-  ending: (row) => isEnding(row)
+  low: (row, usage) => !isFree(row) && isRunningLow(usage?.[row.id])
 }
 
 /**
@@ -68,9 +67,6 @@ export default function ChildrenPage() {
 
   const shown = useMemo(() => {
     const list = view === 'active' && filter !== 'all' ? inPackage.filter((row) => TESTS[filter](row, usage)) : [...inPackage]
-    if (view === 'active' && filter === 'ending') {
-      return list.sort((a, b) => new Date(a.package_end_date).getTime() - new Date(b.package_end_date).getTime() || byName(a, b))
-    }
     if (view === 'active' && filter === 'low') {
       return list.sort((a, b) => (usage?.[a.id]?.remaining ?? 0) - (usage?.[b.id]?.remaining ?? 0) || byName(a, b))
     }
@@ -96,8 +92,7 @@ export default function ChildrenPage() {
   // list has loaded: a 0 there would say "nobody" while it is not known yet
   const filterOptions: Option<Filter>[] = [
     { id: 'pending', label: t.children.filters.pending, badge: rows ? inPackage.filter((row) => TESTS.pending(row, usage)).length : undefined },
-    { id: 'low', label: t.children.filters.low, badge: rows && usage ? inPackage.filter((row) => TESTS.low(row, usage)).length : undefined },
-    { id: 'ending', label: t.children.filters.ending, badge: rows ? inPackage.filter((row) => TESTS.ending(row, usage)).length : undefined }
+    { id: 'low', label: t.children.filters.low, badge: rows && usage ? inPackage.filter((row) => TESTS.low(row, usage)).length : undefined }
   ]
 
   // Only the packages children in this view actually have, in the catalog's order
@@ -296,8 +291,8 @@ export default function ChildrenPage() {
 }
 
 /**
- * A child in the list: name, then the one thing that matters (a payment due, a package ending)
- * or the package and parent, and the lessons left on the right. The open child is a raised piece.
+ * A child in the list: name, then a payment due when there is one, the package and parent, and the
+ * lessons left on the right (they say when the package runs out). The open child is a raised piece.
  */
 function ChildRow({ row, usage, selected, onOpen }: { row: Registration; usage: UsageMap | undefined; selected: boolean; onOpen: () => void }) {
   const i18n = useI18n()
@@ -305,24 +300,16 @@ function ChildRow({ row, usage, selected, onOpen }: { row: Registration; usage: 
   const labels = useLabels()
   const active = row.is_active === true
   const free = isFree(row)
-  const days = active ? daysLeft(row) : null
   const own = usage?.[row.id]
 
-  const mark = !active ? null : isPaymentDue(row) ? (
-    <Mark tone="action">{t.children.pendingPayment}</Mark>
-  ) : days !== null && days <= 0 ? (
-    <Mark tone="action">{days < 0 ? plural(t.children.phone.ended, -days) : t.children.phone.endsToday}</Mark>
-  ) : null
-  const sub =
-    days !== null && days > 0 && days <= ENDING_WINDOW_DAYS ? (
-      plural(t.children.phone.endsIn, days)
-    ) : (
-      <>
-        {labels.packageName(row.package_type)}
-        {row.parent_name?.trim() && ' · '}
-        <ParentName template={t.children.phone.parentOf} name={row.parent_name} />
-      </>
-    )
+  const mark = active && isPaymentDue(row) ? <Mark tone="action">{t.children.pendingPayment}</Mark> : null
+  const sub = (
+    <>
+      {labels.packageName(row.package_type)}
+      {row.parent_name?.trim() && ' · '}
+      <ParentName template={t.children.phone.parentOf} name={row.parent_name} />
+    </>
+  )
 
   const left = own?.remaining ?? 0
   const low = remainingTone(own) === 'low' || remainingTone(own) === 'out'

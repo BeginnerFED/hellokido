@@ -5,10 +5,10 @@ import { useQueryClient } from '@tanstack/react-query'
 import * as Haptics from 'expo-haptics'
 import { releaseSeats, remainingTone, setRegistrationActive, upcomingSeats, type Registration, type Usage } from '@hellokido/core/api'
 import { phoneDigits, whatsAppLink } from '@hellokido/core/rules/phone.js'
-import { beadsLabel, daysLeft, formatPeriod, isEnding, isFree } from '@hellokido/core/view'
+import { beadsLabel, formatPeriod, isFree, lessonsLeftText, needsRenewal } from '@hellokido/core/view'
 import { keys, useActiveUsage, useChildUsage, useLabels, useRefresh, useRegistrations } from '../../data/queries'
 import { headerMenu, tasks } from '../../lib/navigation'
-import { useI18n, type I18n } from '../../providers/I18n'
+import { useI18n } from '../../providers/I18n'
 import { useColors } from '../../theme/colors'
 import { useActionMenu, type MenuItem } from '../../ui/ActionMenu'
 import { EmptyState, initialsOf, LoadError, Mark, Notice, Skeleton } from '../../ui/Bits'
@@ -23,14 +23,6 @@ import { ChildLessons } from './ChildLessons'
 import { MessageHistory, useMessageItems } from './ChildMessages'
 import { ChildPayments } from './ChildPayments'
 import { QuickActions, type QuickAction } from './parts'
-
-/** "Paketi 3 gün sonra bitiyor", "Paketi bugün bitiyor", "Paketi 2 gün önce bitti". */
-export function packageEndText(i18n: Pick<I18n, 't' | 'plural'>, days: number) {
-  const words = i18n.t.children.phone
-  if (days < 0) return i18n.plural(words.ended, -days)
-  if (days === 0) return words.endsToday
-  return i18n.plural(words.endsIn, days)
-}
 
 /** One child: who to call, where the package stands, every payment and every lesson. */
 export function ChildDetailScreen({ id }: { id: string }) {
@@ -342,13 +334,11 @@ function PackageCard({ registration, usage, failed, onRetry }: { registration: R
   const price = usePackagePrice(registration.package_type)
   const free = isFree(registration)
   const active = registration.is_active === true
-  const days = daysLeft(registration)
   const pending = !free && registration.payment_status === 'beklemede'
   const tone = remainingTone(usage)
   const out = tone === 'out'
-  // What the end of the package asks for, shown while it nears or once the lessons are used up
-  const ending = active && !free && (isEnding(registration) || out)
-  const late = out || (days !== null && days < 0)
+  // A renewal, offered once the lessons run low or out: the period's last day does not end a package
+  const ending = needsRenewal(registration, usage)
 
   const extras = usage
     ? [
@@ -466,12 +456,7 @@ function PackageCard({ registration, usage, failed, onRetry }: { registration: R
             )
           }
         >
-          <Mark tone={late ? 'action' : 'neutral'}>{out ? t.children.noneLeft : packageEndText(i18n, days ?? 0)}</Mark>
-          {out && days !== null && (
-            <Text variant="sub" tone="ink3" style={styles.lineSub}>
-              {packageEndText(i18n, days)}
-            </Text>
-          )}
+          <Mark tone={out ? 'action' : 'neutral'}>{lessonsLeftText(i18n, Math.max(usage?.remaining ?? 0, 0))}</Mark>
         </CardLine>
       )}
     </Card>

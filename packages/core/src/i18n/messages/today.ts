@@ -100,8 +100,8 @@ const tr = {
     expected: '{amount} bekleniyor'
   },
   ending: {
-    title: 'Süresi dolan paketler',
-    empty: 'Süresi dolan ya da 7 gün içinde dolacak paket yok.',
+    title: 'Dersi biten paketler',
+    empty: 'Dersi biten ya da 2 dersi kalan paket yok.',
     remindLabel: '{name} için paket bitiş bilgisi gönder',
     renew: 'Yenile',
     soon: 'Bitmek üzere',
@@ -118,7 +118,6 @@ const tr = {
     notMarked: '{names} girilmedi',
     soonGroup: 'Paketi bitiyor',
     endedGroup: 'Paketi bitti',
-    withinWeek: '7 gün içinde',
     tomorrowLine: '{day}: {lessons}, {parents}',
     parents: { one: '{count} veli', other: '{count} veli' },
     nextFamily: 'sıradaki {name}'
@@ -243,8 +242,8 @@ const en: Widen<typeof tr> = {
     expected: '{amount} expected'
   },
   ending: {
-    title: 'Packages ending',
-    empty: 'No package has ended or ends within 7 days.',
+    title: 'Packages running out',
+    empty: 'No package is out of lessons or down to its last 2.',
     remindLabel: 'Tell the family of {name} the package ends',
     renew: 'Renew',
     soon: 'Ending soon',
@@ -260,7 +259,6 @@ const en: Widen<typeof tr> = {
     notMarked: 'Not marked: {names}',
     soonGroup: 'Package ending',
     endedGroup: 'Package ended',
-    withinWeek: 'Within 7 days',
     tomorrowLine: '{day}: {lessons}, {parents}',
     parents: { one: '{count} parent', other: '{count} parents' },
     nextFamily: 'next: {name}'
@@ -404,8 +402,8 @@ const uk: Widen<typeof tr> = {
     expected: 'Очікується {amount}'
   },
   ending: {
-    title: 'Пакети, що закінчуються',
-    empty: 'Немає пакетів, що закінчилися або закінчаться протягом 7 днів.',
+    title: 'Пакети, у яких закінчуються заняття',
+    empty: 'Немає пакетів без занять або з двома останніми.',
     remindLabel: 'Повідомити родину {name} про закінчення пакета',
     renew: 'Поновити',
     soon: 'Скоро закінчуються',
@@ -426,7 +424,6 @@ const uk: Widen<typeof tr> = {
     notMarked: 'Не відмічено: {names}',
     soonGroup: 'Пакет закінчується',
     endedGroup: 'Пакет закінчився',
-    withinWeek: 'Протягом 7 днів',
     tomorrowLine: '{day}: {lessons}, {parents}',
     parents: { one: '{count} родина', few: '{count} родини', many: '{count} родин', other: '{count} родини' },
     nextFamily: 'наступні: {name}'

@@ -5,7 +5,7 @@ import { BeadString } from '../../ui/signature'
 import { cx } from '../../ui/cx'
 
 // The words are shared with the phone app
-export { beadsLabel, endText, formatPeriod, remainingText, shortDate } from '@hellokido/core/view'
+export { beadsLabel, formatPeriod, lessonsLeftText, remainingText, shortDate } from '@hellokido/core/view'
 
 // Running low and running out both ask for a new package: the colour of things to act on, not of danger
 export function remainingClass(usage: Usage | undefined) {

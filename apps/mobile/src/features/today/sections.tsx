@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import * as Haptics from 'expo-haptics'
 import { LessonError, setAttendance, type AttendanceStatus, type Lesson, type Registration, type Seat, type UnmarkedSeat } from '@hellokido/core/api'
 import { whatsAppLink } from '@hellokido/core/rules/phone.js'
-import { endText, formatPeriod, shortDate } from '@hellokido/core/view'
+import { byName, formatPeriod, lessonsLeftText, shortDate } from '@hellokido/core/view'
 import { useMessageWriter, useRecentReminders, useReminderLog, useRemindedText, useSeatReminders } from '../../data/messages'
 import { keys, useActiveUsage, useLabels } from '../../data/queries'
 import { tasks, useOpenChild } from '../../lib/navigation'
@@ -292,27 +292,26 @@ export function EndingSection({ now, dayKey, open, onClose, onLayout }: { now: D
   const { t, fmt, plural } = i18n
   const labels = useLabels()
   const write = useMessageWriter()
-  const usage = useActiveUsage().data
   const { log } = useReminderLog()
   const { byChild } = useRecentReminders('package_end', dayKey)
   const reminded = useRemindedText()
-  const { rows } = useEndingPackages(now)
+  const { rows } = useEndingPackages()
   const [unfolded, setUnfolded] = useState(false)
   if (!open || rows.length === 0) return null
-  // The soonest end first; ended ones from the latest, as the oldest are often children who left
-  const soon = rows.filter((row) => row.days >= 0).sort((a, b) => a.days - b.days)
-  const ended = rows.filter((row) => row.days < 0).sort((a, b) => b.days - a.days)
+  // The fewest lessons left first, then by name
+  const soon = rows.filter((row) => row.remaining > 0).sort((a, b) => a.remaining - b.remaining || byName(a.child, b.child))
+  const ended = rows.filter((row) => row.remaining === 0).sort((a, b) => byName(a.child, b.child))
   const endedShown = unfolded || ended.length <= ENDED_FIRST + 2 ? ended : ended.slice(0, ENDED_FIRST)
 
   const list = (group: typeof rows) => (
     <Card>
-      {group.map(({ child, days }) => {
+      {group.map(({ child, remaining }) => {
         const message = write('package_end', {
           parentName: child.parent_name,
           childName: child.student_name,
           packageCode: child.package_type,
           endDate: child.package_end_date,
-          remaining: usage?.[child.id]?.remaining ?? null,
+          remaining,
           now
         })
         const last = reminded(byChild.get(child.id), dayKey)
@@ -324,7 +323,7 @@ export function EndingSection({ now, dayKey, open, onClose, onLayout }: { now: D
             meta={
               <>
                 <Text variant="sub" weight="500" tone="amberInk">
-                  {endText(i18n, days)}
+                  {lessonsLeftText(i18n, remaining)}
                 </Text>
                 {DOT}
                 {together(labels.packageName(child.package_type))}

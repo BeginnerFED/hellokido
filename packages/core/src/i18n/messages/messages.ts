@@ -15,7 +15,7 @@ const tr = {
   kindHints: {
     lesson: 'Yarınki derslerde “Hatırlat” bunu gönderir',
     payment: 'Ödeme bekleyen ailelere gider',
-    package_end: 'Paketi biten ya da bitecek ailelere gider',
+    package_end: 'Dersi biten ya da azalan ailelere gider',
     custom: 'Çocuğun sayfasından istediğin zaman gönderilir'
   },
   inUse: 'Kullanılıyor',
@@ -74,8 +74,6 @@ const tr = {
     süre: 'Ders süresi',
     paket: 'Paket adı',
     kalan: 'Kalan ders',
-    bitiş: 'Paket bitişi',
-    'bitiş durumu': 'Sona erecek / erdi',
     tutar: 'Beklenen tutar'
   },
   send: {
@@ -144,7 +142,7 @@ const en: Widen<typeof tr> = {
   kindHints: {
     lesson: '“Remind” on tomorrow’s lessons sends this',
     payment: 'Goes to families with a payment due',
-    package_end: 'Goes to families whose package ends or has ended',
+    package_end: 'Goes to families with few or no lessons left',
     custom: 'Sent from a child’s page whenever you like'
   },
   inUse: 'In use',
@@ -202,8 +200,6 @@ const en: Widen<typeof tr> = {
     süre: 'Lesson length',
     paket: 'Package name',
     kalan: 'Lessons left',
-    bitiş: 'Package end',
-    'bitiş durumu': 'Will end / has ended',
     tutar: 'Amount expected'
   },
   send: {
@@ -272,7 +268,7 @@ const uk: Widen<typeof tr> = {
   kindHints: {
     lesson: 'Кнопка «Нагадати» для завтрашніх занять надсилає саме його',
     payment: 'Надходить родинам, які мають оплатити',
-    package_end: 'Надходить родинам, чий пакет закінчується або закінчився',
+    package_end: 'Надходить родинам, у яких мало або не залишилось занять',
     custom: 'Надсилається зі сторінки дитини будь-коли'
   },
   inUse: 'Використовується',
@@ -330,8 +326,6 @@ const uk: Widen<typeof tr> = {
     süre: 'Тривалість заняття',
     paket: 'Назва пакета',
     kalan: 'Залишилось занять',
-    bitiş: 'Кінець пакета',
-    'bitiş durumu': 'Закінчиться / закінчився',
     tutar: 'Очікувана сума'
   },
   send: {

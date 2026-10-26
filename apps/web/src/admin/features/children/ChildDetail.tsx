@@ -25,11 +25,11 @@ import { Card } from '../../ui/Page'
 import { displayPhone, PhoneActions } from '../../ui/PhoneActions'
 import { Beads } from '../../ui/signature'
 import { cx } from '../../ui/cx'
-import { beadsLabel, endText, formatPeriod } from './ChildBits'
+import { beadsLabel, formatPeriod, lessonsLeftText } from './ChildBits'
 import { ChildLessons } from './ChildLessons'
 import { MessageHistory, SendMessageSheet } from './ChildMessages'
 import { ChildPayments } from './ChildPayments'
-import { daysLeft, ENDING_WINDOW_DAYS, isEnding, isFree, isPaymentDue } from './rules'
+import { isFree, isPaymentDue, needsRenewal } from './rules'
 
 /**
  * One child on the board, with no card around it: who they are and who to call, what can be done,
@@ -50,13 +50,10 @@ export function ChildDetail({ registration, showName, onClose }: { registration:
   // Beside the list the name is a level-2 heading; on a phone the name is the page's own title
   const level = showName ? 3 : 2
 
-  const days = active ? daysLeft(registration) : null
   const status = !active ? (
     <Mark tone="neutral">{t.children.views.archived}</Mark>
   ) : isPaymentDue(registration) ? (
     <Mark tone="action">{t.children.pendingPayment}</Mark>
-  ) : days !== null && days <= ENDING_WINDOW_DAYS ? (
-    <Mark tone={days <= 0 ? 'action' : 'neutral'}>{endText(i18n, days)}</Mark>
   ) : null
 
   const parent = (
@@ -253,11 +250,11 @@ function PackageCard({
   const { startTask } = useActions()
   const free = isFree(registration)
   const active = registration.is_active === true
-  const days = daysLeft(registration)
   const pending = !free && registration.payment_status === 'beklemede'
   const tone = remainingTone(usage)
   const low = tone === 'out' || tone === 'low'
-  const renewable = active && !free && !pending && (isEnding(registration) || tone === 'out')
+  // The lessons left say when a package runs out; its period's last day does not
+  const renewable = !pending && needsRenewal(registration, usage)
   const left = Math.max(usage?.remaining ?? 0, 0)
 
   const legend = usage
@@ -285,17 +282,7 @@ function PackageCard({
     <Card
       level={level}
       title={labels.packageName(registration.package_type)}
-      aside={
-        <span className="tabular">
-          {period}
-          {active && !free && days !== null && (
-            <span className={cx(days <= ENDING_WINDOW_DAYS && 'text-amber-ink')}>
-              {', '}
-              {endText(i18n, days)}
-            </span>
-          )}
-        </span>
-      }
+      aside={<span className="tabular">{period}</span>}
       bodyClassName="flex flex-col px-4 pb-5 sm:px-[1.375rem]"
     >
       {failed ? (
@@ -358,15 +345,7 @@ function PackageCard({
       {renewable && (
         <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-line pt-3.5">
           <p className="min-w-0 flex-[1_1_12rem] text-[0.84375rem] text-ink-2">
-            {tone === 'out'
-              ? t.children.noneLeft
-              : days === null
-                ? null
-                : days < 0
-                  ? plural(t.children.phone.ended, -days)
-                  : days === 0
-                    ? t.children.phone.endsToday
-                    : plural(t.children.phone.endsIn, days)}
+            {lessonsLeftText(i18n, left)}
           </p>
           <Button
             variant="secondary"

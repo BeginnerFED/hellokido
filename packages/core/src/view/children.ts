@@ -1,4 +1,3 @@
-import { differenceInCalendarDays } from 'date-fns'
 import { remainingTone, type Registration, type Usage } from '../api'
 import { getPeriodTypeHint, periodDays } from '../rules/packagePeriod.js'
 import { phoneDigits } from '../rules/phone.js'
@@ -12,23 +11,22 @@ export const isFree = (row: Pick<Registration, 'package_type'>) => row.package_t
 export const isPaymentDue = (row: Pick<Registration, 'is_active' | 'package_type' | 'payment_status'>) =>
   row.is_active === true && !isFree(row) && row.payment_status === 'beklemede'
 
-/** Calendar days until the package's last day; negative once it has ended, null for free participation. */
-export function daysLeft(row: Pick<Registration, 'package_type' | 'package_end_date'>, now = new Date()) {
-  if (isFree(row) || !row.package_end_date) return null
-  return differenceInCalendarDays(new Date(row.package_end_date), now)
-}
-
-/** Ended or ending within a week: the package needs renewing (end days are stored at the start of the day). */
-export const ENDING_WINDOW_DAYS = 7
-export function isEnding(row: Registration, now = new Date()) {
-  const days = daysLeft(row, now)
-  return row.is_active === true && days !== null && days <= ENDING_WINDOW_DAYS
-}
-
 /** Two lessons or fewer left, or none. */
 export function isRunningLow(usage: Usage | undefined) {
   const tone = remainingTone(usage)
   return tone === 'low' || tone === 'out'
+}
+
+/**
+ * The package needs renewing: its lessons are running out or gone. The period's end day does not
+ * decide it; families often come later than planned, so the lessons left are what the workshop
+ * goes by. A package not yet touched is not running out however small it is (a single session
+ * waits for its day), and free participation never ends.
+ */
+export function needsRenewal(row: Pick<Registration, 'is_active' | 'package_type'>, usage: Usage | undefined) {
+  if (row.is_active !== true || isFree(row) || !usage || usage.isFree) return false
+  const remaining = usage.remaining ?? 0
+  return remaining <= 0 || (isRunningLow(usage) && remaining < (usage.total ?? 0))
 }
 
 const PHONE_LIKE = /^[\d\s+()-]+$/

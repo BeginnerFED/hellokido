@@ -5,17 +5,12 @@ import type { ViewI18n } from './types'
 export function remainingText(i18n: Pick<ViewI18n, 't' | 'plural'>, usage: Usage | undefined) {
   if (!usage) return ''
   if (usage.isFree) return i18n.t.children.free
-  const remaining = usage.remaining ?? 0
-  if (remaining <= 0) return i18n.t.children.noneLeft
-  return i18n.plural(i18n.t.children.remaining, remaining)
+  return lessonsLeftText(i18n, usage.remaining ?? 0)
 }
 
-/** "4 days left", "Ends today", "Ended 2 days ago". */
-export function endText(i18n: Pick<ViewI18n, 't' | 'plural'>, days: number | null) {
-  if (days === null) return ''
-  if (days < 0) return i18n.plural(i18n.t.children.ended, -days)
-  if (days === 0) return i18n.t.children.endsToday
-  return i18n.plural(i18n.t.children.endsIn, days)
+/** "2 lessons left" or "No lessons left": how near a package is to its end. */
+export function lessonsLeftText(i18n: Pick<ViewI18n, 't' | 'plural'>, remaining: number) {
+  return remaining <= 0 ? i18n.t.children.noneLeft : i18n.plural(i18n.t.children.remaining, remaining)
 }
 
 /** "1 Oct – 31 Oct": the year shows only for another year, once unless the period crosses a year. */

@@ -8,7 +8,7 @@ import * as Haptics from 'expo-haptics'
 import { addDays, addMinutes, differenceInMinutes } from 'date-fns'
 import { lessonsBetween, LessonError, SEATS_SHOWN, setAttendance, type AttendanceStatus, type Lesson, type Seat, type UsageMap } from '@hellokido/core/api'
 import { holdsSeat } from '@hellokido/core/rules/attendance.js'
-import { endText, isPaymentDue, LESSON_MINUTES, remainingText } from '@hellokido/core/view'
+import { isPaymentDue, LESSON_MINUTES, lessonsLeftText, remainingText } from '@hellokido/core/view'
 import { keys, useLabels, useUsageOf } from '../../data/queries'
 import { useClock } from '../../lib/clock'
 import { headerMenus, tasks, useOpenLesson } from '../../lib/navigation'
@@ -136,7 +136,7 @@ export function TodayScreen() {
   // --- what waits ----------------------------------------------------------------------------
   const unmarked = useUnmarked(dayKey).query
   const payments = usePaymentsDue()
-  const ending = useEndingPackages(now)
+  const ending = useEndingPackages()
   const reminders = useTomorrowReminders(tomorrows, now)
   const earlierUnmarked = earlier.flatMap((lesson) => lesson.seats.filter((seat) => seat.status === 'scheduled').map((seat) => ({ lesson, seat })))
 
@@ -218,19 +218,18 @@ export function TodayScreen() {
     })
   }
   if (ending.rows.length > 0) {
-    const sorted = [...ending.rows].sort((a, b) => a.days - b.days)
+    const sorted = [...ending.rows].sort((a, b) => a.remaining - b.remaining)
     const single = ending.rows.length === 1 ? ending.rows[0].child : undefined
     jobs.push({
       id: 'ending',
       row: {
         icon: 'renew',
         title: plural(t.today.strip.ending, ending.rows.length),
-        subtitle: sorted
-          .slice(0, 2)
-          .map((row) => `${firstNameOf(row.child.student_name)}: ${endText(i18n, row.days)}`)
-          .join(', ')
-          .concat(sorted.length > 2 ? ` +${sorted.length - 2}` : ''),
-        alert: ending.rows.some((row) => row.days < 0),
+        // Names like the other rows; the lessons left only fit when there is one child
+        subtitle: single
+          ? `${firstNameOf(single.student_name)}: ${lessonsLeftText(i18n, sorted[0].remaining)}`
+          : names(sorted.map((row) => firstNameOf(row.child.student_name))),
+        alert: ending.rows.some((row) => row.remaining === 0),
         action: single
           ? { label: t.today.ending.renew, onPress: () => tasks.payment({ registrationId: single.id, choice: 'renew' }) }
           : { label: t.today.board.see, onPress: () => void toggle('ending') }
@@ -253,7 +252,7 @@ export function TodayScreen() {
       }
     })
   }
-  const waitingReady = !payments.registrations.isPending && !unmarked.isPending
+  const waitingReady = !payments.registrations.isPending && !unmarked.isPending && ending.ready
 
   const refresh = () =>
     Promise.all([

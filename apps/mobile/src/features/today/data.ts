@@ -1,8 +1,8 @@
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { unmarkedSeats } from '@hellokido/core/api'
-import { daysLeft, isEnding, isPaymentDue } from '@hellokido/core/view'
-import { keys, usePendingIncome, useRegistrations } from '../../data/queries'
+import { isPaymentDue, needsRenewal } from '@hellokido/core/view'
+import { keys, useActiveUsage, usePendingIncome, useRegistrations } from '../../data/queries'
 
 // The strip at the top and the sections it points to count from the same queries
 
@@ -31,12 +31,18 @@ export function usePaymentsDue() {
   return { registrations, byId, packages, fees, total: packages.length + fees.length }
 }
 
-/** Packages that ended or end within a week, with the days left (negative once ended). */
-export function useEndingPackages(now: Date) {
+/** Packages down to their last two lessons or out of them, with the lessons left (never below 0). */
+export function useEndingPackages() {
   const registrations = useRegistrations()
+  const usageQuery = useActiveUsage()
+  const usage = usageQuery.data
   const rows = useMemo(
-    () => (registrations.data ?? []).filter((row) => isEnding(row, now)).map((child) => ({ child, days: daysLeft(child, now) ?? 0 })),
-    [registrations.data, now]
+    () =>
+      (registrations.data ?? [])
+        .filter((row) => needsRenewal(row, usage?.[row.id]))
+        .map((child) => ({ child, remaining: Math.max(usage?.[child.id]?.remaining ?? 0, 0) })),
+    [registrations.data, usage]
   )
-  return { registrations, rows }
+  // Without the lessons left no package can be told apart; a failed count shows none rather than wait forever
+  return { registrations, rows, ready: usage !== undefined || usageQuery.isError }
 }

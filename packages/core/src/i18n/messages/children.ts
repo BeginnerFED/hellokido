@@ -9,7 +9,6 @@ const tr = {
     all: 'Hepsi',
     pending: 'Ödeme bekleyen',
     low: 'Dersi azalan',
-    ending: 'Süresi dolan',
     free: 'Ücretsiz'
   },
   anyPackage: 'Bütün paketler',
@@ -17,8 +16,7 @@ const tr = {
   summary: {
     active: { one: '{count} aktif çocuk', other: '{count} aktif çocuk' },
     pending: { one: '{count} ödeme bekliyor', other: '{count} ödeme bekliyor' },
-    low: { one: '{count} çocuğun dersi azaldı', other: '{count} çocuğun dersi azaldı' },
-    ending: { one: '{count} paketin süresi doluyor', other: '{count} paketin süresi doluyor' }
+    low: { one: '{count} çocuğun dersi azaldı', other: '{count} çocuğun dersi azaldı' }
   },
   empty: {
     none: 'Henüz kayıtlı çocuk yok',
@@ -34,9 +32,6 @@ const tr = {
   noneLeft: 'Ders hakkı bitti',
   free: 'Ücretsiz',
   pendingPayment: 'Ödeme bekliyor',
-  endsIn: { one: '{count} gün kaldı', other: '{count} gün kaldı' },
-  endsToday: 'Bugün bitiyor',
-  ended: { one: '{count} gün önce bitti', other: '{count} gün önce bitti' },
   beads:
     'Paket {total} ders: {attended} katıldı, {absent} gelmedi, {unmarked} yoklaması girilmedi, {booked} planlandı, {remaining} kaldı.',
   detail: {
@@ -177,7 +172,7 @@ const tr = {
     noChildren: 'Bu aramaya uyan aktif çocuk yok.',
     whatFor: 'Ne için?',
     renew: 'Yeni dönem',
-    renewHint: 'Paket bitti ya da bitiyor; yeni dönemi başlat.',
+    renewHint: 'Dersler bitti ya da azaldı; yeni dönemi başlat.',
     instalment: 'Taksit',
     instalmentHint: 'Aynı paketin bir sonraki ödemesi. Yarım pakette ikinci yarının dersleri eklenir.',
     collect: 'Bekleyen ödeme',
@@ -221,9 +216,6 @@ const tr = {
     lessonsUnit: { one: 'ders', other: 'ders' },
     leftUnit: { one: 'ders kaldı', other: 'ders kaldı' },
     parentOf: 'Veli: {name}',
-    endsIn: { one: 'Paketi {count} gün sonra bitiyor', other: 'Paketi {count} gün sonra bitiyor' },
-    endsToday: 'Paketi bugün bitiyor',
-    ended: { one: 'Paketi {count} gün önce bitti', other: 'Paketi {count} gün önce bitti' },
     unpaid: 'Bu dönemin ödemesi alınmadı',
     unbooked: { one: '{count} planlanmadı', other: '{count} planlanmadı' },
     usageFailed: 'Ders sayısı yüklenemedi.',
@@ -256,7 +248,6 @@ const en: Widen<typeof tr> = {
     all: 'All',
     pending: 'Payment due',
     low: 'Few lessons left',
-    ending: 'Package ending',
     free: 'Free'
   },
   anyPackage: 'All packages',
@@ -264,8 +255,7 @@ const en: Widen<typeof tr> = {
   summary: {
     active: { one: '{count} active child', other: '{count} active children' },
     pending: { one: '{count} payment due', other: '{count} payments due' },
-    low: { one: '{count} child is running out of lessons', other: '{count} children are running out of lessons' },
-    ending: { one: '{count} package is ending', other: '{count} packages are ending' }
+    low: { one: '{count} child is running out of lessons', other: '{count} children are running out of lessons' }
   },
   empty: {
     none: 'No children registered yet',
@@ -281,9 +271,6 @@ const en: Widen<typeof tr> = {
   noneLeft: 'No lessons left',
   free: 'Free',
   pendingPayment: 'Payment due',
-  endsIn: { one: '{count} day left', other: '{count} days left' },
-  endsToday: 'Ends today',
-  ended: { one: 'Ended {count} day ago', other: 'Ended {count} days ago' },
   beads: 'Package of {total} lessons: {attended} attended, {absent} absent, {unmarked} not marked, {booked} booked, {remaining} left.',
   detail: {
     back: 'Children',
@@ -423,7 +410,7 @@ const en: Widen<typeof tr> = {
     noChildren: 'No active child matches this search.',
     whatFor: 'What for?',
     renew: 'New period',
-    renewHint: 'The package has ended or is ending; start the next period.',
+    renewHint: 'The lessons have run out or are running low; start the next period.',
     instalment: 'Instalment',
     instalmentHint: 'The next payment for the same package. For a half package, the second half’s lessons are added.',
     collect: 'Due payment',
@@ -466,9 +453,6 @@ const en: Widen<typeof tr> = {
     lessonsUnit: { one: 'lesson', other: 'lessons' },
     leftUnit: { one: 'lesson left', other: 'lessons left' },
     parentOf: 'Parent: {name}',
-    endsIn: { one: 'Package ends in {count} day', other: 'Package ends in {count} days' },
-    endsToday: 'Package ends today',
-    ended: { one: 'Package ended {count} day ago', other: 'Package ended {count} days ago' },
     unpaid: 'This period is not paid',
     unbooked: { one: '{count} not booked', other: '{count} not booked' },
     usageFailed: 'Could not load the lesson count.',
@@ -500,7 +484,6 @@ const uk: Widen<typeof tr> = {
     all: 'Усі',
     pending: 'Очікують оплату',
     low: 'Мало занять',
-    ending: 'Пакет закінчується',
     free: 'Безкоштовно'
   },
   anyPackage: 'Усі пакети',
@@ -508,8 +491,7 @@ const uk: Widen<typeof tr> = {
   summary: {
     active: { one: '{count} активна дитина', few: '{count} активні дитини', many: '{count} активних дітей', other: '{count} активної дитини' },
     pending: { one: '{count} оплата очікується', few: '{count} оплати очікуються', many: '{count} оплат очікуються', other: '{count} оплати очікується' },
-    low: { one: 'У {count} дитини мало занять', few: 'У {count} дітей мало занять', many: 'У {count} дітей мало занять', other: 'У {count} дитини мало занять' },
-    ending: { one: '{count} пакет закінчується', few: '{count} пакети закінчуються', many: '{count} пакетів закінчуються', other: '{count} пакета закінчується' }
+    low: { one: 'У {count} дитини мало занять', few: 'У {count} дітей мало занять', many: 'У {count} дітей мало занять', other: 'У {count} дитини мало занять' }
   },
   empty: {
     none: 'Ще немає зареєстрованих дітей',
@@ -525,9 +507,6 @@ const uk: Widen<typeof tr> = {
   noneLeft: 'Заняття закінчились',
   free: 'Безкоштовно',
   pendingPayment: 'Очікує оплату',
-  endsIn: { one: 'Залишився {count} день', few: 'Залишилось {count} дні', many: 'Залишилось {count} днів', other: 'Залишилось {count} дня' },
-  endsToday: 'Закінчується сьогодні',
-  ended: { one: 'Закінчився {count} день тому', few: 'Закінчився {count} дні тому', many: 'Закінчився {count} днів тому', other: 'Закінчився {count} дня тому' },
   beads: 'Пакет на {total} занять: відвідано {attended}, пропущено {absent}, не відмічено {unmarked}, заплановано {booked}, залишилось {remaining}.',
   detail: {
     back: 'Діти',
@@ -669,7 +648,7 @@ const uk: Widen<typeof tr> = {
     noChildren: 'Немає активних дітей за цим запитом.',
     whatFor: 'За що?',
     renew: 'Новий період',
-    renewHint: 'Пакет закінчився або закінчується; почніть наступний період.',
+    renewHint: 'Заняття закінчились або їх мало; почніть наступний період.',
     instalment: 'Внесок',
     instalmentHint: 'Наступна оплата того самого пакета. Для половини пакета додаються заняття другої половини.',
     collect: 'Очікувана оплата',
@@ -712,9 +691,6 @@ const uk: Widen<typeof tr> = {
     lessonsUnit: { one: 'заняття', few: 'заняття', many: 'занять', other: 'заняття' },
     leftUnit: { one: 'заняття залишилось', few: 'заняття залишилось', many: 'занять залишилось', other: 'заняття залишилось' },
     parentOf: 'Батьки: {name}',
-    endsIn: { one: 'Пакет закінчується через {count} день', few: 'Пакет закінчується через {count} дні', many: 'Пакет закінчується через {count} днів', other: 'Пакет закінчується через {count} дня' },
-    endsToday: 'Пакет закінчується сьогодні',
-    ended: { one: 'Пакет закінчився {count} день тому', few: 'Пакет закінчився {count} дні тому', many: 'Пакет закінчився {count} днів тому', other: 'Пакет закінчився {count} дня тому' },
     unpaid: 'Цей період не оплачено',
     unbooked: { one: '{count} не заплановано', few: '{count} не заплановано', many: '{count} не заплановано', other: '{count} не заплановано' },
     usageFailed: 'Не вдалося завантажити кількість занять.',
