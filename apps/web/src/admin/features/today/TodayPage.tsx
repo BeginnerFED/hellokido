@@ -10,11 +10,12 @@ import { ButtonLink, textLinkClass } from '../../ui/Button'
 import { Page } from '../../ui/Page'
 import { DayRibbon, HeroCard } from './board'
 import { useWaiting } from './data'
-import { TomorrowCard, WaitingCard, type WorkTab } from './sections'
+import { PackagesCard, TomorrowCard, WaitingCard, type PackagesTab } from './sections'
 
 /**
  * The working day as a felt board: the day's lessons on a time strip, the lesson of the moment
- * with attendance in one tap, everything waiting for the admin in one card, and tomorrow's reminders.
+ * with attendance in one tap, the jobs waiting for the admin (attendance, tomorrow's reminders), and
+ * beside them payments due and packages to renew.
  */
 export default function TodayPage() {
   const i18n = useI18n()
@@ -28,7 +29,7 @@ export default function TodayPage() {
   const usage = useUsageOf(useMemo(() => todays.flatMap((lesson) => lesson.seats.map((seat) => seat.child)), [todays]))
   const [saving, setSaving] = useState<Set<string>>(() => new Set())
   const [chosenId, setChosenId] = useState<string | null>(null)
-  const [workTab, setWorkTab] = useState<WorkTab>('all')
+  const [packagesTab, setPackagesTab] = useState<PackagesTab>('all')
 
   const chosen = chosenId ? todays.find((lesson) => lesson.id === chosenId) : undefined
   const hero = chosen ?? waiting.hero
@@ -70,7 +71,6 @@ export default function TodayPage() {
   }
 
   const jumpToWork = () => {
-    setWorkTab('all')
     const card = document.getElementById('work')
     if (!card) return
     const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -116,9 +116,9 @@ export default function TodayPage() {
     >
       <div className="flex flex-col gap-[1.125rem]">
         <DayRibbon lessons={todays} now={now} heroId={hero?.id} onSelect={setChosenId} isPending={lessons.isPending} />
-        {/* Phones read it in order: the lesson, what waits, then tomorrow */}
+        {/* Phones read it in order: the lesson, what waits, tomorrow, then payments and packages */}
         <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] lg:grid-rows-[auto_1fr]">
-          <div className="min-w-0 lg:col-start-1 lg:row-start-1">
+          <div className="min-w-0 max-lg:order-1 lg:col-start-1 lg:row-start-1">
             <HeroCard
               lesson={hero}
               now={now}
@@ -130,21 +130,18 @@ export default function TodayPage() {
               onRetry={() => void lessons.refetch()}
             />
           </div>
-          <WaitingCard
-            waiting={waiting}
-            tab={workTab}
-            onTab={setWorkTab}
-            saving={saving}
-            onMarkToday={(seat, status) => void mark(seat, status)}
-            className="lg:col-start-2 lg:row-span-2 lg:row-start-1"
-          />
+          {/* The right column stacks its two cards; on a phone they part to let tomorrow in between */}
+          <div className="flex min-w-0 flex-col gap-5 max-lg:contents lg:col-start-2 lg:row-span-2 lg:row-start-1">
+            <WaitingCard waiting={waiting} saving={saving} onMarkToday={(seat, status) => void mark(seat, status)} className="max-lg:order-2" />
+            <PackagesCard waiting={waiting} tab={packagesTab} onTab={setPackagesTab} className="max-lg:order-4" />
+          </div>
           <TomorrowCard
             lessons={tomorrows}
             isPending={lessons.isPending}
             isError={lessons.isError}
             onRetry={() => void lessons.refetch()}
             now={now}
-            className="min-w-0 lg:col-start-1 lg:row-start-2"
+            className="min-w-0 max-lg:order-3 lg:col-start-1 lg:row-start-2"
           />
         </div>
       </div>

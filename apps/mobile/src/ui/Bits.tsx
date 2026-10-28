@@ -217,7 +217,7 @@ type TodoRowProps = {
   expanded?: boolean
 }
 
-/** One waiting job of Today's "Seni bekleyenler": an icon in a circle, what it is, and one small button. */
+/** One row of Today's cards (a job of "Seni bekleyenler", or payments and packages): an icon in a circle, what it is, and one small button. */
 export function TodoRow({ icon, title, subtitle, alert, action, onPress, accessibilityLabel, expanded }: TodoRowProps) {
   const c = useColors()
   const words = (

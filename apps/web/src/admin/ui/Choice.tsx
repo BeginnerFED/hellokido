@@ -24,7 +24,7 @@ import { cx } from './cx'
 
 /** A row of a select's list: 40 tall, the nav's pill hover. */
 const listItemClass =
-  'group flex min-h-10 cursor-default items-center gap-2.5 rounded-full px-3 py-2 text-[0.9375rem] outline-none select-none data-focused:bg-hover'
+  'group flex min-h-10 items-center gap-2.5 rounded-full px-3 py-2 text-[0.9375rem] outline-none select-none data-focused:bg-hover'
 
 export type Option<K extends string = string> = {
   id: K
@@ -189,7 +189,7 @@ export function RadioList<K extends string>({ label, options, value, onChange, i
             value={option.id}
             isDisabled={option.isDisabled}
             className={cx(
-              'group flex cursor-default items-center gap-3 px-3.5 py-3 outline-none first:rounded-t-control last:rounded-b-control',
+              'group flex items-center gap-3 px-3.5 py-3 outline-none first:rounded-t-control last:rounded-b-control',
               'transition-colors duration-150 data-hovered:bg-hover data-disabled:opacity-45 data-focus-visible:ring-2 data-focus-visible:ring-focus data-focus-visible:ring-inset'
             )}
           >
@@ -308,12 +308,15 @@ export function ChipSelect<K extends string>({ options, value, onChange, neutral
 
 export function Checkbox({ children, className, ...props }: Omit<CheckboxProps, 'children' | 'className'> & { children: ReactNode; className?: string }) {
   return (
-    <AriaCheckbox {...props} className={cx('group flex cursor-default items-start gap-2.5 text-sm text-ink outline-none', className)}>
+    <AriaCheckbox {...props} className={cx('group flex items-start gap-2.5 text-sm text-ink outline-none', className)}>
       <span
         aria-hidden
         className={cx(
           'mt-px grid size-[1.125rem] shrink-0 place-items-center rounded-[0.3125rem] border-[1.5px] border-mute bg-raised transition-colors duration-150',
-          'group-data-selected:border-fill group-data-selected:bg-fill group-data-focus-visible:ring-2 group-data-focus-visible:ring-focus'
+          // A pointer over it darkens the edge, or the fill once ticked
+          'group-data-hovered:border-ink-3 group-data-selected:border-fill group-data-selected:bg-fill',
+          'group-data-selected:group-data-hovered:border-[color-mix(in_oklab,var(--fill)_86%,black)] group-data-selected:group-data-hovered:bg-[color-mix(in_oklab,var(--fill)_86%,black)]',
+          'group-data-focus-visible:ring-2 group-data-focus-visible:ring-focus'
         )}
       >
         <CheckIcon weight="bold" className="size-3 text-on-accent opacity-0 group-data-selected:opacity-100" />
@@ -325,11 +328,16 @@ export function Checkbox({ children, className, ...props }: Omit<CheckboxProps, 
 
 export function Switch({ children, className, ...props }: Omit<SwitchProps, 'children' | 'className'> & { children: ReactNode; className?: string }) {
   return (
-    <AriaSwitch {...props} className={cx('group flex cursor-default items-center gap-3 text-sm text-ink outline-none', className)}>
+    <AriaSwitch {...props} className={cx('group flex items-center gap-3 text-sm text-ink outline-none', className)}>
       <span className="min-w-0 flex-1">{children}</span>
       <span
         aria-hidden
-        className="flex h-6 w-10 shrink-0 items-center rounded-full bg-mute p-0.5 transition-colors duration-150 group-data-selected:bg-fill group-data-focus-visible:ring-2 group-data-focus-visible:ring-focus"
+        className={cx(
+          'flex h-6 w-10 shrink-0 items-center rounded-full bg-mute p-0.5 transition-colors duration-150',
+          // A pointer over it darkens the track a step, on or off
+          'group-data-hovered:bg-[color-mix(in_oklab,var(--mute)_86%,var(--ink))] group-data-selected:bg-fill group-data-selected:group-data-hovered:bg-[color-mix(in_oklab,var(--fill)_86%,black)]',
+          'group-data-focus-visible:ring-2 group-data-focus-visible:ring-focus'
+        )}
       >
         <span className="size-5 rounded-full bg-white shadow-lift transition-transform duration-200 ease-out-expo group-data-selected:translate-x-4" />
       </span>

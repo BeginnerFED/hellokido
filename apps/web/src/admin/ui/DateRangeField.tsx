@@ -111,7 +111,7 @@ export function DateRangeField({ label, value, onChange, minValue, errorMessage,
                         date={date}
                         className={({ isSelected, isSelectionStart, isSelectionEnd, isOutsideMonth, isToday }) =>
                           cx(
-                            'grid h-9 w-full cursor-default place-items-center text-sm tabular outline-none transition-colors duration-100',
+                            'grid h-9 w-full place-items-center text-sm tabular outline-none transition-colors duration-100',
                             'data-hovered:bg-well data-focus-visible:ring-2 data-focus-visible:ring-focus data-disabled:opacity-30',
                             isSelected && 'bg-accent-wash-2 text-accent-ink data-hovered:bg-accent-wash-2',
                             (isSelectionStart || isSelectionEnd) && 'rounded-full bg-accent-solid font-semibold text-on-accent data-hovered:bg-accent-solid',

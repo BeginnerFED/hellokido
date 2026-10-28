@@ -48,7 +48,7 @@ export function MenuItem({ icon, tone = 'default', hint, children, ...props }: I
       textValue={textValue}
       {...props}
       className={cx(
-        'flex min-h-10 cursor-default items-center gap-2.5 rounded-full px-3 py-2 text-[0.9375rem] outline-none select-none',
+        'flex min-h-10 items-center gap-2.5 rounded-full px-3 py-2 text-[0.9375rem] outline-none select-none',
         'data-focused:bg-hover data-disabled:opacity-45',
         tone === 'danger' ? 'text-negative-ink' : 'text-ink'
       )}

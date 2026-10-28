@@ -91,7 +91,10 @@ function Rail({ collapsed }: { collapsed: boolean }) {
       <Link
         href="/"
         aria-label={t.shell.nav.today}
-        className={cx('mx-auto mb-[1.375rem] block shrink-0 rounded-control outline-none data-focus-visible:ring-2 data-focus-visible:ring-focus', collapsed ? 'w-10' : 'w-[9.375rem]')}
+        className={cx(
+          'mx-auto mb-[1.375rem] block shrink-0 rounded-control outline-none transition-opacity duration-150 data-hovered:opacity-80 data-focus-visible:ring-2 data-focus-visible:ring-focus',
+          collapsed ? 'w-10' : 'w-[9.375rem]'
+        )}
       >
         {collapsed ? (
           <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="Hello Kido" width={40} height={40} className="size-10" />

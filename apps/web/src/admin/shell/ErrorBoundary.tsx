@@ -27,7 +27,7 @@ export default class ErrorBoundary extends Component<{ children: ReactNode }, St
           <button
             type="button"
             onClick={() => window.location.reload()}
-            className="mt-6 h-11 rounded-control bg-accent-solid px-5 text-sm font-medium text-on-accent shadow-piece"
+            className="mt-6 h-11 rounded-control bg-accent-solid px-5 text-sm font-medium text-on-accent shadow-piece transition-colors duration-150 hover:bg-[color-mix(in_oklab,var(--accent-solid)_86%,black)]"
           >
             {text.reload}
           </button>

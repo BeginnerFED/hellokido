@@ -409,6 +409,25 @@
     outline-offset: 2px;
   }
 
+  /* Whatever can be pressed shows the hand (Tailwind 4 and React Aria leave buttons on the arrow);
+     a disabled one keeps the arrow. A utility such as cursor-grab still wins over this. */
+  :is(
+      button,
+      a[href],
+      select,
+      summary,
+      [role="button"],
+      [role="link"],
+      [role="tab"],
+      [role="option"],
+      [role="menuitem"],
+      [role="menuitemradio"],
+      [role="menuitemcheckbox"],
+      label:has(input:is([type="checkbox"], [type="radio"]))
+    ):not(:disabled, [aria-disabled="true"], [data-disabled]) {
+    cursor: pointer;
+  }
+
   * {
     scrollbar-width: thin;
     scrollbar-color: var(--line-strong) transparent;

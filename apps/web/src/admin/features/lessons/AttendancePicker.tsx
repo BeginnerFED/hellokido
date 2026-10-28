@@ -37,11 +37,14 @@ export function AttendancePicker({
   const labels = useLabels()
   const other = status === 'postponed' || status === 'makeup'
 
-  const part = (on: boolean, attended = false) =>
+  const part = (on: boolean, attended = false, opensMenu = false) =>
     cx(
       'flex h-8 min-w-0 flex-[1_1_auto] items-center justify-center gap-1 rounded-full px-2 text-[0.84375rem] font-medium whitespace-nowrap outline-none max-lg:h-9',
-      'transition-[background-color,color,box-shadow] duration-180 ease-out',
+      'transition-[background-color,color,box-shadow,filter] duration-180 ease-out',
       'data-focus-visible:ring-2 data-focus-visible:ring-focus data-disabled:opacity-50',
+      // A piece not chosen takes the hover tint; a chosen one only reacts when it opens a menu
+      !on && 'data-hovered:bg-hover',
+      on && opensMenu && 'data-hovered:brightness-95',
       // The chosen answer is a raised piece lifted off the track; "attended" carries a green check
       on && 'bg-raised shadow-lift',
       on && onType && 'dark:bg-[color-mix(in_srgb,var(--t-ink)_24%,var(--t-track))]',
@@ -73,7 +76,7 @@ export function AttendancePicker({
       {toggle('attended')}
       {toggle('no_show')}
       <MenuTrigger>
-        <AriaButton isDisabled={isDisabled} className={cx(part(other), 'pr-2 pl-2.5')}>
+        <AriaButton isDisabled={isDisabled} className={cx(part(other, false, true), 'pr-2 pl-2.5')}>
           {other && <span aria-hidden className={cx('size-[7px] shrink-0 rounded-full', DOT[status as AttendanceStatus])} />}
           <span className="truncate">{other ? labels.attendance(status) : t.today.otherStatus}</span>
           <CaretDownIcon aria-hidden weight="bold" className="size-3 shrink-0 opacity-70" />
@@ -84,7 +87,7 @@ export function AttendancePicker({
               <AriaMenuItem
                 key={mark}
                 id={mark}
-                className="flex min-h-10 cursor-default items-center gap-2.5 rounded-full px-3 py-2 text-[0.9375rem] text-ink outline-none select-none data-focused:bg-hover"
+                className="flex min-h-10 items-center gap-2.5 rounded-full px-3 py-2 text-[0.9375rem] text-ink outline-none select-none data-focused:bg-hover"
               >
                 <CheckIcon aria-hidden weight="bold" className={cx('size-4', status === mark ? 'text-accent' : 'opacity-0')} />
                 {labels.attendance(mark)}

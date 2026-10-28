@@ -140,7 +140,7 @@ function NoteForm({ note, onDone, onStateChange }: { note?: Note; onDone: () => 
               key={hex}
               value={hex}
               aria-label={t.notes.colors[hex] ?? hex}
-              className="group grid size-11 cursor-default place-items-center rounded-full outline-none data-focus-visible:ring-2 data-focus-visible:ring-focus"
+              className="group grid size-11 place-items-center rounded-full outline-none data-focus-visible:ring-2 data-focus-visible:ring-focus"
             >
               <span
                 aria-hidden

@@ -39,7 +39,8 @@ const names = (list: string[], max = 3) => {
 /**
  * The working day as a felt board: every lesson of the day as a card in its type's colour with
  * attendance in one tap, in a row that opens on the running lesson (or the next one; after the last,
- * the last one), and what waits for the admin as one card of jobs, each opening its list.
+ * the last one), what waits for the admin as one card of jobs, each opening its list, and payments
+ * due and packages to renew in a card of their own (they are not jobs).
  */
 export function TodayScreen() {
   const { t, plural, fmt, date } = useI18n()
@@ -180,7 +181,10 @@ export function TodayScreen() {
       return next
     })
 
-  const jobs: { id: Open; row: Parameters<typeof TodoRow>[0] }[] = []
+  // The jobs are attendance nobody marked and tomorrow's reminders; a job done no longer counts
+  const jobs: { id: Open; done?: boolean; row: Parameters<typeof TodoRow>[0] }[] = []
+  // Payments due and packages to renew are not jobs: they get a card of their own, never counted
+  const follow: { id: Open; row: Parameters<typeof TodoRow>[0] }[] = []
   const pastCount = unmarked.data?.length ?? 0
   const unmarkedCount = pastCount + earlierUnmarked.length
   if (unmarkedCount > 0) {
@@ -201,45 +205,11 @@ export function TodayScreen() {
       }
     })
   }
-  if (payments.total > 0) {
-    const single = payments.total === 1 ? (payments.packages[0] ?? payments.byId.get(payments.fees[0]?.registrationId ?? '')) : undefined
-    const fee = payments.total === 1 ? payments.fees[0] : undefined
-    jobs.push({
-      id: 'payments',
-      row: {
-        icon: 'lira',
-        title: plural(t.today.strip.payments, payments.total),
-        subtitle: names([...payments.packages.map((child) => child.student_name), ...payments.fees.map((line) => payments.byId.get(line.registrationId!)?.student_name ?? '')].filter(Boolean).map(firstNameOf)),
-        alert: true,
-        action: single
-          ? { label: t.today.payments.collect, onPress: () => tasks.payment({ registrationId: single.id, choice: 'collect', entryId: fee?.id }) }
-          : { label: t.today.board.see, onPress: () => void toggle('payments') }
-      }
-    })
-  }
-  if (ending.rows.length > 0) {
-    const sorted = [...ending.rows].sort((a, b) => a.remaining - b.remaining)
-    const single = ending.rows.length === 1 ? ending.rows[0].child : undefined
-    jobs.push({
-      id: 'ending',
-      row: {
-        icon: 'renew',
-        title: plural(t.today.strip.ending, ending.rows.length),
-        // Names like the other rows; the lessons left only fit when there is one child
-        subtitle: single
-          ? `${firstNameOf(single.student_name)}: ${lessonsLeftText(i18n, sorted[0].remaining)}`
-          : names(sorted.map((row) => firstNameOf(row.child.student_name))),
-        alert: ending.rows.some((row) => row.remaining === 0),
-        action: single
-          ? { label: t.today.ending.renew, onPress: () => tasks.payment({ registrationId: single.id, choice: 'renew' }) }
-          : { label: t.today.board.see, onPress: () => void toggle('ending') }
-      }
-    })
-  }
   if (reminders.items.length > 0) {
     const { items, sent, next } = reminders
     jobs.push({
       id: 'tomorrow',
+      done: !next,
       row: {
         icon: 'bell',
         title: t.today.board.tomorrowReminders,
@@ -252,7 +222,41 @@ export function TodayScreen() {
       }
     })
   }
-  const waitingReady = !payments.registrations.isPending && !unmarked.isPending && ending.ready
+  if (payments.total > 0) {
+    const single = payments.total === 1 ? (payments.packages[0] ?? payments.byId.get(payments.fees[0]?.registrationId ?? '')) : undefined
+    const fee = payments.total === 1 ? payments.fees[0] : undefined
+    follow.push({
+      id: 'payments',
+      row: {
+        icon: 'lira',
+        title: plural(t.today.strip.payments, payments.total),
+        subtitle: names([...payments.packages.map((child) => child.student_name), ...payments.fees.map((line) => payments.byId.get(line.registrationId!)?.student_name ?? '')].filter(Boolean).map(firstNameOf)),
+        action: single
+          ? { label: t.today.payments.collect, onPress: () => tasks.payment({ registrationId: single.id, choice: 'collect', entryId: fee?.id }) }
+          : { label: t.today.board.see, onPress: () => void toggle('payments') }
+      }
+    })
+  }
+  if (ending.rows.length > 0) {
+    const sorted = [...ending.rows].sort((a, b) => a.remaining - b.remaining)
+    const single = ending.rows.length === 1 ? ending.rows[0].child : undefined
+    follow.push({
+      id: 'ending',
+      row: {
+        icon: 'renew',
+        title: plural(t.today.strip.ending, ending.rows.length),
+        // Names like the other rows; the lessons left only fit when there is one child
+        subtitle: single
+          ? `${firstNameOf(single.student_name)}: ${lessonsLeftText(i18n, sorted[0].remaining)}`
+          : names(sorted.map((row) => firstNameOf(row.child.student_name))),
+        action: single
+          ? { label: t.today.ending.renew, onPress: () => tasks.payment({ registrationId: single.id, choice: 'renew' }) }
+          : { label: t.today.board.see, onPress: () => void toggle('ending') }
+      }
+    })
+  }
+  const jobCount = jobs.filter((job) => !job.done).length
+  const jobsReady = !unmarked.isPending && !lessons.isPending
 
   const refresh = () =>
     Promise.all([
@@ -306,12 +310,12 @@ export function TodayScreen() {
           <DayCarousel lessons={todays} hero={hero} next={upcoming} now={now} usage={usage} saving={saving} onMark={(seat, status) => void mark(seat, status)} />
         )}
 
-        <Section title={t.today.board.waitingTitle} aside={jobs.length > 0 ? plural(t.today.board.jobs, jobs.length) : undefined} style={styles.waiting}>
-          {!waitingReady && jobs.length === 0 ? (
+        <Section title={t.today.board.waitingTitle} aside={jobCount > 0 ? plural(t.today.board.jobs, jobCount) : undefined} style={styles.waiting}>
+          {!jobsReady && jobs.length === 0 ? (
             <ListSkeleton rows={2} />
           ) : jobs.length === 0 ? (
-            payments.registrations.isError ? (
-              <LoadError message={t.common.loadFailed} retryLabel={t.common.retry} onRetry={() => void payments.registrations.refetch()} />
+            unmarked.isError ? (
+              <LoadError message={t.common.loadFailed} retryLabel={t.common.retry} onRetry={() => void unmarked.refetch()} />
             ) : (
               <QuietCard>{t.today.nothingWaiting}</QuietCard>
             )
@@ -324,6 +328,7 @@ export function TodayScreen() {
           )}
         </Section>
 
+        {/* A list opens right under the card that holds its row */}
         <View {...place('unmarked')}>
           <UnmarkedSection
             dayKey={dayKey}
@@ -334,14 +339,28 @@ export function TodayScreen() {
             onClose={close('unmarked')}
           />
         </View>
+        <View {...place('tomorrow')}>
+          <TomorrowSection lessons={tomorrows} reminders={reminders} open={open.has('tomorrow')} onClose={close('tomorrow')} />
+        </View>
+
+        {follow.length > 0 ? (
+          <Section title={t.today.work.title} style={styles.waiting}>
+            <Card style={styles.todoCard}>
+              {follow.map((item) => (
+                <TodoRow key={item.id} {...item.row} />
+              ))}
+            </Card>
+          </Section>
+        ) : payments.registrations.isError ? (
+          <Section title={t.today.work.title} style={styles.waiting}>
+            <LoadError message={t.common.loadFailed} retryLabel={t.common.retry} onRetry={() => void payments.registrations.refetch()} />
+          </Section>
+        ) : null}
         <View {...place('payments')}>
           <PaymentsSection dayKey={dayKey} open={open.has('payments')} onClose={close('payments')} />
         </View>
         <View {...place('ending')}>
           <EndingSection now={now} dayKey={dayKey} open={open.has('ending')} onClose={close('ending')} />
-        </View>
-        <View {...place('tomorrow')}>
-          <TomorrowSection lessons={tomorrows} reminders={reminders} open={open.has('tomorrow')} onClose={close('tomorrow')} />
         </View>
       </Screen>
     </>

@@ -80,7 +80,7 @@ export function CardEmpty({ children }: { children: ReactNode }) {
 // Ended packages shown before the rest fold away; a couple more than this are shown in full
 const ENDED_FIRST = 5
 
-export type WorkTab = 'all' | 'attendance' | 'pay' | 'renew'
+export type PackagesTab = 'all' | 'pay' | 'renew'
 
 type Waiting = ReturnType<typeof useWaiting>
 
@@ -94,44 +94,80 @@ function useNames() {
 }
 
 /**
- * Everything waiting for the admin in one card: missing attendance (grouped by lesson, entered in
- * place), payments due and packages to renew. Each row carries its own action.
+ * The jobs waiting for the admin: attendance nobody marked, grouped by lesson and entered in place.
+ * (Tomorrow's reminders are the other job; they have a card of their own.)
  */
 export function WaitingCard({
   waiting,
-  tab,
-  onTab,
   saving,
   onMarkToday,
   className
 }: {
   waiting: Waiting
-  tab: WorkTab
-  onTab: (tab: WorkTab) => void
   /** Seats of today's lessons being saved, and the page's own optimistic answer for them. */
   saving: Set<string>
   onMarkToday: (seat: Seat, status: AttendanceStatus) => void
   className?: string
 }) {
-  const { t, plural, money } = useI18n()
-  const { counts, total, payments, ending } = waiting
-  const show = (which: Exclude<WorkTab, 'all'>) => tab === 'all' || tab === which
-
-  const payTotal = payments.packages.reduce((sum, child) => sum + (Number(child.payment_amount) || 0), 0) + payments.fees.reduce((sum, line) => sum + line.amount, 0)
-  const soon = ending.rows.filter((row) => row.remaining > 0).sort((a, b) => a.remaining - b.remaining || byName(a.child, b.child))
-  const ended = ending.rows.filter((row) => row.remaining === 0).sort((a, b) => byName(a.child, b.child))
-
-  const loading = !waiting.ready
-  const loadError = waiting.unmarked.query.isError || payments.registrations.isError
-  const empty =
-    tab === 'all' ? total === 0 : tab === 'attendance' ? counts.attendance === 0 : tab === 'pay' ? counts.pay === 0 : counts.renew === 0
+  const { t, plural } = useI18n()
+  const { total } = waiting
 
   return (
     <Card
       id="work"
       className={cx('outline-none', className)}
       title={t.today.board.waitingTitle}
-      aside={waiting.ready ? plural(t.today.board.jobs, total) : undefined}
+      aside={waiting.ready && total > 0 ? plural(t.today.board.jobs, total) : undefined}
+      bodyClassName="flex flex-col"
+    >
+      <div className="relative min-h-0 flex-1 overflow-y-auto pb-2 lg:max-h-[40rem]">
+        {waiting.unmarked.query.isError ? (
+          <div className="p-4 sm:px-[1.375rem]">
+            <LoadError message={t.common.loadFailed} retryLabel={t.common.retry} onRetry={() => void waiting.unmarked.query.refetch()} />
+          </div>
+        ) : !waiting.ready ? (
+          <ListSkeleton rows={3} />
+        ) : total === 0 ? (
+          <CardDone title={t.today.lessonsCard.allDone} body={t.today.lessonsCard.allDoneBody} />
+        ) : (
+          <AttendanceGroup waiting={waiting} saving={saving} onMarkToday={onMarkToday} />
+        )}
+      </div>
+    </Card>
+  )
+}
+
+/**
+ * Payments due and packages to renew, each row with its own action. They are not jobs: the card
+ * carries no job count and steps aside when there is nothing in it.
+ */
+export function PackagesCard({
+  waiting,
+  tab,
+  onTab,
+  className
+}: {
+  waiting: Waiting
+  tab: PackagesTab
+  onTab: (tab: PackagesTab) => void
+  className?: string
+}) {
+  const { t, plural, money } = useI18n()
+  const { counts, payments, ending } = waiting
+  const show = (which: Exclude<PackagesTab, 'all'>) => tab === 'all' || tab === which
+
+  const payTotal = payments.packages.reduce((sum, child) => sum + (Number(child.payment_amount) || 0), 0) + payments.fees.reduce((sum, line) => sum + line.amount, 0)
+  const soon = ending.rows.filter((row) => row.remaining > 0).sort((a, b) => a.remaining - b.remaining || byName(a.child, b.child))
+  const ended = ending.rows.filter((row) => row.remaining === 0).sort((a, b) => byName(a.child, b.child))
+
+  const loadError = payments.registrations.isError
+  if (waiting.packagesReady && !loadError && counts.pay + counts.renew === 0) return null
+  const empty = tab === 'pay' ? counts.pay === 0 : tab === 'renew' && counts.renew === 0
+
+  return (
+    <Card
+      className={className}
+      title={t.today.work.title}
       bodyClassName="flex flex-col"
       footer={
         tab === 'pay' && counts.pay > 0 ? (
@@ -148,16 +184,14 @@ export function WaitingCard({
       }
     >
       <div className="pb-2 sm:px-[1.375rem]">
-        <CardTabs<WorkTab>
+        <CardTabs<PackagesTab>
           fill
           className="max-sm:px-4"
           label={t.today.work.which}
           value={tab}
           onChange={onTab}
           options={[
-            // The card's header already carries the total
             { id: 'all', label: t.today.web.all },
-            { id: 'attendance', label: t.today.overview.attendance, count: counts.attendance, countTone: counts.attendance > 0 ? 'action' : 'muted' },
             { id: 'pay', label: t.today.work.pay, count: counts.pay },
             { id: 'renew', label: t.today.work.renew, count: counts.renew }
           ]}
@@ -166,30 +200,14 @@ export function WaitingCard({
       <div className="relative min-h-0 flex-1 overflow-y-auto pb-2 lg:max-h-[40rem]">
         {loadError ? (
           <div className="p-4 sm:px-[1.375rem]">
-            <LoadError
-              message={t.common.loadFailed}
-              retryLabel={t.common.retry}
-              onRetry={() => {
-                void waiting.unmarked.query.refetch()
-                void payments.registrations.refetch()
-              }}
-            />
+            <LoadError message={t.common.loadFailed} retryLabel={t.common.retry} onRetry={() => void payments.registrations.refetch()} />
           </div>
-        ) : loading ? (
-          <ListSkeleton rows={4} />
+        ) : !waiting.packagesReady ? (
+          <ListSkeleton rows={3} />
         ) : empty ? (
-          tab === 'attendance' ? (
-            <CardDone title={t.today.lessonsCard.allDone} body={t.today.lessonsCard.allDoneBody} />
-          ) : tab === 'pay' ? (
-            <CardEmpty>{t.today.payments.empty}</CardEmpty>
-          ) : tab === 'renew' ? (
-            <CardEmpty>{t.today.ending.empty}</CardEmpty>
-          ) : (
-            <CardDone title={t.today.nothingWaiting} />
-          )
+          <CardEmpty>{tab === 'pay' ? t.today.payments.empty : t.today.ending.empty}</CardEmpty>
         ) : (
           <>
-            {show('attendance') && counts.attendance > 0 && <AttendanceGroup waiting={waiting} saving={saving} onMarkToday={onMarkToday} />}
             {show('pay') && counts.pay > 0 && (
               <Group label={t.today.overview.payments} aside={payTotal > 0 ? money(payTotal) : undefined}>
                 <PaymentRows waiting={waiting} />
@@ -286,13 +304,19 @@ function AttendanceGroup({ waiting, saving, onMarkToday }: { waiting: Waiting; s
       return next
     })
 
+  // An earlier day's lesson carries its day and month, as on the phone: a weekday alone could be any week
+  const when = (at: string) =>
+    differenceInCalendarDays(new Date(at), waiting.now) === 0
+      ? `${t.common.today} ${date(at, { hour: '2-digit', minute: '2-digit' })}`
+      : date(at, { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })
+
   return (
     <Group label={t.today.strip.unmarkedShort} aside={plural(t.today.board.inLessons, lessons.length)}>
       <ul>
         {lessons.map((group) => (
           <AttendanceLesson
             key={group.id}
-            heading={`${date(group.lesson.event_date, { weekday: 'long', hour: '2-digit', minute: '2-digit' })}, ${title(group.lesson)}`}
+            heading={`${when(group.lesson.event_date)}, ${title(group.lesson)}`}
             sub={fmt(t.today.web.notMarked, { names: names(group.rows.map((row) => row.child.student_name)) })}
             isOpen={open.has(group.id)}
             onToggle={() => toggle(group.id)}

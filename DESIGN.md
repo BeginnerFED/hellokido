@@ -443,6 +443,8 @@ Soft rectangles for containers, pills and circles for everything you press or th
 ### Named Rules
 **The Round Piece Rule.** Things you press are pills; people are circles; containers are soft felt rectangles.
 
+**The Press Rule.** On the web everything you can press shows the hand cursor and answers the pointer with a slight hover (the hover tint, a step darker, or a thicker underline on text links). Disabled things keep the arrow; lesson blocks keep the grab hand and empty calendar space the cell cursor.
+
 ## Components
 
 ### Buttons

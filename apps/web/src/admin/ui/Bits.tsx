@@ -44,7 +44,7 @@ export function LoadError({ message, retryLabel, onRetry }: { message: string; r
   return (
     <div role="alert" className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-control bg-negative-wash px-4 py-3 text-sm text-negative-ink">
       <span className="min-w-0 flex-1">{message}</span>
-      <button type="button" onClick={onRetry} className="rounded-[0.25rem] font-semibold underline underline-offset-[3px] outline-none focus-visible:ring-2 focus-visible:ring-focus">
+      <button type="button" onClick={onRetry} className="rounded-[0.25rem] font-semibold underline decoration-1 underline-offset-[3px] outline-none hover:decoration-2 focus-visible:ring-2 focus-visible:ring-focus">
         {retryLabel}
       </button>
     </div>

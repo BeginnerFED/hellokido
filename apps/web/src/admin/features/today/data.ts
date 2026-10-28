@@ -88,8 +88,9 @@ export function useEndingPackages() {
 export type EarlierLesson = { lesson: Lesson; seats: Seat[] }
 
 /**
- * Everything that waits for the admin: attendance missing from past days and from today's lessons
- * that have ended (other than the one on the hero card), payments due and packages to renew.
+ * What waits for the admin. The jobs are the attendance missing from past days and from today's
+ * lessons that have ended (other than the one on the hero card). Payments due and packages to renew
+ * come along for a card of their own; they are not jobs and never add to the count.
  */
 export function useWaiting() {
   const { now, dayKey } = useClock()
@@ -107,7 +108,6 @@ export function useWaiting() {
     [day.todays, hero?.id, now]
   )
   const attendance = (unmarked.query.data?.length ?? 0) + earlier.reduce((sum, item) => sum + item.seats.length, 0)
-  const ready = Boolean(unmarked.query.data && payments.registrations.data && day.query.data && ending.ready)
   return {
     now,
     dayKey,
@@ -119,7 +119,8 @@ export function useWaiting() {
     payments,
     ending,
     counts: { attendance, pay: payments.total, renew: ending.rows.length },
-    total: attendance + payments.total + ending.rows.length,
-    ready
+    total: attendance,
+    ready: Boolean(unmarked.query.data && day.query.data),
+    packagesReady: Boolean(payments.registrations.data && ending.ready)
   }
 }

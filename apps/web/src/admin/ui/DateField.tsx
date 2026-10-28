@@ -161,7 +161,7 @@ export function MonthCalendar(props: Pick<CalendarProps<CalendarDate>, 'value' |
               date={date}
               className={({ isSelected, isOutsideMonth, isToday }) =>
                 cx(
-                  'grid size-9 cursor-default place-items-center rounded-full text-sm tabular outline-none transition-colors duration-100',
+                  'grid size-9 place-items-center rounded-full text-sm tabular outline-none transition-colors duration-100',
                   'data-hovered:bg-well data-focus-visible:ring-2 data-focus-visible:ring-focus data-disabled:opacity-30',
                   isSelected && 'bg-accent-solid font-semibold text-on-accent data-hovered:bg-accent-solid',
                   !isSelected && isToday && 'font-semibold text-accent-ink',

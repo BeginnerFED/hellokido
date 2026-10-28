@@ -44,7 +44,7 @@ const tr = {
   },
   work: {
     title: 'Ödemeler ve paketler',
-    which: 'Hangi işler',
+    which: 'Hangi liste',
     pay: 'Ödeme',
     renew: 'Yenileme',
     payBody: 'Bekleyen paket ödemeleri ve ek ücretler',
@@ -187,7 +187,7 @@ const en: Widen<typeof tr> = {
   },
   work: {
     title: 'Payments and packages',
-    which: 'Which tasks',
+    which: 'Which list',
     pay: 'Payments',
     renew: 'Renewals',
     payBody: 'Unpaid packages and expected fees',
@@ -327,7 +327,7 @@ const uk: Widen<typeof tr> = {
   },
   work: {
     title: 'Оплати й пакети',
-    which: 'Які справи',
+    which: 'Який список',
     pay: 'Оплати',
     renew: 'Поновлення',
     payBody: 'Неоплачені пакети та очікувані збори',
