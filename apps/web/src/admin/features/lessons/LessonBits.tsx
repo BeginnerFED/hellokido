@@ -60,7 +60,7 @@ export function SeatNames({ seats, layout = 'column', className }: { seats: Seat
         const holds = holdsSeat(seat.status)
         return (
           <span key={seat.id} className="flex min-w-0 items-center gap-1.5" title={labels.attendance(seat.status)}>
-            <span aria-hidden className={cx('size-1.5 shrink-0 rounded-full', holds ? dotClass(seat.status) : 'bg-mute')} />
+            <span aria-hidden className={cx('size-1.5 shrink-0 rounded-full', holds ? dotClass(seat.status) : seat.status === 'no_show' ? 'bg-negative' : 'bg-mute')} />
             <span className={cx('truncate', !holds && 'line-through opacity-75')}>{seat.child.student_name}</span>
           </span>
         )

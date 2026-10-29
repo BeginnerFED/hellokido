@@ -102,7 +102,7 @@
 
 /*
  * The board. Every ink pair is at least 4.5:1 on the surface it sits on; white on `fill` is 4.9:1.
- * `mute` is never text. Amber only means "do something"; an absence is grey, never red.
+ * `mute` is never text. Amber only means "do something"; an absent lesson is red with an X.
  */
 :root {
   color-scheme: light;

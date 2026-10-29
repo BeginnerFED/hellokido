@@ -1,5 +1,5 @@
 import { Button as AriaButton, Menu as AriaMenu, MenuItem as AriaMenuItem, MenuTrigger, Popover, ToggleButton } from 'react-aria-components'
-import { CaretDownIcon, CheckIcon } from '@phosphor-icons/react'
+import { CaretDownIcon, CheckIcon, XIcon } from '@phosphor-icons/react'
 import type { AttendanceStatus } from '@hellokido/core/api'
 import { useLabels } from '../../data/queries'
 import { useI18n } from '../../providers/I18n'
@@ -37,7 +37,7 @@ export function AttendancePicker({
   const labels = useLabels()
   const other = status === 'postponed' || status === 'makeup'
 
-  const part = (on: boolean, attended = false, opensMenu = false) =>
+  const part = (on: boolean, attended = false, opensMenu = false, absent = false) =>
     cx(
       'flex h-8 min-w-0 flex-[1_1_auto] items-center justify-center gap-1 rounded-full px-2 text-[0.84375rem] font-medium whitespace-nowrap outline-none max-lg:h-9',
       'transition-[background-color,color,box-shadow,filter] duration-180 ease-out',
@@ -45,12 +45,14 @@ export function AttendancePicker({
       // A piece not chosen takes the hover tint; a chosen one only reacts when it opens a menu
       !on && 'data-hovered:bg-hover',
       on && opensMenu && 'data-hovered:brightness-95',
-      // The chosen answer is a raised piece lifted off the track; "attended" carries a green check
+      // The chosen answer is a raised piece lifted off the track; "attended" carries a green check,
+      // "absent" a red X
       on && 'bg-raised shadow-lift',
       on && onType && 'dark:bg-[color-mix(in_srgb,var(--t-ink)_24%,var(--t-track))]',
       !on && (onType ? 'text-(--t-ink)' : 'text-ink-2 data-hovered:text-ink'),
       on && attended && (onType ? 'text-green-ink dark:text-[#bff0d3]' : 'text-green-ink'),
-      on && !attended && (onType ? 'text-ink dark:text-white' : 'text-ink')
+      on && absent && (onType ? 'text-negative-ink dark:text-[#ffdcd7]' : 'text-negative-ink'),
+      on && !attended && !absent && (onType ? 'text-ink dark:text-white' : 'text-ink')
     )
 
   const toggle = (mark: AttendanceStatus) => {
@@ -60,9 +62,10 @@ export function AttendancePicker({
         isSelected={on}
         onChange={(next) => next && onChange(mark)}
         isDisabled={isDisabled}
-        className={part(on, mark === 'attended')}
+        className={part(on, mark === 'attended', false, mark === 'no_show')}
       >
         {on && mark === 'attended' && <CheckIcon aria-hidden weight="bold" className="size-3.5 shrink-0" />}
+        {on && mark === 'no_show' && <XIcon aria-hidden weight="bold" className="size-3.5 shrink-0" />}
         <span className="truncate">{labels.attendance(mark)}</span>
       </ToggleButton>
     )

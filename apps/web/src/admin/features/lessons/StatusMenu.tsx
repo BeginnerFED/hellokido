@@ -5,11 +5,11 @@ import { useLabels } from '../../data/queries'
 import { Menu, MenuItem } from '../../ui/Menu'
 import { cx } from '../../ui/cx'
 
-/** Attended green, a make-up pink, an absence grey, still to come a ring; overdue is amber (it waits for the admin). */
+/** Attended green, a make-up pink, an absence red, still to come a ring; overdue is amber (it waits for the admin). */
 export function statusTone(status: string, overdue: boolean) {
   if (overdue) return 'bg-action-wash text-amber-ink'
   if (status === 'attended') return 'bg-positive-wash text-green-ink'
-  if (status === 'no_show') return 'bg-track text-ink'
+  if (status === 'no_show') return 'bg-negative-wash text-negative-ink'
   if (status === 'makeup') return 'bg-pink-felt text-pink-ink'
   if (status === 'scheduled') return 'text-ink-2 shadow-[inset_0_0_0_1.5px_var(--line-strong)]'
   return 'bg-track text-ink-2'

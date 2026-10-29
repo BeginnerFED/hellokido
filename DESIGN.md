@@ -341,7 +341,7 @@ Density is a working tool's: readable between lessons, everything opens on the c
 **Key Characteristics:**
 - A plain page; matte felt cards with no border and no shadow, 26px round.
 - Lessons carry their type as material (tinted felt + a shape), so a lesson reads at a glance and without colour.
-- One filled blue button per area; amber only for "do something"; an absence is grey.
+- One filled blue button per area; amber only for "do something"; an absent lesson is red with an X.
 - Geologica 400/500/600/700, big tabular figures, sentence case everywhere.
 - Shadows only on lifted pieces and on what floats (sidebar pieces, menus, sheets, the glass tab bar).
 
@@ -370,7 +370,7 @@ A cool white-and-felt board with one HelloKido blue for action, three logo colou
 - **Track** (#e4e9ee): segmented and attendance tracks, empty beads, quiet fills on a felt card, skeletons.
 - **Raised** (#ffffff): pieces lifted off felt: segment thumbs, secondary buttons, the active nav item, avatars and fields on a felt card, menus.
 - **Line** (#dfe5ea) and **Line Strong** (#c3cdd6): rules between rows inside a card, hour lines, sheet footers; strong for hover on fields and outlined chips.
-- **Inks**: ink (#13202b, a blue-black, never #000), ink-2 (#44525f) for secondary words and labels, ink-3 (#5d6a77) for meta; **mute** (#aeb8c1) is never text: absent beads, empty seat rings, closed days.
+- **Inks**: ink (#13202b, a blue-black, never #000), ink-2 (#44525f) for secondary words and labels, ink-3 (#5d6a77) for meta; **mute** (#aeb8c1) is never text: planned bead rings, empty seat rings, closed days.
 
 **Dark theme.** Deep night blue, not black: page #0e151b, sheet #141c23, felt #18212a, track #222d37, raised #33414e (a thumb would sink into the dark track, so it is two steps lighter). Lesson felts become deep tints with light inks; status inks lighten; Deep Blue fill stays #0077b3. On a lesson card in dark the segment thumb is the type ink mixed 24% into its track.
 
@@ -381,7 +381,7 @@ A cool white-and-felt board with one HelloKido blue for action, three logo colou
 
 **The Amber Means Act Rule.** Amber appears only where the admin has something to do. Nothing decorative is amber.
 
-**The Absence Is Grey Rule.** Attended green, absent grey (mute), make-up pink, forgotten amber. An absence is counted, never shown as danger.
+**The Absence Is Seen Rule.** Attended green with a check, absent red with an X (red fill and a white X on beads and calendar badges, red wash and red ink on chips and pegs), make-up pink, forgotten amber. The owner asked for absences to be seen at a glance (2026-10-29), so red here means "did not come", not an error.
 
 ## Typography
 
@@ -411,7 +411,7 @@ A cool white-and-felt board with one HelloKido blue for action, three logo colou
 
 **Web shell.** From 1024px a floating felt sidebar (236px, inset 12px from the window, 26px round; collapsed to a 72px icon rail) holds the logo alone at the top (150×86, light and dark files), the nav, then Ayarlar and the account block at the foot. The page has a 68px top bar closed by a 1px line hairline so it reads as its own band (no fill, 28px clear below it to the title): a 38px felt circle for the sidebar toggle, crumbs at 13.5 ink-3 with the last crumb in ink, and a 340px felt search pill with a raised "Ctrl K" key. Below 1024px the sidebar becomes a floating glass tab bar (page at 72% with a real backdrop blur, `--float` shadow, 58px tall, inset 12px) with a "More" sheet.
 
-**Page frame.** Content is centred at 82rem (92rem for wide pages) with 16 / 24px side padding, 36 / 40px on desktop. The header holds the title and summary at the left, and the toolbar at the right in this order: quiet buttons, segmented controls, then one primary. Cards sit 14–20px apart in weighted grids (Today 1.5fr : 1fr; Finance 1.3fr : 1fr : 1fr and 1.55fr : 1fr; Children a 372px list beside a detail column; an open child sits in a thin frame (1px line, 40px round, 14px in) with a quiet X at the top right that closes it). A parent beside a child reads "Veli: Name" with the name underlined, after a middle dot. Every scrolling box is `relative`, so hidden screen-reader text inside it never stretches the page. Cards side by side in one row share its height, and a card's next step sits at its foot, so no hole opens under the shorter one. A list that would outgrow its neighbours (Finance moves) fills the height left beside the right column (34rem at least) and scrolls inside with sticky day bands. From 1280px the Calendar day view has a 19.5rem right column: a month to jump from and the day in numbers.
+**Page frame.** Content is centred at 82rem (92rem for wide pages) with 16 / 24px side padding, 36 / 40px on desktop. The header holds the title and summary at the left, and the toolbar at the right in this order: quiet buttons, segmented controls, then one primary. Cards sit 14–20px apart in weighted grids (Today 1.5fr : 1fr; Finance 1.3fr : 1fr : 1fr and 1.55fr : 1fr; Children one full-width felt table: search, filter chips and a package chip in one row, column heads Çocuk | Veli | Paket | Kalan ders | Ödeme, a row per child that opens the child, hairlines between rows that step aside for the hovered row; narrower than 56rem the rows keep the name, "package · Veli: name" and the lessons left. A child opens on its own page: a felt "← Çocuklar" pill above the head, a 76px sky avatar beside the name and "age · package", the actions at the right (Ödeme al, Mesaj gönder, Bilgileri düzenle, ⋯), then 1.6fr : 1fr (Paket, Dersler, Ödemeler beside Veli, Not, Mesajlar; in one column Veli follows Paket)). A parent beside a child reads "Veli: Name" with the name underlined, after a middle dot. Every scrolling box is `relative`, so hidden screen-reader text inside it never stretches the page. Cards side by side in one row share its height, and a card's next step sits at its foot, so no hole opens under the shorter one. A list that would outgrow its neighbours (Finance moves) fills the height left beside the right column (34rem at least) and scrolls inside with sticky day bands. From 1280px the Calendar day view has a 19.5rem right column: a month to jump from and the day in numbers.
 
 **Phone.** Tab roots draw an in-content header: a 30pt title, one 15pt ink-2 line. On iPhone their buttons and menus live in the native transparent bar, level with the title row, and the page scrolls under that bar (the owner tried content starting below the bar and wanted this back); Android hides the system bar and keeps 44pt round buttons at the right of the title. Pushed pages keep the native transparent header. Calendar has no Day/Month switch: the range between its arrows carries a small chevron and opens the month in place of the week (and closes it again), as the month name does in the phone's own Calendar; a day tapped in the month opens that day. Screen gutter 16, 22 between sections, section head 10 above its card. Rows are 54–64pt with 16pt side padding; rules between rows start at 16pt and run across the content.
 
@@ -461,7 +461,7 @@ Soft rectangles for containers, pills and circles for everything you press or th
 - **Live mark:** "Şimdi, 48 dk kaldı": a 30px raised pill with an 8px pink dot in a 3px 22% pink ring; in dark on a lesson card it takes the card's track.
 
 ### Segmented controls and tabs
-A track pill with 3px padding; options 32px (28 small) in ink-2; the chosen one is raised with Lift. CardTabs carry counts in 600 ink-3, amber ink when overdue; on a phone-wide card they come apart into sideways chips. On a lesson card the track is the type's track and the words its ink. The attendance picker is "Katıldı | Gelmedi | Diğer ▾": the thumb slides in 180ms, a chosen Katıldı shows a check in green ink, Diğer opens a menu (web) or action sheet (phone).
+A track pill with 3px padding; options 32px (28 small) in ink-2; the chosen one is raised with Lift. CardTabs carry counts in 600 ink-3, amber ink when overdue; on a phone-wide card they come apart into sideways chips. On a lesson card the track is the type's track and the words its ink. The attendance picker is "Katıldı | Gelmedi | Diğer ▾": the thumb slides in 180ms, a chosen Katıldı shows a check in green ink, a chosen Gelmedi an X in red ink, Diğer opens a menu (web) or action sheet (phone).
 
 ### Cards / Containers
 - **Card:** felt, 26px, no border, no shadow, clipped. Header 18px top, 22px sides, 12px bottom: card title, an aside at 14 ink-3, an optional 13.5 ink-3 description. Footer is a plain row over a 1px line: 13.5 ink-3 words, an underlined ink text link and the main action.
@@ -485,10 +485,10 @@ A track pill with 3px padding; options 32px (28 small) in ink-2; the chosen one 
 - **Phone:** the native page sheet (`presentation: 'modal'`) with a real navigation bar in the sheet colour and no rule under it; fields sit on felt cards inside.
 
 ### Signature pieces
-- **Beads:** a package as one 26px pill per lesson: attended green with a white check, absent mute, planned a 1.5px mute ring; a legend of matching dots under it. **Mini beads** in rows: 9px dots in the card's type mid tone plus the count (amber ink at two or fewer).
+- **Beads:** a package as one 26px pill per lesson: attended green with a white check, absent red with a white X, planned a 1.5px mute ring; on the child's package card they stretch along the row (72px at most); a legend of matching dots under it. **Mini beads** in rows: 9px dots in the card's type mid tone plus the count (amber ink at two or fewer).
 - **Seat dots:** one dot per seat, filled in the type's mid tone, rings for free seats ("6 kişilik derste 2 yer boş").
-- **Peg / seat board:** children holding a seat as initials circles tinted by attendance (attended green wash, make-up pink felt, absent track, forgotten amber), then a thin rule, those who gave it up (dashed, struck through), then "4/6". A child past the planned six is flagged; the two surfaces differ on how (see the report).
-- **Day ribbon and week board (web):** lessons as type-felt blocks at their real time; past time and closed days carry the fine hatch; the pink now-line runs behind the blocks with a now-chip label.
+- **Peg / seat board:** children holding a seat as initials circles tinted by attendance (attended green wash, make-up pink felt, absent red wash, forgotten amber), then a thin rule, those who gave it up (dashed, struck through), then "4/6". A child past the planned six is flagged; the two surfaces differ on how (see the report).
+- **Day ribbon and week board (web):** lessons as type-felt blocks at their real time; the week board is sized to be read from a step back (88px an hour, block title 16/600, time 15/500, ages and seats 14 on lines of their own, day numbers 22); past time and closed days carry the fine hatch; the pink now-line runs behind the blocks with a now-chip label.
 
 ## Do's and Don'ts
 
@@ -506,7 +506,7 @@ A track pill with 3px padding; options 32px (28 small) in ink-2; the chosen one 
 ### Don't:
 - **Don't** give a card a border or a shadow, or put a card inside a card.
 - **Don't** use black fills, violet, gradients, gradient text or glow shadows; the hatch and the loading shimmer are the only gradients.
-- **Don't** colour an absence red or fill a status with a solid block.
+- **Don't** fill a status mark with a solid block; beads and calendar badges are the only filled status pieces.
 - **Don't** add side-stripe accents, uppercase labels or eyebrows above headings.
 - **Don't** use emoji or text glyphs as icons; icons are Phosphor on the web and SF Symbols on the phone.
 - **Don't** introduce a second type family or a second accent hue.

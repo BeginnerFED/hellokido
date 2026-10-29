@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { Button as AriaButton, Header, MenuSection } from 'react-aria-components'
 import { useQueryClient } from '@tanstack/react-query'
 import { addDays, addMonths, endOfMonth, format, isSameDay, isSameMonth, max as latest, min as earliest, startOfDay, startOfMonth } from 'date-fns'
-import { CaretLeftIcon, CaretRightIcon, CheckIcon } from '@phosphor-icons/react'
+import { CaretLeftIcon, CaretRightIcon, CheckIcon, XIcon } from '@phosphor-icons/react'
 import { setAttendance, type AttendanceStatus, type ChildLesson, type Registration } from '@hellokido/core/api'
 import { isAttendanceOverdue } from '@hellokido/core/rules/attendance.js'
 import { weekStart } from '@hellokido/core/view'
@@ -150,8 +150,8 @@ type ChangeProps = {
 
 /**
  * The period as a month-like grid, Monday first. A lesson day takes its type's felt with a badge:
- * a green check when attended, grey when absent, a ring while planned (amber once its attendance is
- * overdue). Today is outlined. Days outside the period are quiet. Tapping a lesson day corrects it.
+ * a green check when attended, a red X when absent, a ring while planned (amber once its attendance
+ * is overdue). Today is outlined. Days outside the period are quiet. Tapping a lesson day corrects it.
  */
 function PeriodCalendar({ start, end, lessons, saving, onChange }: { start: Date; end: Date; lessons: ChildLesson[] } & ChangeProps) {
   const i18n = useI18n()
@@ -259,13 +259,14 @@ function Badge({ lesson }: { lesson: ChildLesson }) {
       className={cx(
         'grid size-4 shrink-0 place-items-center rounded-full',
         status === 'attended' && 'bg-green text-white dark:text-page',
-        status === 'no_show' && 'bg-mute',
+        status === 'no_show' && 'bg-negative text-on-negative',
         status === 'makeup' && 'bg-pink',
         (status === 'postponed' || status === 'cancelled') && 'border-[1.5px] border-dashed border-current opacity-60',
         status === 'scheduled' && (overdue ? 'shadow-[inset_0_0_0_2px_var(--amber)]' : 'shadow-[inset_0_0_0_1.5px_currentColor] opacity-70')
       )}
     >
       {status === 'attended' && <CheckIcon weight="bold" className="size-[0.6875rem]" />}
+      {status === 'no_show' && <XIcon weight="bold" className="size-[0.6875rem]" />}
     </span>
   )
 }

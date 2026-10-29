@@ -7,22 +7,23 @@ import {
   DotsThreeIcon,
   HandCoinsIcon,
   PencilSimpleIcon,
+  PhoneIcon,
   ReceiptIcon,
-  WhatsappLogoIcon,
-  XIcon
+  WhatsappLogoIcon
 } from '@phosphor-icons/react'
 import { releaseSeats, remainingTone, setRegistrationActive, upcomingSeats, type Registration, type Usage } from '@hellokido/core/api'
+import { phoneDigits, whatsAppLink } from '@hellokido/core/rules/phone.js'
 import { useActiveUsage, useChildUsage, useLabels, useRefresh } from '../../data/queries'
 import { useI18n } from '../../providers/I18n'
 import { useToast } from '../../providers/Toasts'
 import { useActions } from '../../shell/Actions'
-import { Avatar, LoadError, Mark, Skeleton } from '../../ui/Bits'
-import { Button, IconButton } from '../../ui/Button'
+import { Avatar, EmptyState, LoadError, Mark, Skeleton } from '../../ui/Bits'
+import { Button, ButtonLink, IconButton } from '../../ui/Button'
 import { Checkbox } from '../../ui/Choice'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { Menu, MenuItem, MenuSeparator } from '../../ui/Menu'
-import { Card } from '../../ui/Page'
-import { displayPhone, PhoneActions } from '../../ui/PhoneActions'
+import { Card, Page } from '../../ui/Page'
+import { displayPhone } from '../../ui/PhoneActions'
 import { Beads } from '../../ui/signature'
 import { cx } from '../../ui/cx'
 import { beadsLabel, lessonsLeftText, packageStartText } from './ChildBits'
@@ -31,13 +32,17 @@ import { MessageHistory, SendMessageSheet } from './ChildMessages'
 import { ChildPayments } from './ChildPayments'
 import { isFree, isPaymentDue, needsRenewal } from './rules'
 
+const BACK = '/children'
+
 /**
- * One child on the board, with no card around it: who they are and who to call, what can be done,
- * then the package and the period's lessons side by side, the payments, the note and the messages.
+ * A child's own page. The head says who they are and holds what can be done; under it the package,
+ * the lessons and the payments, and beside them the parent, the note and the messages. In one
+ * column (a phone) the parent comes right after the package.
  */
-export function ChildDetail({ registration, showName, onClose }: { registration: Registration; showName: boolean; onClose?: () => void }) {
+export function ChildPage({ registration }: { registration: Registration }) {
   const i18n = useI18n()
   const { t, fmt } = i18n
+  const labels = useLabels()
   const { startTask } = useActions()
   const active = registration.is_active === true
   const activeUsage = useActiveUsage()
@@ -47,26 +52,14 @@ export function ChildDetail({ registration, showName, onClose }: { registration:
   const usage = active ? activeUsage.data?.[registration.id] : ownUsage.data
   const [dialog, setDialog] = useState<'archive' | 'activate' | 'message' | null>(null)
   const more = t.children.detail.actions.more
-  // Beside the list the name is a level-2 heading; on a phone the name is the page's own title
-  const level = showName ? 3 : 2
+  const notes = registration.notes?.trim()
 
   const status = !active ? (
     <Mark tone="neutral">{t.children.views.archived}</Mark>
   ) : isPaymentDue(registration) ? (
     <Mark tone="action">{t.children.pendingPayment}</Mark>
   ) : null
-
-  const parent = (
-    <div className="on-felt flex min-w-0 items-center gap-2.5 rounded-[1.5rem] bg-felt py-2 pr-2 pl-4 max-sm:w-full">
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-[0.96875rem] leading-5 font-medium text-ink">{registration.parent_name}</p>
-        <p className="truncate text-[0.84375rem] leading-[1.125rem] text-ink-3">
-          {t.children.detail.parent}, {displayPhone(registration.parent_phone)}
-        </p>
-      </div>
-      <PhoneActions phone={registration.parent_phone} className="gap-1.5" />
-    </div>
-  )
+  const about = [registration.student_age?.trim(), labels.packageName(registration.package_type)].filter(Boolean).join(' · ')
 
   const message = (
     <Button
@@ -80,140 +73,184 @@ export function ChildDetail({ registration, showName, onClose }: { registration:
     </Button>
   )
 
-  return (
-    <div className="@container flex flex-col">
-      {showName ? (
-        <div className="flex items-start gap-3 pt-1 pb-5">
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-[1.125rem] gap-y-4">
-            <Avatar name={registration.student_name} size="xl" tone="sky" />
-            <div className="min-w-0 flex-[1_1_12rem]">
-              <h2 className="truncate text-[2rem] leading-[2.375rem] font-semibold tracking-[-0.025em]">{registration.student_name}</h2>
-              <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.96875rem] text-ink-2">
-                {registration.student_age && <span>{registration.student_age}</span>}
-                {status}
-              </p>
-            </div>
-            {parent}
-          </div>
-          {/* Closes the child and leaves the list alone; level with the middle of the avatar */}
-          {onClose && (
-            <IconButton label={t.common.close} variant="quiet" onPress={onClose} className="mt-[1.125rem] size-10! shrink-0">
-              <XIcon aria-hidden className="size-[1.125rem]" />
+  // Long labels (Ukrainian) put the buttons on rows of their own; the menu stays with "edit"
+  const toolbar = active ? (
+    <>
+      <Button
+        variant="primary"
+        className="max-sm:flex-1"
+        icon={<HandCoinsIcon aria-hidden className="size-[1.125rem]" />}
+        onPress={() => startTask('payment', { registrationId: registration.id })}
+      >
+        {t.children.detail.actions.takePayment}
+      </Button>
+      {message}
+      <div className="flex gap-2 max-sm:flex-1 lg:gap-2.5">
+        <Button
+          variant="quiet"
+          className="max-sm:flex-1"
+          icon={<PencilSimpleIcon aria-hidden className="size-[1.125rem]" />}
+          onPress={() => startTask('registration', { registrationId: registration.id })}
+        >
+          {t.children.detail.actions.edit}
+        </Button>
+        <Menu
+          label={more}
+          trigger={
+            <IconButton label={more} variant="quiet">
+              <DotsThreeIcon aria-hidden weight="bold" className="size-5" />
             </IconButton>
-          )}
-        </div>
-      ) : (
-        <div className="flex flex-col items-start gap-3 pb-4">
-          {status}
-          {parent}
-        </div>
-      )}
-
-      {active ? (
-        // Long labels (Ukrainian) put the buttons on rows of their own; the menu stays with "edit"
-        <div className="flex flex-wrap gap-2.5 pb-[1.125rem]">
-          <Button
-            variant="primary"
-            className="max-sm:flex-1"
-            icon={<HandCoinsIcon aria-hidden className="size-[1.125rem]" />}
-            onPress={() => startTask('payment', { registrationId: registration.id })}
+          }
+        >
+          <MenuItem
+            icon={<ReceiptIcon aria-hidden className="size-[1.125rem]" />}
+            onAction={() => startTask('payment', { registrationId: registration.id, choice: 'fee' })}
           >
-            {t.children.detail.actions.takePayment}
-          </Button>
-          {message}
-          <div className="flex gap-2.5 max-sm:flex-1">
-            <Button
-              variant="quiet"
-              className="max-sm:flex-1"
-              icon={<PencilSimpleIcon aria-hidden className="size-[1.125rem]" />}
-              onPress={() => startTask('registration', { registrationId: registration.id })}
-            >
-              {t.children.detail.actions.edit}
-            </Button>
-            <Menu
-              label={more}
-              trigger={
-                <IconButton label={more} variant="quiet">
-                  <DotsThreeIcon aria-hidden weight="bold" className="size-5" />
-                </IconButton>
-              }
-            >
-              <MenuItem
-                icon={<ReceiptIcon aria-hidden className="size-[1.125rem]" />}
-                onAction={() => startTask('payment', { registrationId: registration.id, choice: 'fee' })}
-              >
-                {t.children.detail.actions.addFee}
-              </MenuItem>
-              <MenuSeparator />
-              <MenuItem icon={<ArchiveIcon aria-hidden className="size-[1.125rem]" />} onAction={() => setDialog('archive')}>
-                {t.children.detail.actions.archive}
-              </MenuItem>
-            </Menu>
+            {t.children.detail.actions.addFee}
+          </MenuItem>
+          <MenuSeparator />
+          <MenuItem icon={<ArchiveIcon aria-hidden className="size-[1.125rem]" />} onAction={() => setDialog('archive')}>
+            {t.children.detail.actions.archive}
+          </MenuItem>
+        </Menu>
+      </div>
+    </>
+  ) : (
+    <>
+      <Button variant="quiet" className="max-sm:flex-1" icon={<ArrowUUpLeftIcon aria-hidden className="size-[1.125rem]" />} onPress={() => setDialog('activate')}>
+        {t.children.detail.actions.activate}
+      </Button>
+      {message}
+    </>
+  )
+
+  return (
+    <Page
+      title={registration.student_name}
+      summary={
+        (about || status) && (
+          <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            {about && <span>{about}</span>}
+            {status}
+          </span>
+        )
+      }
+      toolbar={toolbar}
+      back={{ href: BACK, label: t.children.detail.back }}
+      lead={<Avatar name={registration.student_name} size="xl" tone="sky" />}
+      action={false}
+      width="wide"
+    >
+      {!active && <p className="mb-4 text-[0.9375rem] text-ink-2 text-pretty">{t.children.detail.archivedNote}</p>}
+      <div className="@container">
+        {/* Two columns once there is room; in one, the column wrappers step aside so the parent can follow the package */}
+        <div className="flex flex-col gap-4 @3xl:grid @3xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] @3xl:items-start @3xl:gap-[1.125rem]">
+          <div className="contents @3xl:flex @3xl:flex-col @3xl:gap-[1.125rem]">
+            <PackageCard
+              registration={registration}
+              usage={usage}
+              failed={usageQuery.isError && !usage}
+              onRetry={() => void usageQuery.refetch()}
+              className="order-1"
+            />
+            <div className="order-3 flex min-w-0 flex-col">
+              <ChildLessons key={`lessons-${registration.id}`} registration={registration} level={2} />
+            </div>
+            <div className="order-4 flex min-w-0 flex-col">
+              <ChildPayments key={`payments-${registration.id}`} registration={registration} level={2} />
+            </div>
           </div>
-        </div>
-      ) : (
-        <div className="flex flex-col gap-3 pb-[1.125rem]">
-          <p className="text-[0.9375rem] text-ink-2 text-pretty">{t.children.detail.archivedNote}</p>
-          <div className="flex flex-wrap gap-2.5">
-            <Button variant="quiet" icon={<ArrowUUpLeftIcon aria-hidden className="size-[1.125rem]" />} onPress={() => setDialog('activate')}>
-              {t.children.detail.actions.activate}
-            </Button>
-            {message}
+          <div className="contents @3xl:flex @3xl:flex-col @3xl:gap-[1.125rem]">
+            <ParentCard registration={registration} className="order-2" />
+            {notes && (
+              <Card title={t.children.detail.notesTitle} className="order-5">
+                <p className="px-4 pb-[1.125rem] text-[0.9375rem] whitespace-pre-line text-ink-2 text-pretty sm:px-[1.375rem]">{registration.notes}</p>
+              </Card>
+            )}
+            <div className="order-6 flex min-w-0 flex-col">
+              <MessageHistory registration={registration} level={2} />
+            </div>
           </div>
-        </div>
-      )}
-
-      <div className="flex flex-col gap-4">
-        {/* Side by side the two cards share one height, so no hole opens under the shorter one */}
-        <div className="grid gap-4 @2xl:grid-cols-[minmax(0,1fr)_minmax(0,1.08fr)]">
-          <PackageCard
-            registration={registration}
-            usage={usage}
-            failed={usageQuery.isError && !usage}
-            onRetry={() => void usageQuery.refetch()}
-            level={level}
-          />
-          <ChildLessons key={`lessons-${registration.id}`} registration={registration} level={level} />
-        </div>
-
-        <ChildPayments key={`payments-${registration.id}`} registration={registration} level={level} />
-
-        <div className={cx('grid items-start gap-4', registration.notes?.trim() && '@2xl:grid-cols-2')}>
-          {registration.notes?.trim() && (
-            <Card level={level} title={t.children.detail.notesTitle}>
-              <p className="px-4 pb-[1.125rem] text-[0.9375rem] whitespace-pre-line text-ink-2 text-pretty sm:px-[1.375rem]">{registration.notes}</p>
-            </Card>
-          )}
-          <MessageHistory registration={registration} level={level} />
         </div>
       </div>
 
       <ArchiveDialog registration={registration} isOpen={dialog === 'archive'} onOpenChange={(open) => setDialog(open ? 'archive' : null)} />
       <ActivateDialog registration={registration} isOpen={dialog === 'activate'} onOpenChange={(open) => setDialog(open ? 'activate' : null)} />
       <SendMessageSheet registration={registration} usage={usage} isOpen={dialog === 'message'} onOpenChange={(open) => setDialog(open ? 'message' : null)} />
-    </div>
+    </Page>
   )
 }
 
-/** The shape of a child while it loads: the identity row, then two cards. */
-export function ChildDetailSkeleton({ showName }: { showName: boolean }) {
+/** The child's page before the child is known: its shape while the list loads, or why it cannot open. */
+export function ChildPageFallback({ state, onRetry }: { state: 'loading' | 'missing' | 'error'; onRetry?: () => void }) {
+  const { t } = useI18n()
+  const back = { href: BACK, label: t.children.detail.back }
+  if (state === 'loading') {
+    return (
+      <Page
+        title={
+          <>
+            <span className="sr-only">{t.common.loading}</span>
+            <Skeleton as="span" className="block h-9 w-56 max-w-full lg:h-10" />
+          </>
+        }
+        crumb={t.common.loading}
+        back={back}
+        lead={<Skeleton className="size-[4.75rem] rounded-full" />}
+        action={false}
+        width="wide"
+      >
+        <div aria-busy className="grid gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+          <Skeleton className="h-72 rounded-panel" />
+          <Skeleton className="h-44 rounded-panel" />
+        </div>
+      </Page>
+    )
+  }
   return (
-    <div aria-busy className="flex flex-col gap-4">
-      {showName && (
-        <div className="flex items-center gap-[1.125rem] pt-1 pb-1">
-          <Skeleton className="size-[4.75rem] shrink-0 rounded-full" />
-          <div className="flex flex-1 flex-col gap-2">
-            <Skeleton className="h-9 w-1/2" />
-            <Skeleton className="h-5 w-1/3" />
-          </div>
+    <Page title={t.children.title} back={back} action={false} width="wide">
+      {state === 'error' ? (
+        <div className="on-felt rounded-panel bg-felt p-5">
+          <LoadError message={t.children.loadFailed} retryLabel={t.common.retry} onRetry={() => onRetry?.()} />
+        </div>
+      ) : (
+        <div className="rounded-panel bg-felt">
+          <EmptyState className="py-12" title={t.children.detail.notFound} />
         </div>
       )}
-      <Skeleton className="h-10 w-2/3 rounded-full" />
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Skeleton className="h-64 rounded-panel" />
-        <Skeleton className="h-64 rounded-panel" />
-      </div>
-    </div>
+    </Page>
+  )
+}
+
+/** Who to call: the parent's name and number, and a call or a WhatsApp chat in one press. */
+function ParentCard({ registration, className }: { registration: Registration; className?: string }) {
+  const { t } = useI18n()
+  const digits = phoneDigits(registration.parent_phone)
+  const chat = whatsAppLink(registration.parent_phone)
+  return (
+    <Card title={t.children.detail.parent} className={className} bodyClassName="px-4 pb-5 sm:px-[1.375rem]">
+      {registration.parent_name?.trim() && <p className="text-[1.0625rem] leading-[1.375rem] font-medium">{registration.parent_name}</p>}
+      <p className="mt-0.5 text-[0.9375rem] text-ink-2 tabular">{displayPhone(registration.parent_phone)}</p>
+      {digits && (
+        <div className="mt-3.5 flex flex-wrap gap-2">
+          <ButtonLink href={`tel:${digits}`} variant="quiet" className="max-sm:grow" icon={<PhoneIcon aria-hidden className="size-[1.125rem]" />}>
+            {t.children.detail.callParent}
+          </ButtonLink>
+          {chat && (
+            <ButtonLink
+              href={chat}
+              target="_blank"
+              rel="noopener noreferrer"
+              variant="quiet"
+              className="max-sm:grow"
+              icon={<WhatsappLogoIcon aria-hidden className="size-[1.125rem] text-whatsapp" />}
+            >
+              {t.children.detail.whatsapp}
+            </ButtonLink>
+          )}
+        </div>
+      )}
+    </Card>
   )
 }
 
@@ -236,13 +273,13 @@ function PackageCard({
   usage,
   failed,
   onRetry,
-  level
+  className
 }: {
   registration: Registration
   usage: Usage | undefined
   failed: boolean
   onRetry: () => void
-  level: 2 | 3
+  className?: string
 }) {
   const i18n = useI18n()
   const { t, fmt, plural } = i18n
@@ -260,7 +297,7 @@ function PackageCard({
   const legend = usage
     ? [
         usage.attended > 0 && { key: 'yes', dot: 'bg-green', text: plural(t.children.detail.attended, usage.attended) },
-        usage.noShow > 0 && { key: 'no', dot: 'bg-mute', text: plural(t.children.detail.absent, usage.noShow) },
+        usage.noShow > 0 && { key: 'no', dot: 'bg-negative', text: plural(t.children.detail.absent, usage.noShow) },
         usage.scheduled - usage.unmarkedPast > 0 && {
           key: 'planned',
           dot: 'shadow-[inset_0_0_0_1.5px_var(--mute)]',
@@ -280,9 +317,9 @@ function PackageCard({
 
   return (
     <Card
-      level={level}
       title={labels.packageName(registration.package_type)}
       aside={<span className="tabular">{period}</span>}
+      className={className}
       bodyClassName="flex flex-col px-4 pb-5 sm:px-[1.375rem]"
     >
       {failed ? (

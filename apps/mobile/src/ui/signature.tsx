@@ -69,7 +69,7 @@ export function BeadString({ usage, size = 'sm', label }: { usage: Usage; size?:
 }
 
 /**
- * The lessons of a package as beads: attended green with a tick, absent grey, planned an empty
+ * The lessons of a package as beads: attended green with a tick, absent red with an X, planned an empty
  * ring, and (`open`) lessons still to book as plain track. `label` is what a screen reader says for
  * the whole string ("4 attended, 1 absent, 3 planned"). `perRow` breaks a long package (24 lessons)
  * into rows of equal beads.
@@ -104,12 +104,13 @@ export function Beads({
       style={[
         styles.bead,
         kind === 'y' && { backgroundColor: c.green },
-        kind === 'n' && { backgroundColor: c.mute },
+        kind === 'n' && { backgroundColor: c.negative },
         kind === 'p' && { borderWidth: 1.5, borderColor: c.mute },
         kind === 'o' && { backgroundColor: c.track }
       ]}
     >
       {kind === 'y' && <Icon name="check" size={13} color={c.onGreen} weight="bold" />}
+      {kind === 'n' && <Icon name="close" size={12} color={c.onNegative} weight="bold" />}
     </View>
   )
   // Rows of the same count, the last one filled out with clear room, so every bead keeps one width
@@ -154,7 +155,7 @@ export function BeadLegend({ attended, absent, planned, open }: { attended: stri
   return (
     <View style={styles.legend}>
       {item({ backgroundColor: c.green }, attended)}
-      {item({ backgroundColor: c.mute }, absent)}
+      {item({ backgroundColor: c.negative }, absent)}
       {item({ borderWidth: 1.5, borderColor: c.mute }, planned)}
       {item({ backgroundColor: c.track }, open)}
     </View>
@@ -248,8 +249,8 @@ export const PEG_INSET = 16
 function pegLook(c: Colors, seat: PegSeat): { box: ViewStyle; ink: string; struck?: boolean } {
   if (seat.status === 'attended') return { box: { backgroundColor: c.positiveWash }, ink: c.greenInk }
   if (seat.status === 'makeup') return { box: { backgroundColor: c.pinkFelt }, ink: c.pinkInk }
-  // An absence is counted, not a danger: grey
-  if (seat.status === 'no_show') return { box: { backgroundColor: c.track }, ink: c.ink3 }
+  // An absence is seen at once: red, as on the child's beads
+  if (seat.status === 'no_show') return { box: { backgroundColor: c.negativeWash }, ink: c.negativeInk }
   if (seat.status === 'postponed' || seat.status === 'cancelled')
     return { box: { backgroundColor: 'transparent', borderWidth: 1.5, borderStyle: 'dashed', borderColor: c.mute }, ink: c.ink3, struck: true }
   if (seat.overdue) return { box: { backgroundColor: c.lateTile }, ink: c.amberInk }

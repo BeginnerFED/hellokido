@@ -26,12 +26,14 @@ const tr = {
     archive: 'Arşivde çocuk yok'
   },
   loadFailed: 'Çocuklar yüklenemedi.',
-  pickChild: 'Ayrıntılarını görmek için listeden bir çocuk seç.',
   newRegistration: 'Yeni kayıt',
   remaining: { one: '{count} ders kaldı', other: '{count} ders kaldı' },
   noneLeft: 'Ders hakkı bitti',
   free: 'Ücretsiz',
   pendingPayment: 'Ödeme bekliyor',
+  paid: 'Ödendi',
+  columns: { child: 'Çocuk', parent: 'Veli', package: 'Paket', left: 'Kalan ders', payment: 'Ödeme' },
+  ending: { soon: 'Bitmek üzere', ended: 'Paket bitti' },
   beads:
     'Paket {total} ders: {attended} katıldı, {absent} gelmedi, {unmarked} yoklaması girilmedi, {booked} planlandı, {remaining} kaldı.',
   detail: {
@@ -257,12 +259,14 @@ const en: Widen<typeof tr> = {
     archive: 'The archive is empty'
   },
   loadFailed: 'Could not load the children.',
-  pickChild: 'Pick a child from the list to see the details.',
   newRegistration: 'New registration',
   remaining: { one: '{count} lesson left', other: '{count} lessons left' },
   noneLeft: 'No lessons left',
   free: 'Free',
   pendingPayment: 'Payment due',
+  paid: 'Paid',
+  columns: { child: 'Child', parent: 'Parent', package: 'Package', left: 'Lessons left', payment: 'Payment' },
+  ending: { soon: 'Running out', ended: 'Package used up' },
   beads: 'Package of {total} lessons: {attended} attended, {absent} absent, {unmarked} not marked, {booked} booked, {remaining} left.',
   detail: {
     back: 'Children',
@@ -485,12 +489,14 @@ const uk: Widen<typeof tr> = {
     archive: 'Архів порожній'
   },
   loadFailed: 'Не вдалося завантажити дітей.',
-  pickChild: 'Виберіть дитину зі списку, щоб побачити подробиці.',
   newRegistration: 'Новий запис',
   remaining: { one: 'Залишилось {count} заняття', few: 'Залишилось {count} заняття', many: 'Залишилось {count} занять', other: 'Залишилось {count} заняття' },
   noneLeft: 'Заняття закінчились',
   free: 'Безкоштовно',
   pendingPayment: 'Очікує оплату',
+  paid: 'Оплачено',
+  columns: { child: 'Дитина', parent: 'Батьки', package: 'Пакет', left: 'Залишилось', payment: 'Оплата' },
+  ending: { soon: 'Закінчується', ended: 'Пакет закінчився' },
   beads: 'Пакет на {total} занять: відвідано {attended}, пропущено {absent}, не відмічено {unmarked}, заплановано {booked}, залишилось {remaining}.',
   detail: {
     back: 'Діти',

@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from 'react'
-import { CheckIcon } from '@phosphor-icons/react'
+import { CheckIcon, XIcon } from '@phosphor-icons/react'
 import { remainingTone, type Usage } from '@hellokido/core/api'
 import { initialsOf } from './Bits'
 import { cx } from './cx'
@@ -88,9 +88,10 @@ export function BeadString({
 }
 
 /**
- * A package as beads, one 26px pill per lesson: attended green with a check, missed grey, still
- * to come a ring. Free packages and packages without a quota show nothing. `fill` spreads the
- * beads across the row in even columns (the child's package card), wrapping when there are many.
+ * A package as beads, one 26px pill per lesson: attended green with a check, missed red with an X
+ * (so an absence is seen at once), still to come a ring. Free packages and packages without a
+ * quota show nothing. `fill` stretches the beads along the row in even columns, up to 72px each
+ * (the child's package card), wrapping when there are many.
  */
 export function Beads({ usage, label, className, fill }: { usage: Usage; label: string; className?: string; fill?: boolean }) {
   if (usage.isFree || usage.total === null) return null
@@ -102,7 +103,9 @@ export function Beads({ usage, label, className, fill }: { usage: Usage; label: 
     <span
       role="img"
       aria-label={label}
-      className={cx(fill ? 'grid grid-cols-[repeat(auto-fill,minmax(1.375rem,1fr))] gap-[7px]' : 'flex flex-wrap gap-[7px]', className)}
+      className={cx(fill ? 'grid grid-cols-[repeat(auto-fit,minmax(1.375rem,1fr))] gap-[7px]' : 'flex flex-wrap gap-[7px]', className)}
+      // A short package does not stretch into a few long bars
+      style={fill ? { maxWidth: `calc(${total} * 4.5rem + ${Math.max(total - 1, 0)} * 7px)` } : undefined}
     >
       {beads.map((kind, index) => (
         <span
@@ -111,11 +114,12 @@ export function Beads({ usage, label, className, fill }: { usage: Usage; label: 
             'grid h-[1.625rem] place-items-center rounded-full',
             fill ? 'w-full' : 'w-10',
             kind === 'yes' && 'bg-green text-white dark:text-page',
-            kind === 'no' && 'bg-mute',
+            kind === 'no' && 'bg-negative text-on-negative',
             kind === 'planned' && 'shadow-[inset_0_0_0_1.5px_var(--mute)]'
           )}
         >
           {kind === 'yes' && <CheckIcon weight="bold" className="size-3.5" />}
+          {kind === 'no' && <XIcon weight="bold" className="size-3.5" />}
         </span>
       ))}
     </span>
@@ -175,8 +179,8 @@ const holdsSeat = (status: string) => status === 'scheduled' || status === 'make
 function pegClass(seat: PegSeat) {
   if (seat.status === 'attended') return 'bg-positive-wash text-green-ink'
   if (seat.status === 'makeup') return 'bg-pink-felt text-pink-ink'
-  // An absence is counted, not a danger: grey
-  if (seat.status === 'no_show') return 'bg-track text-ink-3'
+  // An absence is seen at once: red, as on the child's beads
+  if (seat.status === 'no_show') return 'bg-negative-wash text-negative-ink'
   if (seat.status === 'postponed' || seat.status === 'cancelled') return 'border-[1.5px] border-dashed border-mute text-ink-3 line-through'
   if (seat.overdue) return 'bg-action-wash text-amber-ink'
   return 'bg-piece text-ink-2'

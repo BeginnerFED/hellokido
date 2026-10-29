@@ -24,9 +24,11 @@ import {
   unmarkedIn
 } from './model'
 
-const HOUR_PX = 72
+// Sized to be read from a step back: a lesson is tall enough for its type, time, ages and seats on
+// lines of their own
+const HOUR_PX = 88
 const PER_MINUTE = HOUR_PX / 60
-const AXIS_PX = 56
+const AXIS_PX = 60
 // The space between two day columns (gap-x-2)
 const GAP_PX = 8
 // Room in a column above the first hour line and below the last one
@@ -209,14 +211,14 @@ export function WeekBoard({
               key={day.toISOString()}
               onPress={() => onOpenDay(day)}
               aria-label={`${date(day, { weekday: 'long', day: 'numeric', month: 'long' })}${count ? `, ${plural(t.calendar.lessonCount, count)}` : ''}`}
-              className="flex flex-col items-center rounded-tile pt-1 pb-1.5 outline-none transition-colors duration-150 data-hovered:bg-felt data-focus-visible:ring-2 data-focus-visible:ring-focus"
+              className="flex flex-col items-center gap-0.5 rounded-tile pt-1 pb-1.5 outline-none transition-colors duration-150 data-hovered:bg-felt data-focus-visible:ring-2 data-focus-visible:ring-focus"
             >
-              <span className={cx('text-[0.8125rem] leading-[1.125rem]', isToday ? 'font-medium text-accent-ink' : 'text-ink-3')}>
+              <span className={cx('text-[0.9375rem] leading-5', isToday ? 'font-medium text-accent-ink' : 'text-ink-3')}>
                 {date(day, { weekday: 'short' })}
               </span>
               <span
                 className={cx(
-                  'grid h-9 min-w-9 place-items-center rounded-full px-1 text-[1.25rem] leading-[1.625rem]',
+                  'grid h-10 min-w-10 place-items-center rounded-full px-1 text-[1.375rem] leading-7',
                   isToday
                     ? 'font-semibold text-accent-ink shadow-[inset_0_0_0_2px_var(--fill)]'
                     : quiet || day < todayStart
@@ -237,14 +239,14 @@ export function WeekBoard({
             // The time chip on the now line takes the place of the hour it would touch
             if (nowShown && Math.abs(minutes - nowMinutes) < 14) return null
             return (
-              <span key={minutes} className="absolute right-2 -translate-y-1/2 text-[0.75rem] text-ink-3" style={{ top: topOf(minutes) }}>
+              <span key={minutes} className="absolute right-2 -translate-y-1/2 text-sm text-ink-3 tabular" style={{ top: topOf(minutes) }}>
                 {clock(minutes)}
               </span>
             )
           })}
           {nowShown && (
             <span
-              className="absolute right-1 z-10 -translate-y-1/2 rounded-lg bg-now-chip px-1.5 py-px text-[0.71875rem] font-semibold whitespace-nowrap text-on-now-chip"
+              className="absolute right-1 z-10 -translate-y-1/2 rounded-lg bg-now-chip px-1.5 py-px text-[0.8125rem] font-semibold whitespace-nowrap text-on-now-chip tabular"
               style={{ top: topOf(nowMinutes) }}
             >
               {clock(nowMinutes)}
@@ -282,24 +284,24 @@ export function WeekBoard({
               {hover?.day === dayIndex && !drag && !(pending && sheetOpen) && (
                 <div
                   aria-hidden
-                  className="pointer-events-none absolute inset-x-1 flex items-start gap-1 rounded-tablet border-[1.5px] border-dashed border-sky px-2 py-1.5 text-[0.75rem] font-medium text-sky-ink"
+                  className="pointer-events-none absolute inset-x-1 flex items-start gap-1.5 rounded-tablet border-[1.5px] border-dashed border-sky px-2.5 py-2 text-sm font-medium text-sky-ink tabular"
                   style={{ top: topOf(hover.minutes), height: LESSON_PX }}
                 >
-                  <PlusIcon weight="bold" className="mt-0.5 size-3" />
+                  <PlusIcon weight="bold" className="mt-[0.1875rem] size-3.5" />
                   <span>{clock(hover.minutes)}</span>
                 </div>
               )}
               {pending?.day === dayIndex && sheetOpen && (
                 <div
                   aria-hidden
-                  className="pointer-events-none absolute inset-x-1 z-20 flex flex-col rounded-tablet bg-page/70 px-2.5 py-2 text-sky-ink shadow-[inset_0_0_0_2px_var(--sky)]"
+                  className="pointer-events-none absolute inset-x-1 z-20 flex flex-col rounded-tablet bg-page/70 px-3 py-2.5 text-sky-ink shadow-[inset_0_0_0_2px_var(--sky)]"
                   style={{ top: topOf(pending.minutes), height: LESSON_PX }}
                 >
-                  <span className="flex items-center gap-1.5 text-[0.8125rem] leading-[1.0625rem] font-semibold">
-                    <PlusIcon weight="bold" className="size-3" />
+                  <span className="flex items-center gap-1.5 text-[0.9375rem] leading-5 font-semibold">
+                    <PlusIcon weight="bold" className="size-3.5" />
                     {t.calendar.newLesson}
                   </span>
-                  <span className="mt-0.5 text-[0.75rem] leading-4">{clock(pending.minutes)}</span>
+                  <span className="mt-1 text-sm leading-[1.1875rem] tabular">{clock(pending.minutes)}</span>
                 </div>
               )}
 
@@ -349,7 +351,7 @@ export function WeekBoard({
                     onClick={() => !clickAfterDrag.current && onOpen(lesson)}
                     className={cx(
                       typeClass(lesson.event_type),
-                      'group absolute z-[1] flex h-(--h) flex-col overflow-hidden rounded-tablet bg-(--t-felt) px-2.5 py-2 text-left text-(--t-ink) outline-none select-none',
+                      'group absolute z-[1] flex h-(--h) flex-col overflow-hidden rounded-tablet bg-(--t-felt) px-3 py-2.5 text-left text-(--t-ink) outline-none select-none',
                       'transition-[box-shadow,opacity] duration-150 focus-visible:z-20 focus-visible:h-auto focus-visible:min-h-(--h) focus-visible:ring-2 focus-visible:ring-focus',
                       running && 'ring-2 ring-(--t-mid) ring-inset',
                       !drag && 'hover:z-20 hover:h-auto hover:min-h-(--h) hover:shadow-lift',
@@ -358,18 +360,17 @@ export function WeekBoard({
                     )}
                     style={style}
                   >
-                    <span className="flex min-w-0 items-center gap-1.5 text-[0.8125rem] leading-[1.0625rem] font-semibold">
+                    <span className="flex min-w-0 items-center gap-1.5 text-base leading-[1.375rem] font-semibold">
                       <LessonShape type={lesson.event_type} />
                       <span className={cx('min-w-0 truncate', !drag && 'group-hover:whitespace-normal', 'group-focus-visible:whitespace-normal')}>{name}</span>
-                      {unmarked > 0 && <span aria-hidden className="ml-auto size-2 shrink-0 rounded-full bg-amber" />}
+                      {unmarked > 0 && <span aria-hidden className="ml-auto size-2.5 shrink-0 rounded-full bg-amber" />}
                     </span>
-                    <span className="mt-0.5 truncate text-[0.75rem] leading-4">
-                      {time}, {age}
-                    </span>
-                    <span className="truncate text-[0.75rem] leading-4">{fmt(t.today.lessonsCard.seatsShort, { count: taken, capacity: SEATS_SHOWN })}</span>
+                    <span className="mt-1 truncate text-[0.9375rem] leading-5 font-medium tabular">{time}</span>
+                    <span className="truncate text-sm leading-[1.1875rem]">{age}</span>
+                    <span className="truncate text-sm leading-[1.1875rem] tabular">{fmt(t.today.lessonsCard.seatsShort, { count: taken, capacity: SEATS_SHOWN })}</span>
                     {lesson.seats.length > 0 && (
-                      <span className={cx('hidden pt-1.5', !drag && 'group-hover:block', 'group-focus-visible:block')}>
-                        <SeatNames seats={lesson.seats} className="text-[0.75rem]" />
+                      <span className={cx('hidden pt-2', !drag && 'group-hover:block', 'group-focus-visible:block')}>
+                        <SeatNames seats={lesson.seats} className="text-sm" />
                       </span>
                     )}
                   </button>
@@ -380,13 +381,13 @@ export function WeekBoard({
                 <div
                   aria-hidden
                   className={cx(
-                    'pointer-events-none absolute inset-x-1 z-30 flex flex-col gap-0.5 rounded-tablet px-2.5 py-2 shadow-lift',
+                    'pointer-events-none absolute inset-x-1 z-30 flex flex-col gap-0.5 rounded-tablet px-3 py-2.5 shadow-lift',
                     dragProblem ? 'bg-negative-wash text-negative-ink ring-2 ring-negative ring-inset' : cx(typeClass(drag.lesson.event_type), 'bg-(--t-felt) text-(--t-ink) ring-2 ring-(--t-mid) ring-inset')
                   )}
                   style={{ top: topOf(drag.minutes) + 2, height: LESSON_PX - 4 }}
                 >
-                  <span className="text-[0.8125rem] font-semibold">{clock(drag.minutes)}</span>
-                  <span className="truncate text-[0.75rem]">{title(drag.lesson)}</span>
+                  <span className="text-base font-semibold tabular">{clock(drag.minutes)}</span>
+                  <span className="truncate text-sm">{title(drag.lesson)}</span>
                 </div>
               )}
             </div>

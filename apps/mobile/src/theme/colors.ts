@@ -29,7 +29,7 @@ const light = {
   ink: '#13202B',
   ink2: '#44525F',
   ink3: '#5D6A77',
-  /** Never text: an absent bead, an empty seat ring, a closed day. */
+  /** Never text: a planned bead's ring, an empty seat ring, a closed day. */
   mute: '#AEB8C1',
   /** Selection, links, today, chart "in". */
   accent: '#0086C6',

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Button as AriaButton, Link } from 'react-aria-components'
 import { useLocation } from 'react-router'
-import { CaretLeftIcon, CaretRightIcon, MagnifyingGlassIcon, PlusIcon, SidebarSimpleIcon } from '@phosphor-icons/react'
+import { ArrowLeftIcon, CaretLeftIcon, CaretRightIcon, MagnifyingGlassIcon, PlusIcon, SidebarSimpleIcon } from '@phosphor-icons/react'
 import { useI18n } from '../providers/I18n'
 import { useActions } from '../shell/Actions'
 import { useShell } from '../shell/Shell'
@@ -16,13 +16,16 @@ type PageProps = {
   summary?: ReactNode
   /** Page-level controls (desktop: right of the title; phones: under it). Quiet buttons first, then segmented controls. */
   toolbar?: ReactNode
-  /** A way back to the list this page was opened from. */
+  /** A way back to the list this page was opened from: a pill above the title on wide screens, an arrow on phones. */
   back?: { href: string; label: string }
+  /** Before the title on wide screens (a child's avatar); the head then centres on it. */
+  lead?: ReactNode
   /**
    * The page's own way to add something. On wide screens it takes the place of the general "New"
    * button; phones keep their + for everything, so a page shows its own there in the toolbar.
+   * `false` leaves the filled button to the toolbar (a child's page leads with "Take payment").
    */
-  action?: { label: string; onPress: () => void }
+  action?: { label: string; onPress: () => void } | false
   /** The words of the last crumb when the title is not plain text (Today's title is the date). */
   crumb?: string
   children: ReactNode
@@ -30,10 +33,10 @@ type PageProps = {
   className?: string
 }
 
-export function Page({ title, summary, toolbar, back, action, crumb, children, width = 'default', className }: PageProps) {
+export function Page({ title, summary, toolbar, back, lead, action, crumb, children, width = 'default', className }: PageProps) {
   const { t } = useI18n()
   const actions = useActions()
-  const add = action ?? { label: t.shell.quickAdd.button, onPress: actions.openQuickAdd }
+  const add = action === false ? null : (action ?? { label: t.shell.quickAdd.button, onPress: actions.openQuickAdd })
   const sentinel = useRef<HTMLDivElement>(null)
   const [stuck, setStuck] = useState(false)
 
@@ -49,24 +52,39 @@ export function Page({ title, summary, toolbar, back, action, crumb, children, w
   return (
     <div className={cx('mx-auto w-full px-4 sm:px-6 lg:pr-10 lg:pb-14 lg:pl-9', width === 'wide' ? 'max-w-[92rem]' : 'max-w-[82rem]', className)}>
       <TopBar title={crumb ?? title} back={back} />
+      {back && (
+        <div className="hidden pt-6 lg:block">
+          <Link
+            href={back.href}
+            className="inline-flex h-9 items-center gap-2 rounded-full bg-felt pr-4 pl-3 text-[0.90625rem] font-medium text-ink no-underline outline-none transition-colors duration-150 data-hovered:bg-track data-focus-visible:ring-2 data-focus-visible:ring-focus"
+          >
+            <ArrowLeftIcon aria-hidden className="size-[1.0625rem]" />
+            {back.label}
+          </Link>
+        </div>
+      )}
       <div ref={sentinel} aria-hidden className="h-px lg:hidden" />
       <header
         className={cx(
           'sticky top-0 z-20 -mx-4 bg-page px-4 pt-[max(0.5rem,env(safe-area-inset-top))] pb-2 transition-shadow duration-200 sm:-mx-6 sm:px-6',
           stuck && 'shadow-[0_1px_0_var(--line)]',
-          'lg:static lg:mx-0 lg:bg-transparent lg:px-0 lg:pt-7 lg:pb-[1.375rem] lg:shadow-none'
+          'lg:static lg:mx-0 lg:bg-transparent lg:px-0 lg:pb-[1.375rem] lg:shadow-none',
+          back ? 'lg:pt-5' : 'lg:pt-7'
         )}
       >
-        <div className="flex min-h-11 flex-wrap items-center gap-x-6 gap-y-3 lg:items-end">
+        <div className={cx('flex min-h-11 flex-wrap items-center gap-x-6 gap-y-3', lead ? 'lg:items-center' : 'lg:items-end')}>
           {back && (
             <IconLink href={back.href} label={back.label} className="-ml-2.5 shrink-0 lg:hidden">
               <CaretLeftIcon aria-hidden weight="bold" className="size-[1.375rem]" />
             </IconLink>
           )}
-          <div className="min-w-0 flex-1">
-            {/* Beside the two round buttons a long title (a Ukrainian date, a child's full name) takes a second line rather than an ellipsis */}
-            <h1 className="text-[1.75rem] leading-9 font-semibold tracking-[-0.025em] text-balance max-sm:line-clamp-2 sm:truncate lg:text-[2.125rem] lg:leading-10">{title}</h1>
-            {summary && <p className="mt-1 hidden max-w-[72ch] text-[0.96875rem] leading-[1.375rem] text-ink-2 text-pretty lg:block">{summary}</p>}
+          <div className="flex min-w-0 flex-1 items-center gap-[1.125rem]">
+            {lead && <div className="hidden shrink-0 lg:block">{lead}</div>}
+            <div className="min-w-0 flex-1">
+              {/* Beside the two round buttons a long title (a Ukrainian date, a child's full name) takes a second line rather than an ellipsis */}
+              <h1 className="text-[1.75rem] leading-9 font-semibold tracking-[-0.025em] text-balance max-sm:line-clamp-2 sm:truncate lg:text-[2.125rem] lg:leading-10">{title}</h1>
+              {summary && <p className="mt-1 hidden max-w-[72ch] text-[0.96875rem] leading-[1.375rem] text-ink-2 text-pretty lg:block">{summary}</p>}
+            </div>
           </div>
           <div className="flex items-center gap-2 lg:hidden">
             <IconButton label={t.shell.palette.open} variant="quiet" onPress={actions.openPalette}>
@@ -78,9 +96,11 @@ export function Page({ title, summary, toolbar, back, action, crumb, children, w
           </div>
           <div className="hidden flex-wrap items-center gap-2.5 lg:flex">
             {toolbar}
-            <Button variant="primary" icon={<PlusIcon aria-hidden weight="bold" className="size-[1.125rem]" />} onPress={add.onPress} className="order-last">
-              {add.label}
-            </Button>
+            {add && (
+              <Button variant="primary" icon={<PlusIcon aria-hidden weight="bold" className="size-[1.125rem]" />} onPress={add.onPress} className="order-last">
+                {add.label}
+              </Button>
+            )}
           </div>
         </div>
       </header>

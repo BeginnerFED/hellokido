@@ -13,9 +13,10 @@ export function Logo({ className }: { className?: string }) {
   )
 }
 
-export function Skeleton({ className }: { className?: string }) {
+/** A shape while something loads; `span` where only text may go (inside a heading). */
+export function Skeleton({ className, as: Tag = 'div' }: { className?: string; as?: 'div' | 'span' }) {
   return (
-    <div
+    <Tag
       aria-hidden
       className={cx(
         'animate-shimmer rounded-control bg-[length:200%_100%]',
@@ -64,7 +65,7 @@ const MARK_TONES: Record<MarkTone, { ink: string; dot: string }> = {
 
 /**
  * A status as a 7px dot and a word in the status ink; no outline, no fill. Amber ("action") is
- * only for things the admin has to do; an absence is neutral grey, never red.
+ * only for things the admin has to do.
  */
 export function Mark({ tone, children, className, dot = true }: { tone: MarkTone; children: ReactNode; className?: string; dot?: boolean }) {
   const look = MARK_TONES[tone]

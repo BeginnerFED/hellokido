@@ -28,12 +28,12 @@ function lessonWhen(i18n: Pick<I18n, 'date'>, value: string) {
   return `${date}, ${i18n.date(day, { hour: '2-digit', minute: '2-digit' })}`
 }
 
-// A status is a dot and words in its ink on the pill; an absence is grey, never red; forgotten attendance asks for action
+// A status is a dot and words in its ink on the pill; an absence is red, so it is seen at once; forgotten attendance asks for action
 function statusLook(c: Colors, status: string, overdue: boolean): { dot: string | null; ink: string } {
   if (overdue) return { dot: c.amber, ink: c.amberInk }
   if (status === 'attended') return { dot: c.green, ink: c.greenInk }
   if (status === 'makeup') return { dot: c.pink, ink: c.pinkInk }
-  if (status === 'no_show') return { dot: c.mute, ink: c.ink2 }
+  if (status === 'no_show') return { dot: c.negative, ink: c.negativeInk }
   return { dot: null, ink: c.ink2 }
 }
 

@@ -102,7 +102,7 @@ type MarkTone = 'action' | 'positive' | 'negative' | 'accent' | 'neutral' | 'pin
 
 /**
  * A status as a 7pt dot and words in its ink ("Ödeme bekliyor"), never a filled block. Amber is
- * kept for what needs the admin's action; an absence is grey, never red.
+ * kept for what needs the admin's action.
  */
 export function Mark({ tone, children }: { tone: MarkTone; children: ReactNode }) {
   const c = useColors()

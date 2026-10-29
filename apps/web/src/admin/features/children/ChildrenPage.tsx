@@ -1,22 +1,22 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-aria-components'
-import { useNavigate, useParams } from 'react-router'
-import { PlusIcon, UserFocusIcon } from '@phosphor-icons/react'
-import { remainingTone, type Registration, type UsageMap } from '@hellokido/core/api'
+import { useParams } from 'react-router'
+import { CaretRightIcon, PlusIcon } from '@phosphor-icons/react'
+import type { Registration, Usage, UsageMap } from '@hellokido/core/api'
 import { useActiveUsage, useLabels, useRegistrations } from '../../data/queries'
 import { useI18n } from '../../providers/I18n'
 import { useActions } from '../../shell/Actions'
 import { Avatar, EmptyState, LoadError, Mark, Skeleton } from '../../ui/Bits'
 import { Button } from '../../ui/Button'
-import { Chips, Segmented, Select, type Option } from '../../ui/Choice'
+import { ChipSelect, Chips, Segmented, type Option } from '../../ui/Choice'
 import { SearchField } from '../../ui/Field'
 import { Page } from '../../ui/Page'
-import { useWideLayout } from '../../ui/useMediaQuery'
+import { displayPhone } from '../../ui/PhoneActions'
 import { cx } from '../../ui/cx'
-import { ParentName, remainingText } from './ChildBits'
-import { ChildDetail, ChildDetailSkeleton } from './ChildDetail'
+import { packageStartText, ParentName, remainingText } from './ChildBits'
+import { ChildPage, ChildPageFallback } from './ChildDetail'
 import { usePackageOptions } from './packageOptions'
-import { byName, isFree, isPaymentDue, isRunningLow, matchesChild } from './rules'
+import { byName, isFree, isPaymentDue, isRunningLow, matchesChild, needsRenewal } from './rules'
 
 type View = 'active' | 'archived'
 type Filter = 'all' | 'pending' | 'low'
@@ -27,38 +27,39 @@ const TESTS: Record<Exclude<Filter, 'all'>, (row: Registration, usage: UsageMap 
   low: (row, usage) => !isFree(row) && isRunningLow(usage?.[row.id])
 }
 
+// The table's columns, once the card is wide enough for them; archived children have no lessons
+// left or payment to show
+const COLUMNS = {
+  active: '@4xl:grid-cols-[minmax(0,1.45fr)_minmax(0,1.1fr)_minmax(0,1.2fr)_8rem_10.5rem_1.125rem]',
+  archived: '@4xl:grid-cols-[minmax(0,1.45fr)_minmax(0,1.1fr)_minmax(0,1.2fr)_1.125rem]'
+}
+
 /**
- * The children: a felt list to find one, and beside it everything about the child. On a phone the
- * child is its own screen and the list keeps its search, filter and scroll position for the way back.
+ * The children as one felt table: search and filters on top, a row per child with the parent, the
+ * package, the lessons left and the payment. A child opens on a page of its own; the list keeps its
+ * search, filters and scroll position for the way back.
  */
 export default function ChildrenPage() {
   const { id } = useParams()
-  const navigate = useNavigate()
   const { t, plural } = useI18n()
   const labels = useLabels()
   const { startTask } = useActions()
-  const wide = useWideLayout()
   const registrations = useRegistrations()
-  const usage = useActiveUsage().data
+  const activeUsage = useActiveUsage()
+  const usage = activeUsage.data
+  const usageFailed = activeUsage.isError && !usage
   const packageOrder = usePackageOptions({ includeFree: true })
 
   const [view, setView] = useState<View>('active')
   const [filter, setFilter] = useState<Filter>('all')
   const [pkg, setPkg] = useState<string>(ANY_PACKAGE)
   const [query, setQuery] = useState('')
-
   const listScroll = useRef(0)
-  const list = useRef<HTMLDivElement>(null)
 
-  // Phones: the child opens at its top and the list comes back where it was left. Wide: a new child
-  // starts at the top of the page; the list beside it keeps its own scroll
+  // A child opens at its top; the list comes back where it was left
   useLayoutEffect(() => {
-    if (wide) {
-      if (window.scrollY > 0) window.scrollTo(0, 0)
-      return
-    }
     window.scrollTo(0, id ? 0 : listScroll.current)
-  }, [id, wide])
+  }, [id])
 
   const rows = registrations.data
   const inView = useMemo(() => (rows ?? []).filter((row) => (view === 'active' ? row.is_active === true : row.is_active !== true)), [rows, view])
@@ -72,21 +73,6 @@ export default function ChildrenPage() {
     }
     return list.sort(byName)
   }, [inPackage, view, filter, usage])
-
-  // A child opened from elsewhere (a link, a new registration) is brought into the list's view
-  const ready = Boolean(rows)
-  useEffect(() => {
-    if (!wide || !id || !ready) return
-    const box = list.current
-    const item = box?.querySelector('[aria-current="page"]')
-    if (!box || !item) return
-    // Scroll the list only, never the page (scrollIntoView would move both)
-    const frame = box.getBoundingClientRect()
-    const row = item.getBoundingClientRect()
-    const bottom = Math.min(frame.bottom, window.innerHeight)
-    if (row.top < frame.top) box.scrollTop -= frame.top - row.top + 8
-    else if (row.bottom > bottom) box.scrollTop += row.bottom - bottom + 8
-  }, [id, wide, ready])
 
   // Filters are toggles: none on shows every child, so there is no "all" chip. No count before the
   // list has loaded: a 0 there would say "nobody" while it is not known yet
@@ -119,58 +105,27 @@ export default function ChildrenPage() {
     setQuery('')
   }
 
-  const found = id && rows ? (rows.find((row) => row.id === id) ?? null) : undefined
-  // A child registered a moment ago is not in the list until it has read again: wait, don't say "not found"
-  const selected = found === null && registrations.isFetching ? undefined : found
-
-  const detail = (showName: boolean) =>
-    registrations.isError ? (
-      <div className="on-felt rounded-panel bg-felt p-5">
-        <LoadError message={t.children.loadFailed} retryLabel={t.common.retry} onRetry={() => void registrations.refetch()} />
-      </div>
-    ) : selected === undefined ? (
-      <ChildDetailSkeleton showName={showName} />
-    ) : selected === null ? (
-      <div className="rounded-panel bg-felt">
-        <EmptyState className="py-12" title={t.children.detail.notFound} />
-      </div>
-    ) : (
-      <ChildDetail key={selected.id} registration={selected} showName={showName} onClose={showName ? () => navigate('/children') : undefined} />
-    )
-
-  // Phones: one child fills the screen
-  if (!wide && id) {
-    return (
-      <Page
-        title={selected?.student_name ?? t.children.title}
-        summary={selected?.student_age || undefined}
-        back={{ href: '/children', label: t.children.detail.back }}
-      >
-        {detail(false)}
-      </Page>
-    )
+  if (id) {
+    const found = rows ? (rows.find((row) => row.id === id) ?? null) : undefined
+    // A child registered a moment ago is not in the list until it has read again: wait, don't say "not found"
+    const selected = found === null && registrations.isFetching ? undefined : found
+    if (registrations.isError) return <ChildPageFallback state="error" onRetry={() => void registrations.refetch()} />
+    if (selected === undefined) return <ChildPageFallback state="loading" />
+    if (selected === null) return <ChildPageFallback state="missing" />
+    return <ChildPage key={selected.id} registration={selected} />
   }
 
   const toolbar = (
-    <>
-      <Segmented<View>
-        aria-label={t.children.title}
-        value={view}
-        onChange={changeView}
-        options={[
-          { id: 'active', label: t.children.views.active },
-          { id: 'archived', label: t.children.views.archived }
-        ]}
-        className="min-w-0 flex-1 lg:order-2 lg:w-[11.5rem] lg:flex-none"
-      />
-      <Select
-        aria-label={t.children.anyPackage}
-        options={packageOptions}
-        value={pkg}
-        onChange={setPkg}
-        className="w-[10.5rem] shrink-0 sm:w-[13rem] lg:order-1"
-      />
-    </>
+    <Segmented<View>
+      aria-label={t.children.title}
+      value={view}
+      onChange={changeView}
+      options={[
+        { id: 'active', label: t.children.views.active },
+        { id: 'archived', label: t.children.views.archived }
+      ]}
+      className="min-w-0 flex-1 lg:w-[11.5rem] lg:flex-none"
+    />
   )
 
   const empty = !rows ? null : rows.length === 0 ? (
@@ -204,154 +159,200 @@ export default function ChildrenPage() {
       action={{ label: t.children.newRegistration, onPress: () => startTask('registration') }}
       width="wide"
     >
-      <div className="lg:grid lg:grid-cols-[minmax(18.5rem,23.25rem)_minmax(0,1fr)] lg:items-start lg:gap-7">
-        {/* On wide screens the list stays in view while the child beside it scrolls with the page */}
-        <section
-          aria-label={t.children.title}
-          className="on-felt flex min-w-0 flex-col rounded-panel bg-felt lg:sticky lg:top-[4.75rem] lg:max-h-[calc(100dvh-6rem)]"
-        >
-          <div className="flex shrink-0 flex-col gap-3 px-3.5 pt-4 pb-2">
-            <SearchField value={query} onChange={setQuery} placeholder={t.children.searchPlaceholder} label={t.children.searchPlaceholder} />
+      <section aria-label={t.children.title} className="@container on-felt rounded-panel bg-felt">
+        <div className="flex flex-col gap-3 px-4 pt-4 pb-3.5 @lg:px-[1.375rem] @lg:pt-[1.125rem] @lg:pb-4 @3xl:flex-row @3xl:flex-wrap @3xl:items-center">
+          <SearchField
+            value={query}
+            onChange={setQuery}
+            placeholder={t.children.searchPlaceholder}
+            label={t.children.searchPlaceholder}
+            className="@3xl:w-[25rem] @3xl:max-w-full"
+          />
+          {/* Narrow: one row of filters that scrolls sideways; its padding keeps the chips' touch area inside */}
+          <div className="-mx-4 -my-1.5 flex items-center gap-2 overflow-x-auto px-4 py-1.5 @lg:-mx-[1.375rem] @lg:px-[1.375rem] @3xl:mx-0 @3xl:my-0 @3xl:overflow-visible @3xl:px-0 @3xl:py-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {view === 'active' && (
-              // Phones: one row that scrolls sideways, like the filters of iOS apps; its vertical padding
-              // keeps the chips' larger touch area inside the scrolling strip
-              <div className="max-lg:-mx-3.5 max-lg:-my-1.5 max-lg:overflow-x-auto max-lg:px-3.5 max-lg:py-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                <Chips
-                  aria-label={t.children.filters.label}
-                  options={filterOptions}
-                  selected={filter === 'all' ? [] : [filter]}
-                  onChange={(next) => setFilter(next[0] ?? 'all')}
-                  className="max-lg:w-max max-lg:flex-nowrap"
-                />
-              </div>
+              <Chips
+                aria-label={t.children.filters.label}
+                options={filterOptions}
+                selected={filter === 'all' ? [] : [filter]}
+                onChange={(next) => setFilter(next[0] ?? 'all')}
+                className="w-max shrink-0 flex-nowrap"
+              />
             )}
+            <ChipSelect aria-label={t.children.anyPackage} options={packageOptions} value={pkg} neutral={ANY_PACKAGE} onChange={setPkg} />
           </div>
+        </div>
 
-          <div ref={list} className="relative min-h-0 flex-1 overscroll-contain px-2 pb-2 lg:overflow-y-auto lg:px-3.5 lg:pb-3">
-            {registrations.isError ? (
-              <div className="p-2">
-                <LoadError message={t.children.loadFailed} retryLabel={t.common.retry} onRetry={() => void registrations.refetch()} />
-              </div>
-            ) : !rows ? (
-              <div className="flex flex-col gap-2 px-1.5 py-1" aria-busy>
-                {Array.from({ length: 8 }, (_, index) => (
-                  <Skeleton key={index} className="h-[3.25rem]" />
-                ))}
-              </div>
-            ) : shown.length === 0 ? (
-              <div className="py-4">{empty}</div>
-            ) : (
-              <ul aria-label={plural(t.children.count, shown.length)} className="flex flex-col gap-px">
-                {shown.map((row) => (
-                  <li key={row.id}>
-                    <ChildRow
-                      row={row}
-                      usage={usage}
-                      selected={wide && row.id === id}
-                      onOpen={() => {
-                        listScroll.current = window.scrollY
-                      }}
-                    />
-                  </li>
-                ))}
-              </ul>
-            )}
+        {registrations.isError ? (
+          <div className="border-t border-line px-4 py-4 @lg:px-[1.375rem]">
+            <LoadError message={t.children.loadFailed} retryLabel={t.common.retry} onRetry={() => void registrations.refetch()} />
           </div>
-        </section>
-
-        {wide && (
-          // An open child sits in a thin frame, so it reads as one thing that its X closes
-          <section
-            aria-label={selected?.student_name ?? t.children.title}
-            className={cx('min-w-0', id && 'rounded-[2.5rem] border border-line p-3.5')}
-          >
-            {id ? (
-              detail(true)
-            ) : (
-              <div className="rounded-panel bg-felt">
-                <EmptyState
-                  className="py-16"
-                  icon={<UserFocusIcon aria-hidden className="size-8" />}
-                  title={t.children.pickChild}
-                  action={
-                    rows && rows.length === 0 ? undefined : (
-                      <Button variant="secondary" size="sm" onPress={() => startTask('registration')}>
-                        {t.children.newRegistration}
-                      </Button>
-                    )
-                  }
-                />
-              </div>
-            )}
-          </section>
+        ) : !rows ? (
+          <div className="flex flex-col gap-2 border-t border-line px-4 pt-3 pb-4 @lg:px-[1.375rem]" aria-busy>
+            {Array.from({ length: 8 }, (_, index) => (
+              <Skeleton key={index} className="h-[3.75rem]" />
+            ))}
+          </div>
+        ) : shown.length === 0 ? (
+          <div className="border-t border-line py-4">{empty}</div>
+        ) : (
+          <>
+            <div
+              aria-hidden
+              className={cx(
+                'hidden gap-x-5 px-[2.125rem] pb-2.5 text-[0.8125rem] font-semibold text-ink-3 @4xl:grid',
+                view === 'active' ? COLUMNS.active : COLUMNS.archived
+              )}
+            >
+              <span>{t.children.columns.child}</span>
+              <span>{t.children.columns.parent}</span>
+              <span>{t.children.columns.package}</span>
+              {view === 'active' && (
+                <>
+                  <span>{t.children.columns.left}</span>
+                  <span>{t.children.columns.payment}</span>
+                </>
+              )}
+            </div>
+            <ul aria-label={plural(t.children.count, shown.length)} className="border-t border-line px-1.5 pt-1.5 pb-2 @lg:px-2.5 @4xl:px-3 @4xl:pb-3">
+              {shown.map((row) => (
+                <li
+                  key={row.id}
+                  className={cx(
+                    // A hairline between rows; it steps aside for a row under the pointer
+                    'relative before:pointer-events-none before:absolute before:inset-x-2.5 before:top-0 before:h-px before:bg-line first:before:hidden',
+                    '@lg:before:inset-x-3 @4xl:before:inset-x-[1.375rem] [&:has([data-hovered])]:before:opacity-0 [li:has([data-hovered])+&]:before:opacity-0'
+                  )}
+                >
+                  <ChildRow
+                    row={row}
+                    own={usage?.[row.id]}
+                    usageFailed={usageFailed}
+                    onOpen={() => {
+                      listScroll.current = window.scrollY
+                    }}
+                  />
+                </li>
+              ))}
+            </ul>
+          </>
         )}
-      </div>
+      </section>
     </Page>
   )
 }
 
 /**
- * A child in the list: name, then a payment due when there is one, the package and parent, and the
- * lessons left on the right (they say when the package runs out). The open child is a raised piece.
+ * A child in the table: the child, the parent, the package, the lessons left and the payment, and
+ * the whole row opens the child. Narrow, it keeps the name, the package and parent in one line
+ * (a payment due before them) and the lessons left.
  */
-function ChildRow({ row, usage, selected, onOpen }: { row: Registration; usage: UsageMap | undefined; selected: boolean; onOpen: () => void }) {
+function ChildRow({ row, own, usageFailed, onOpen }: { row: Registration; own: Usage | undefined; usageFailed: boolean; onOpen: () => void }) {
   const i18n = useI18n()
-  const { t, fmt, plural } = i18n
+  const { t } = i18n
   const labels = useLabels()
   const active = row.is_active === true
   const free = isFree(row)
-  const own = usage?.[row.id]
-
-  const mark = active && isPaymentDue(row) ? <Mark tone="action">{t.children.pendingPayment}</Mark> : null
-  const sub = (
-    <>
-      {labels.packageName(row.package_type)}
-      {row.parent_name?.trim() && ' · '}
-      <ParentName template={t.children.phone.parentOf} name={row.parent_name} />
-    </>
-  )
-
-  const left = own?.remaining ?? 0
-  const low = remainingTone(own) === 'low' || remainingTone(own) === 'out'
+  const due = isPaymentDue(row)
+  const line = 'truncate text-[0.84375rem] leading-[1.125rem] text-ink-3'
 
   return (
     <Link
       href={`/children/${row.id}`}
       onPress={onOpen}
-      aria-current={selected ? 'page' : undefined}
       className={cx(
-        'flex items-center gap-3 rounded-[1.125rem] px-2.5 py-[0.5625rem] text-left text-ink no-underline outline-none',
-        'transition-[background-color,box-shadow] duration-150 data-focus-visible:ring-2 data-focus-visible:ring-focus data-focus-visible:ring-inset',
-        selected ? 'bg-raised shadow-lift' : 'data-hovered:bg-[color-mix(in_srgb,var(--raised)_55%,transparent)] data-pressed:bg-[color-mix(in_srgb,var(--raised)_55%,transparent)]'
+        'group flex items-center gap-3 rounded-[1.125rem] px-2.5 py-3 text-left text-ink no-underline outline-none @lg:px-3',
+        '@4xl:grid @4xl:gap-x-5 @4xl:px-[1.375rem]',
+        active ? COLUMNS.active : COLUMNS.archived,
+        'transition-colors duration-150 data-hovered:bg-hover data-pressed:bg-hover data-focus-visible:ring-2 data-focus-visible:ring-focus data-focus-visible:ring-inset'
       )}
     >
-      <Avatar name={row.student_name} tone={selected ? 'sky' : 'piece'} />
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-[0.96875rem] leading-[1.3125rem] font-medium">{row.student_name}</span>
-        {mark ? (
-          <span className="mt-px flex min-w-0">{mark}</span>
-        ) : (
-          // ink-3 on the dark raised piece is under 4.5:1, so the chosen row takes ink-2 there
-          <span className={cx('block truncate text-[0.84375rem] leading-[1.125rem] text-ink-3', selected && 'dark:text-ink-2')}>{sub}</span>
-        )}
+      <span className="flex min-w-0 flex-1 items-center gap-3">
+        <Avatar name={row.student_name} />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-base leading-[1.3125rem] font-medium">{row.student_name}</span>
+          {row.student_age?.trim() && <span className={cx(line, 'hidden @4xl:block')}>{row.student_age}</span>}
+          <span className="flex min-w-0 items-center gap-2 @4xl:hidden">
+            {due && <Mark tone="action">{t.children.pendingPayment}</Mark>}
+            <span className={cx('block min-w-0', line)}>
+              {labels.packageName(row.package_type)}
+              {row.parent_name?.trim() && ' · '}
+              <ParentName template={t.children.phone.parentOf} name={row.parent_name} />
+            </span>
+          </span>
+        </span>
       </span>
-      {active && !free && (
-        <span className="flex w-10 shrink-0 flex-col items-end">
-          {own ? (
-            <>
-              <span aria-hidden className={cx('text-[1.3125rem] leading-[1.4375rem] font-semibold tracking-[-0.02em]', low && 'text-amber-ink')}>
-                {Math.max(left, 0)}
-              </span>
-              <span aria-hidden className={cx('text-xs leading-[0.9375rem] text-ink-3', selected && 'dark:text-ink-2')}>
-                {plural(t.children.phone.lessonsUnit, Math.max(left, 0))}
-              </span>
-              <span className="sr-only">{remainingText(i18n, own)}</span>
-            </>
-          ) : (
-            <span aria-hidden className="h-8 w-7 animate-shimmer rounded-lg bg-track" />
-          )}
+
+      <span className="hidden min-w-0 @4xl:block">
+        <span className="block truncate text-[0.9375rem] leading-5">{row.parent_name}</span>
+        <span className={cx('block tabular', line)}>{displayPhone(row.parent_phone)}</span>
+      </span>
+
+      <span className="hidden min-w-0 @4xl:block">
+        <span className="block truncate text-[0.9375rem] leading-5">{labels.packageName(row.package_type)}</span>
+        <span className={cx('block tabular', line)}>{free ? t.children.detail.unlimited : packageStartText(i18n, row.package_start_date, row.package_type)}</span>
+      </span>
+
+      {active && <LessonsLeft row={row} own={own} failed={usageFailed} />}
+
+      {active && (
+        <span className="hidden @4xl:flex">
+          <PaymentMark free={free} due={due} />
         </span>
       )}
+
+      <CaretRightIcon aria-hidden className="size-[1.125rem] shrink-0 text-mute transition-colors duration-150 group-data-hovered:text-ink-3" />
     </Link>
+  )
+}
+
+/**
+ * "5 ders", in amber with "Bitmek üzere" or "Paket bitti" under it once the package needs renewing
+ * (a fresh single session is not running out). Free participation has no count.
+ */
+function LessonsLeft({ row, own, failed }: { row: Registration; own: Usage | undefined; failed: boolean }) {
+  const i18n = useI18n()
+  const { t, plural } = i18n
+  if (isFree(row)) return <span className="shrink-0 text-sm text-ink-3">{t.children.form.noQuota}</span>
+  if (!own) {
+    return failed ? (
+      <span aria-hidden className="w-8 shrink-0 text-ink-3">
+        –
+      </span>
+    ) : (
+      <span aria-hidden className="h-6 w-14 shrink-0 animate-shimmer rounded-lg bg-track" />
+    )
+  }
+  const left = Math.max(own.remaining ?? 0, 0)
+  const ending = needsRenewal(row, own)
+  return (
+    <span className={cx('flex shrink-0 flex-col items-end @4xl:items-start', ending && 'text-amber-ink')}>
+      <span aria-hidden className="flex items-baseline gap-1.5">
+        <span className="text-xl leading-6 font-semibold tracking-[-0.02em] tabular">{left}</span>
+        <span className={cx('text-sm', !ending && 'text-ink-3')}>{plural(t.children.phone.lessonsUnit, left)}</span>
+      </span>
+      {ending && (
+        <span aria-hidden className="hidden text-[0.8125rem] leading-[1.125rem] font-medium @lg:block">
+          {left <= 0 ? t.children.ending.ended : t.children.ending.soon}
+        </span>
+      )}
+      <span className="sr-only">{remainingText(i18n, own)}</span>
+    </span>
+  )
+}
+
+/** Paid is quiet (a green dot), a payment due is amber, free is grey. */
+function PaymentMark({ free, due }: { free: boolean; due: boolean }) {
+  const { t } = useI18n()
+  const [dot, ink, text] = free
+    ? ['bg-mute', 'text-ink-3', t.children.free]
+    : due
+      ? ['bg-amber', 'font-medium text-amber-ink', t.children.pendingPayment]
+      : ['bg-green', 'font-medium text-ink-2', t.children.paid]
+  return (
+    <span className={cx('inline-flex items-center gap-[0.4375rem] text-sm whitespace-nowrap', ink)}>
+      <span aria-hidden className={cx('size-2 shrink-0 rounded-full', dot)} />
+      {text}
+    </span>
   )
 }

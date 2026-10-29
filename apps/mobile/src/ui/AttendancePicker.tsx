@@ -93,6 +93,7 @@ export function AttendancePicker({
 
   const ink = tone ? tone.ink : c.ink2
   const attendedInk = tone?.dark ? '#BFF0D3' : c.greenInk
+  const absentInk = tone?.dark ? '#FFDCD7' : c.negativeInk
   const font = compact ? 13 : 13.5
 
   return (
@@ -103,7 +104,7 @@ export function AttendancePicker({
     >
       {frame && <Animated.View style={[styles.thumb, { backgroundColor: tone ? tone.thumb : c.raised, boxShadow: c.liftShadow }, thumb]} />}
       {parts.map((part, index) => {
-        const color = part.on ? (part.mark === 'attended' ? attendedInk : tone ? tone.ink : part.mark === 'no_show' ? c.ink2 : c.ink) : ink
+        const color = part.on ? (part.mark === 'attended' ? attendedInk : part.mark === 'no_show' ? absentInk : tone ? tone.ink : c.ink) : ink
         return (
           <Pressable
             key={part.mark}
@@ -125,6 +126,7 @@ export function AttendancePicker({
             style={({ pressed }) => [styles.part, compact && styles.partCompact, pressed && !part.on && { opacity: 0.55 }]}
           >
             {part.on && part.mark === 'attended' && <Icon name="check" size={compact ? 12 : 13} color={color} weight="bold" />}
+            {part.on && part.mark === 'no_show' && <Icon name="close" size={compact ? 11 : 12} color={color} weight="bold" />}
             <Text weight="500" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85} maxFontSizeMultiplier={1.2} style={{ color, fontSize: font, lineHeight: font + 4, flexShrink: 1 }}>
               {part.text}
             </Text>
