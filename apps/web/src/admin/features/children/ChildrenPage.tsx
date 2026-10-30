@@ -1,7 +1,7 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-aria-components'
 import { useParams } from 'react-router'
-import { PlusIcon } from '@phosphor-icons/react'
+import { ArchiveIcon, ArrowUUpLeftIcon, HandCoinsIcon, PlusIcon } from '@phosphor-icons/react'
 import type { Registration, Usage, UsageMap } from '@hellokido/core/api'
 import { useActiveUsage, useLabels, useRegistrations } from '../../data/queries'
 import { useI18n } from '../../providers/I18n'
@@ -15,7 +15,7 @@ import { displayPhone } from '../../ui/PhoneActions'
 import { BeadBar } from '../../ui/signature'
 import { cx } from '../../ui/cx'
 import { beadsLabel, packageStartText, ParentName, remainingText } from './ChildBits'
-import { ChildPage, ChildPageFallback } from './ChildDetail'
+import { ActivateDialog, ArchiveDialog, ChildPage, ChildPageFallback } from './ChildDetail'
 import { usePackageOptions } from './packageOptions'
 import { byNewest, isFree, isPaymentDue, isRunningLow, matchesChild, needsRenewal } from './rules'
 
@@ -51,6 +51,7 @@ export default function ChildrenPage() {
   const [filter, setFilter] = useState<Filter>('all')
   const [pkg, setPkg] = useState<string>(ANY_PACKAGE)
   const [query, setQuery] = useState('')
+  const [dialog, setDialog] = useState<{ kind: 'archive' | 'activate'; registration: Registration } | null>(null)
   const listScroll = useRef(0)
 
   // A child opens at its top; the list comes back where it was left
@@ -187,7 +188,7 @@ export default function ChildrenPage() {
         ) : !rows ? (
           <div className={GRID} aria-busy>
             {Array.from({ length: 6 }, (_, index) => (
-              <div key={index} className="flex h-[13.25rem] flex-col gap-4 rounded-panel bg-felt px-[1.375rem] pt-[1.125rem]">
+              <div key={index} className="flex h-[16rem] flex-col gap-4 rounded-panel bg-felt px-[1.375rem] pt-[1.125rem]">
                 <Skeleton className="h-12 w-2/3" />
                 <Skeleton className="h-5 w-1/2" />
                 <Skeleton className="h-8 w-1/3" />
@@ -207,40 +208,48 @@ export default function ChildrenPage() {
                   onOpen={() => {
                     listScroll.current = window.scrollY
                   }}
+                  onPay={() => startTask('payment', { registrationId: row.id })}
+                  onArchive={() => setDialog({ kind: 'archive', registration: row })}
+                  onActivate={() => setDialog({ kind: 'activate', registration: row })}
                 />
               </li>
             ))}
           </ul>
         )}
       </section>
+      {dialog?.kind === 'archive' && <ArchiveDialog registration={dialog.registration} isOpen onOpenChange={(open) => !open && setDialog(null)} />}
+      {dialog?.kind === 'activate' && <ActivateDialog registration={dialog.registration} isOpen onOpenChange={(open) => !open && setDialog(null)} />}
     </Page>
   )
 }
 
+type CardActions = { onOpen: () => void; onPay: () => void; onArchive: () => void; onActivate: () => void }
+
 /**
  * A child as a felt card: the name and age with the payment at the right, the package with its
- * lessons left over a bar of its lessons, and the parent at the foot. Cards in a row share its
- * height, so the feet line up. The whole card opens the child.
+ * lessons left over a bar of its lessons, the parent, and at the foot "Ödeme al" and "Arşivle"
+ * ("Arşivden çıkar" in the archive). Cards in a row share its height, so the feet line up. The
+ * whole card opens the child: its link lies over the card and the buttons sit above the link.
  */
-function ChildCard({ row, own, usageFailed, onOpen }: { row: Registration; own: Usage | undefined; usageFailed: boolean; onOpen: () => void }) {
+function ChildCard({ row, own, usageFailed, onOpen, onPay, onArchive, onActivate }: { row: Registration; own: Usage | undefined; usageFailed: boolean } & CardActions) {
   const i18n = useI18n()
   const { t } = i18n
   const labels = useLabels()
   const active = row.is_active === true
   const free = isFree(row)
   const age = row.student_age?.trim()
+  const actions = t.children.detail.actions
 
   return (
-    <Link
-      href={`/children/${row.id}`}
-      onPress={onOpen}
+    <article
       className={cx(
-        'on-felt relative flex w-full min-w-0 flex-col rounded-panel bg-felt text-left text-ink no-underline outline-none',
-        // A step darker under the pointer, as the figure tiles are
-        'transition-[background-color,scale] duration-150 data-hovered:bg-[color-mix(in_oklab,var(--felt)_94%,var(--ink))] data-pressed:scale-[0.99]',
-        'data-focus-visible:ring-2 data-focus-visible:ring-focus data-focus-visible:ring-offset-2 data-focus-visible:ring-offset-page'
+        'on-felt relative flex w-full min-w-0 flex-col rounded-panel bg-felt text-ink',
+        // A step darker under the pointer, as the figure tiles are; not while a button is under it
+        'transition-[background-color,scale] duration-150 has-[a[data-hovered]]:bg-[color-mix(in_oklab,var(--felt)_94%,var(--ink))] has-[a[data-pressed]]:scale-[0.99]',
+        'has-[a[data-focus-visible]]:ring-2 has-[a[data-focus-visible]]:ring-focus has-[a[data-focus-visible]]:ring-offset-2 has-[a[data-focus-visible]]:ring-offset-page'
       )}
     >
+      <Link href={`/children/${row.id}`} onPress={onOpen} aria-label={row.student_name} className="absolute inset-0 rounded-[inherit] outline-none" />
       <span className="flex items-center gap-3 px-[1.375rem] pt-[1.125rem]">
         <Avatar name={row.student_name} size="lg" />
         <span className="min-w-0 flex-1">
@@ -260,13 +269,32 @@ function ChildCard({ row, own, usageFailed, onOpen }: { row: Registration; own: 
         {active && <LessonsLeft row={row} own={own} failed={usageFailed} />}
       </span>
 
-      <span className="mt-auto flex items-center gap-3 border-t border-line px-[1.375rem] py-3 text-[0.84375rem] leading-[1.125rem] text-ink-3">
-        <span className="min-w-0 flex-1 truncate">
-          <ParentName template={t.children.phone.parentOf} name={row.parent_name} />
+      <div className="mt-auto border-t border-line">
+        <span className="flex items-center gap-3 px-[1.375rem] py-3 text-[0.84375rem] leading-[1.125rem] text-ink-3">
+          <span className="min-w-0 flex-1 truncate">
+            <ParentName template={t.children.phone.parentOf} name={row.parent_name} />
+          </span>
+          <span className="shrink-0 tabular">{displayPhone(row.parent_phone)}</span>
         </span>
-        <span className="shrink-0 tabular">{displayPhone(row.parent_phone)}</span>
-      </span>
-    </Link>
+        {/* The gap between the buttons still opens the child */}
+        <div className="pointer-events-none relative flex gap-2 px-[1.125rem] pb-[1.125rem]">
+          {active ? (
+            <>
+              <Button size="sm" variant="quiet" className="pointer-events-auto flex-1" icon={<HandCoinsIcon aria-hidden className="size-4" />} onPress={onPay}>
+                {actions.payShort}
+              </Button>
+              <Button size="sm" variant="danger-tint" className="pointer-events-auto flex-1" icon={<ArchiveIcon aria-hidden className="size-4" />} onPress={onArchive}>
+                {actions.archiveShort}
+              </Button>
+            </>
+          ) : (
+            <Button size="sm" variant="quiet" className="pointer-events-auto flex-1" icon={<ArrowUUpLeftIcon aria-hidden className="size-4" />} onPress={onActivate}>
+              {actions.activateShort}
+            </Button>
+          )}
+        </div>
+      </div>
+    </article>
   )
 }
 

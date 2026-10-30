@@ -4,11 +4,9 @@ import {
   ArchiveIcon,
   ArrowsClockwiseIcon,
   ArrowUUpLeftIcon,
-  DotsThreeIcon,
   HandCoinsIcon,
   PencilSimpleIcon,
   PhoneIcon,
-  ReceiptIcon,
   WhatsappLogoIcon
 } from '@phosphor-icons/react'
 import { releaseSeats, remainingTone, setRegistrationActive, upcomingSeats, type Registration, type Usage } from '@hellokido/core/api'
@@ -18,10 +16,9 @@ import { useI18n } from '../../providers/I18n'
 import { useToast } from '../../providers/Toasts'
 import { useActions } from '../../shell/Actions'
 import { Avatar, EmptyState, LoadError, Mark, Skeleton } from '../../ui/Bits'
-import { Button, ButtonLink, IconButton } from '../../ui/Button'
+import { Button, ButtonLink } from '../../ui/Button'
 import { Checkbox } from '../../ui/Choice'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
-import { Menu, MenuItem, MenuSeparator } from '../../ui/Menu'
 import { Card, Page } from '../../ui/Page'
 import { displayPhone } from '../../ui/PhoneActions'
 import { Beads } from '../../ui/signature'
@@ -51,7 +48,6 @@ export function ChildPage({ registration }: { registration: Registration }) {
   const usageQuery = active ? activeUsage : ownUsage
   const usage = active ? activeUsage.data?.[registration.id] : ownUsage.data
   const [dialog, setDialog] = useState<'archive' | 'activate' | 'message' | null>(null)
-  const more = t.children.detail.actions.more
   const notes = registration.notes?.trim()
 
   const status = !active ? (
@@ -73,7 +69,8 @@ export function ChildPage({ registration }: { registration: Registration }) {
     </Button>
   )
 
-  // Long labels (Ukrainian) put the buttons on rows of their own; the menu stays with "edit"
+  // Long labels (Ukrainian) put the buttons on rows of their own; archiving stays with "edit". A fee
+  // is one of the choices behind "Ödeme al", so there is no menu for it
   const toolbar = active ? (
     <>
       <Button
@@ -94,25 +91,9 @@ export function ChildPage({ registration }: { registration: Registration }) {
         >
           {t.children.detail.actions.edit}
         </Button>
-        <Menu
-          label={more}
-          trigger={
-            <IconButton label={more} variant="quiet">
-              <DotsThreeIcon aria-hidden weight="bold" className="size-5" />
-            </IconButton>
-          }
-        >
-          <MenuItem
-            icon={<ReceiptIcon aria-hidden className="size-[1.125rem]" />}
-            onAction={() => startTask('payment', { registrationId: registration.id, choice: 'fee' })}
-          >
-            {t.children.detail.actions.addFee}
-          </MenuItem>
-          <MenuSeparator />
-          <MenuItem icon={<ArchiveIcon aria-hidden className="size-[1.125rem]" />} onAction={() => setDialog('archive')}>
-            {t.children.detail.actions.archive}
-          </MenuItem>
-        </Menu>
+        <Button variant="danger-tint" className="max-sm:flex-1" icon={<ArchiveIcon aria-hidden className="size-[1.125rem]" />} onPress={() => setDialog('archive')}>
+          {t.children.detail.actions.archive}
+        </Button>
       </div>
     </>
   ) : (
@@ -404,7 +385,7 @@ type DialogProps = { registration: Registration; isOpen: boolean; onOpenChange: 
  * Archiving hides the child from every list but keeps payments and lessons. Seats it still holds in
  * lessons that have not happened can be freed at the same time (on by default).
  */
-function ArchiveDialog({ registration, isOpen, onOpenChange }: DialogProps) {
+export function ArchiveDialog({ registration, isOpen, onOpenChange }: DialogProps) {
   const { t, fmt, plural } = useI18n()
   const toast = useToast()
   const refresh = useRefresh()
@@ -473,7 +454,7 @@ function ArchiveDialog({ registration, isOpen, onOpenChange }: DialogProps) {
   )
 }
 
-function ActivateDialog({ registration, isOpen, onOpenChange }: DialogProps) {
+export function ActivateDialog({ registration, isOpen, onOpenChange }: DialogProps) {
   const { t, fmt } = useI18n()
   const toast = useToast()
   const refresh = useRefresh()

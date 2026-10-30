@@ -13,9 +13,10 @@ import { Spinner } from './Spinner'
  * - secondary: a raised felt piece with a lift, for row actions (Tahsil et, Yenile, Gir, Kaydet);
  * - quiet: felt with no shadow, for toolbar extras (Takvimi aç); a step darker on a felt card;
  * - ghost: text only until hovered;
- * - danger / danger-soft: deleting and other things that cannot be undone.
+ * - danger / danger-soft: deleting and other things that cannot be undone;
+ * - danger-tint: a soft red piece for setting aside what can come back (Arşive kaldır).
  */
-export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'quiet' | 'danger' | 'danger-soft'
+export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'quiet' | 'danger' | 'danger-soft' | 'danger-tint'
 export type ButtonSize = 'sm' | 'md' | 'lg'
 
 export function buttonClass(variant: ButtonVariant = 'secondary', size: ButtonSize = 'md', extra?: string | false) {
@@ -34,6 +35,7 @@ export function buttonClass(variant: ButtonVariant = 'secondary', size: ButtonSi
     variant === 'ghost' && 'text-ink-2 data-hovered:bg-hover data-hovered:text-ink',
     variant === 'danger' && 'bg-negative text-on-negative data-hovered:bg-[color-mix(in_oklab,var(--negative)_86%,black)]',
     variant === 'danger-soft' && 'text-negative-ink data-hovered:bg-negative-wash',
+    variant === 'danger-tint' && 'bg-negative-wash text-negative-ink data-hovered:bg-[color-mix(in_oklab,var(--negative-wash)_86%,var(--negative))]',
     extra
   )
 }

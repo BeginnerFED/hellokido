@@ -65,6 +65,10 @@ const tr = {
       addFee: 'Ek ücret ekle',
       archive: 'Arşive kaldır',
       activate: 'Arşivden çıkar',
+      // Short words for the buttons on a child's card in the list
+      payShort: 'Ödeme al',
+      archiveShort: 'Arşivle',
+      activateShort: 'Arşivden çıkar',
       more: 'Diğer işlemler'
     },
     archivedNote: 'Bu çocuk arşivde. Ödemeleri ve dersleri duruyor.',
@@ -296,6 +300,9 @@ const en: Widen<typeof tr> = {
       addFee: 'Add a fee',
       archive: 'Move to archive',
       activate: 'Bring back from archive',
+      payShort: 'Payment',
+      archiveShort: 'Archive',
+      activateShort: 'Restore',
       more: 'More actions'
     },
     archivedNote: 'This child is archived. Payments and lessons are kept.',
@@ -527,6 +534,9 @@ const uk: Widen<typeof tr> = {
       addFee: 'Додати збір',
       archive: 'Перенести в архів',
       activate: 'Повернути з архіву',
+      payShort: 'Оплата',
+      archiveShort: 'В архів',
+      activateShort: 'Повернути',
       more: 'Інші дії'
     },
     archivedNote: 'Дитина в архіві. Оплати та заняття збережено.',

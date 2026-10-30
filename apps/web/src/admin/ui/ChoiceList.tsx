@@ -29,14 +29,14 @@ export function ChoiceList<K extends string>({
     <ul aria-label={aria['aria-label']} className={cx('flex flex-col gap-2', className)}>
       {items.map((item) => (
         <li key={item.id}>
-          {/* A felt row that lifts off the board under the pointer */}
+          {/* A felt row that goes a step darker under the pointer, as the cards do; its arrow steps on */}
           <AriaButton
             onPress={() => onChoose(item.id)}
             isDisabled={item.isDisabled}
             className={cx(
               'on-felt group flex w-full items-start gap-3.5 rounded-tile bg-felt px-3.5 py-3 text-left outline-none',
-              'transition-[background-color,box-shadow,scale] duration-150 data-pressed:scale-[0.99]',
-              'data-hovered:bg-raised data-hovered:shadow-lift data-focus-visible:ring-2 data-focus-visible:ring-focus data-disabled:opacity-50'
+              'transition-[background-color,scale] duration-150 data-pressed:scale-[0.99]',
+              'data-hovered:bg-[color-mix(in_oklab,var(--felt)_94%,var(--ink))] data-focus-visible:ring-2 data-focus-visible:ring-focus data-disabled:opacity-50'
             )}
           >
             {item.icon && (
@@ -44,7 +44,7 @@ export function ChoiceList<K extends string>({
                 aria-hidden
                 className={cx(
                   'grid size-9 shrink-0 place-items-center rounded-full',
-                  item.tone === 'action' ? 'bg-action-wash text-amber-ink' : 'bg-piece text-accent-ink group-data-hovered:bg-felt'
+                  item.tone === 'action' ? 'bg-action-wash text-amber-ink' : 'bg-piece text-accent-ink'
                 )}
               >
                 {item.icon}
@@ -54,7 +54,10 @@ export function ChoiceList<K extends string>({
               <span className="block text-[0.9375rem] font-medium text-ink">{item.title}</span>
               {item.hint && <span className="mt-0.5 block text-[0.8125rem] leading-snug text-ink-2 text-pretty">{item.hint}</span>}
             </span>
-            <CaretRightIcon aria-hidden className="mt-2.5 size-4 shrink-0 text-ink-3 group-data-disabled:invisible" />
+            <CaretRightIcon
+              aria-hidden
+              className="mt-2.5 size-4 shrink-0 text-ink-3 transition-[translate,color] duration-150 group-data-hovered:translate-x-0.5 group-data-hovered:text-ink-2 group-data-disabled:invisible motion-reduce:transition-none"
+            />
           </AriaButton>
         </li>
       ))}
