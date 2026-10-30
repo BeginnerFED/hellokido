@@ -1,6 +1,7 @@
 // The rules every screen shares live in core, so the phone app counts the same way
 export {
   byName,
+  byNewest,
   FREE,
   isFree,
   isPaymentDue,

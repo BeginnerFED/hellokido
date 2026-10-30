@@ -11,7 +11,7 @@ const tr = {
   },
   card: {
     title: 'Kart ödemeleri',
-    body: 'Kartla alınan para bankaya birkaç hafta sonra geçer. Gelir-Gider ekranı yoldaki parayı bu iki ayarla hesaplar.',
+    body: 'Kartla alınan para bankaya birkaç hafta sonra geçer. Gelir-Gider ekranı bankaya geçecek parayı bu iki ayarla hesaplar.',
     days: 'Bankaya geçme süresi',
     daysUnit: 'gün',
     daysInvalid: '0 ile 120 arasında bir gün sayısı yaz.',

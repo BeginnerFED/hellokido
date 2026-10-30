@@ -17,8 +17,8 @@ import { Band, Card, CardLink } from '../../ui/Page'
 import { WhatsAppLink } from '../../ui/PhoneActions'
 import { LessonShape } from '../../ui/signature'
 import { cx } from '../../ui/cx'
-import { lessonsLeftText, packageStartText, ParentName, shortDate } from '../children/ChildBits'
-import { byName } from '../children/rules'
+import { lessonsLeftText, packageStartText, ParentName, remainingText, shortDate } from '../children/ChildBits'
+import { byName, needsRenewal } from '../children/rules'
 import { AttendancePicker } from '../lessons/AttendancePicker'
 import { useLessonTitle } from '../lessons/LessonBits'
 import type { useWaiting } from './data'
@@ -689,12 +689,16 @@ export function TomorrowCard({
                   const child = seat.child
                   const item = bySeatId.get(seat.id)
                   const done = isSent(seat.id)
+                  const own = usage?.[child.id]
                   return (
                     <CardRow key={seat.id}>
                       <Avatar name={child.student_name} />
                       <div className="min-w-0 flex-1">
                         <ChildLink id={child.id} name={child.student_name} className="block" />
+                        {/* The lessons left first, so a long parent's name is what gets cut */}
                         <p className="truncate text-[0.84375rem] leading-[1.125rem] text-ink-3">
+                          {own && <span className={cx('tabular', needsRenewal(child, own) && 'font-medium text-amber-ink')}>{remainingText(i18n, own)}</span>}
+                          {own && child.parent_name?.trim() && ' · '}
                           <ParentName template={t.today.lessonsCard.parentOf} name={child.parent_name} />
                         </p>
                       </div>

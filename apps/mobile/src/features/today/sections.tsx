@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import * as Haptics from 'expo-haptics'
 import { LessonError, setAttendance, type AttendanceStatus, type Lesson, type Registration, type Seat, type UnmarkedSeat } from '@hellokido/core/api'
 import { whatsAppLink } from '@hellokido/core/rules/phone.js'
-import { byName, lessonsLeftText, packageStartText, shortDate } from '@hellokido/core/view'
+import { byName, lessonsLeftText, needsRenewal, packageStartText, remainingText, shortDate } from '@hellokido/core/view'
 import { useMessageWriter, useRecentReminders, useReminderLog, useRemindedText, useSeatReminders } from '../../data/messages'
 import { keys, useActiveUsage, useLabels } from '../../data/queries'
 import { tasks, useOpenChild } from '../../lib/navigation'
@@ -465,8 +465,10 @@ export type TomorrowReminders = ReturnType<typeof useTomorrowReminders>
 
 /** Tomorrow's lessons with a reminder for every family; shown once opened from "Seni bekleyenler". */
 export function TomorrowSection({ lessons, reminders, open, onClose, onLayout }: { lessons: Lesson[]; reminders: TomorrowReminders; open: boolean; onClose: () => void; onLayout?: (event: LayoutChangeEvent) => void }) {
-  const { t, fmt, date } = useI18n()
+  const i18n = useI18n()
+  const { t, fmt, date } = i18n
   const labels = useLabels()
+  const usage = useActiveUsage().data
   if (!open || lessons.length === 0) return null
   const { bySeatId, isSent, send, takeBack } = reminders
 
@@ -487,12 +489,21 @@ export function TomorrowSection({ lessons, reminders, open, onClose, onLayout }:
                   const child = seat.child
                   const item = bySeatId.get(seat.id)
                   const done = isSent(seat.id)
+                  const own = usage?.[child.id]
+                  const ending = own !== undefined && needsRenewal(child, own)
                   return (
                     <View key={seat.id} style={styles.personRow}>
                       <Avatar name={child.student_name} size={36} />
                       <View style={styles.flex}>
                         <ChildName id={child.id} name={child.student_name} />
+                        {/* The lessons left first, so a long parent's name is what gets cut */}
                         <Text variant="sub" tone="ink3" numberOfLines={1}>
+                          {own && (
+                            <Text variant="sub" tone={ending ? 'amberInk' : 'ink3'} weight={ending ? '500' : undefined}>
+                              {remainingText(i18n, own)}
+                            </Text>
+                          )}
+                          {own && child.parent_name?.trim() ? DOT : ''}
                           {child.parent_name}
                         </Text>
                       </View>

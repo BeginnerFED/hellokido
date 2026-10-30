@@ -479,7 +479,7 @@ function Overview({ income, expenses, isError, waiting, onRetry, before, today, 
                       ))}
                   </View>
                 )}
-                <View style={styles.legend}>
+                <View style={[styles.legend, styles.legendSpread]}>
                   {parts.map((part) => {
                     const amount = signed(money, part.amount)
                     const body = (
@@ -504,12 +504,12 @@ function Overview({ income, expenses, isError, waiting, onRetry, before, today, 
                         accessibilityLabel={`${part.label} ${amount}`}
                         accessibilityHint={t.finance.balance.showBank}
                         hitSlop={6}
-                        style={({ pressed }) => [styles.legendCell, pressed && styles.pressed]}
+                        style={({ pressed }) => [styles.legendPart, pressed && styles.pressed]}
                       >
                         {body}
                       </Pressable>
                     ) : (
-                      <View key={part.id} accessible accessibilityLabel={`${part.label} ${amount}`} style={styles.legendCell}>
+                      <View key={part.id} accessible accessibilityLabel={`${part.label} ${amount}`} style={styles.legendPart}>
                         {body}
                       </View>
                     )
@@ -613,6 +613,9 @@ const styles = StyleSheet.create({
   stripe: { position: 'absolute', top: 0, bottom: 0, width: 2 },
   legend: { flexDirection: 'row', gap: 8, marginTop: 12 },
   legendCell: { flex: 1, minWidth: 0 },
+  // The parts as wide as their words, spread across the card, so "Bankaya geçecek" keeps one line where it can
+  legendSpread: { justifyContent: 'space-between', gap: 12 },
+  legendPart: { flexShrink: 1, minWidth: 0 },
   legendHead: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   legendKey: { width: 9, height: 9, borderRadius: 3, overflow: 'hidden' },
   legendAmount: { fontSize: 16, lineHeight: 21, marginTop: 3 },

@@ -45,6 +45,10 @@ export function matchesChild(row: Pick<Registration, 'student_name' | 'parent_na
 export const byName = (a: Pick<Registration, 'student_name'>, b: Pick<Registration, 'student_name'>) =>
   a.student_name.localeCompare(b.student_name, 'tr')
 
+/** The newest registration first, as the workshop reads its children list; the id keeps equal times in one order. */
+export const byNewest = (a: Pick<Registration, 'created_at' | 'id'>, b: Pick<Registration, 'created_at' | 'id'>) =>
+  (Date.parse(b.created_at ?? '') || 0) - (Date.parse(a.created_at ?? '') || 0) || a.id.localeCompare(b.id)
+
 export type DateRange = { start: Date; end: Date }
 
 export const sameInstant = (a: Date | string | null | undefined, b: Date | string | null | undefined) => {

@@ -8,7 +8,7 @@ import { cx } from './cx'
  * The board's small pieces:
  * - a lesson type is a shape in its colour (İngilizce circle, Duyusal rounded square, Özel diamond),
  *   so the types read without colour too; a type's card takes its felt (`typeClass`);
- * - a package is a row of beads, one per lesson;
+ * - a package is a row of beads, one per lesson (a bar of segments on a child's card in a list);
  * - a lesson's seats are dots, filled for each child holding one.
  */
 
@@ -121,6 +121,28 @@ export function Beads({ usage, label, className, fill }: { usage: Usage; label: 
           {kind === 'yes' && <CheckIcon weight="bold" className="size-3.5" />}
           {kind === 'no' && <XIcon weight="bold" className="size-3.5" />}
         </span>
+      ))}
+    </span>
+  )
+}
+
+/**
+ * The beads shrunk to one 8px bar for a child's card in a list: a segment per lesson in the beads'
+ * colours (attended green, missed red, still to come grey), so a 24-lesson package still fits a
+ * line and every card's bar is as long as the next.
+ */
+export function BeadBar({ usage, label, className }: { usage: Usage; label: string; className?: string }) {
+  if (usage.isFree || usage.total === null || usage.total <= 0) return null
+  const total = usage.total
+  const attended = Math.min(usage.attended, total)
+  const missed = Math.min(usage.noShow, total - attended)
+  return (
+    <span role="img" aria-label={label} className={cx('flex h-2 gap-[3px]', className)}>
+      {Array.from({ length: total }, (_, index) => (
+        <span
+          key={index}
+          className={cx('min-w-0 flex-1 rounded-full', index < attended ? 'bg-green' : index < attended + missed ? 'bg-negative' : 'bg-line-strong')}
+        />
       ))}
     </span>
   )

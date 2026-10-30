@@ -168,7 +168,8 @@ export function Overview({ income, expenses, isError, waiting, onRetry, today, o
                       ))}
                   </div>
                 )}
-                <div className={cx('grid grid-cols-3 gap-2.5', drawn ? 'mt-3.5' : 'mt-5')}>
+                {/* Each part as wide as its words, spread across the card, so "Bankaya geçecek" keeps one line where it can */}
+                <div className={cx('grid grid-cols-[repeat(3,auto)] justify-between gap-x-3', drawn ? 'mt-3.5' : 'mt-5')}>
                   {parts.map((part) => {
                     const body = (
                       <>

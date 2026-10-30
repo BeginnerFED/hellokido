@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useQueryClient } from '@tanstack/react-query'
 import { remainingTone, type Registration, type Usage, type UsageMap } from '@hellokido/core/api'
 import { phoneDigits, whatsAppLink } from '@hellokido/core/rules/phone.js'
-import { byName, isFree, isPaymentDue, isRunningLow, matchesChild, remainingText } from '@hellokido/core/view'
+import { byNewest, isFree, isPaymentDue, isRunningLow, matchesChild, remainingText } from '@hellokido/core/view'
 import { useTemplates } from '../../data/messages'
 import { useActiveUsage, useCatalog, useChildLessons, useChildUsage, useLabels, useRegistrations } from '../../data/queries'
 import { headerButton, tasks, useOpenChild } from '../../lib/navigation'
@@ -78,9 +78,9 @@ export function ChildrenScreen() {
   const shown = useMemo(() => {
     const list = view === 'active' && filter ? inPackage.filter((row) => TESTS[filter](row, usage)) : [...inPackage]
     if (view === 'active' && filter === 'low') {
-      return list.sort((a, b) => (usage?.[a.id]?.remaining ?? 0) - (usage?.[b.id]?.remaining ?? 0) || byName(a, b))
+      return list.sort((a, b) => (usage?.[a.id]?.remaining ?? 0) - (usage?.[b.id]?.remaining ?? 0) || byNewest(a, b))
     }
-    return list.sort(byName)
+    return list.sort(byNewest)
   }, [inPackage, view, filter, usage])
 
   // No count before the list has loaded: a 0 there would say "nobody" while it is not known yet

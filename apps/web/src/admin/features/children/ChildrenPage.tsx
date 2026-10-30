@@ -1,22 +1,23 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-aria-components'
 import { useParams } from 'react-router'
-import { CaretRightIcon, PlusIcon } from '@phosphor-icons/react'
+import { PlusIcon } from '@phosphor-icons/react'
 import type { Registration, Usage, UsageMap } from '@hellokido/core/api'
 import { useActiveUsage, useLabels, useRegistrations } from '../../data/queries'
 import { useI18n } from '../../providers/I18n'
 import { useActions } from '../../shell/Actions'
-import { Avatar, EmptyState, LoadError, Mark, Skeleton } from '../../ui/Bits'
+import { Avatar, EmptyState, LoadError, Skeleton } from '../../ui/Bits'
 import { Button } from '../../ui/Button'
 import { ChipSelect, Chips, Segmented, type Option } from '../../ui/Choice'
 import { SearchField } from '../../ui/Field'
 import { Page } from '../../ui/Page'
 import { displayPhone } from '../../ui/PhoneActions'
+import { BeadBar } from '../../ui/signature'
 import { cx } from '../../ui/cx'
-import { packageStartText, ParentName, remainingText } from './ChildBits'
+import { beadsLabel, packageStartText, ParentName, remainingText } from './ChildBits'
 import { ChildPage, ChildPageFallback } from './ChildDetail'
 import { usePackageOptions } from './packageOptions'
-import { byName, isFree, isPaymentDue, isRunningLow, matchesChild, needsRenewal } from './rules'
+import { byNewest, isFree, isPaymentDue, isRunningLow, matchesChild, needsRenewal } from './rules'
 
 type View = 'active' | 'archived'
 type Filter = 'all' | 'pending' | 'low'
@@ -27,17 +28,13 @@ const TESTS: Record<Exclude<Filter, 'all'>, (row: Registration, usage: UsageMap 
   low: (row, usage) => !isFree(row) && isRunningLow(usage?.[row.id])
 }
 
-// The table's columns, once the card is wide enough for them; archived children have no lessons
-// left or payment to show
-const COLUMNS = {
-  active: '@4xl:grid-cols-[minmax(0,1.45fr)_minmax(0,1.1fr)_minmax(0,1.2fr)_8rem_10.5rem_1.125rem]',
-  archived: '@4xl:grid-cols-[minmax(0,1.45fr)_minmax(0,1.1fr)_minmax(0,1.2fr)_1.125rem]'
-}
+// As many cards to a row as fit at 19.5rem; a phone shows one
+const GRID = 'grid grid-cols-[repeat(auto-fill,minmax(min(100%,19.5rem),1fr))] gap-3.5 @lg:gap-4'
 
 /**
- * The children as one felt table: search and filters on top, a row per child with the parent, the
- * package, the lessons left and the payment. A child opens on a page of its own; the list keeps its
- * search, filters and scroll position for the way back.
+ * The children as felt cards, the newest registration first: search and filters on top, then a card
+ * per child with the package, the lessons left, the payment and the parent. A child opens on a page
+ * of its own; the list keeps its search, filters and scroll position for the way back.
  */
 export default function ChildrenPage() {
   const { id } = useParams()
@@ -69,9 +66,9 @@ export default function ChildrenPage() {
   const shown = useMemo(() => {
     const list = view === 'active' && filter !== 'all' ? inPackage.filter((row) => TESTS[filter](row, usage)) : [...inPackage]
     if (view === 'active' && filter === 'low') {
-      return list.sort((a, b) => (usage?.[a.id]?.remaining ?? 0) - (usage?.[b.id]?.remaining ?? 0) || byName(a, b))
+      return list.sort((a, b) => (usage?.[a.id]?.remaining ?? 0) - (usage?.[b.id]?.remaining ?? 0) || byNewest(a, b))
     }
-    return list.sort(byName)
+    return list.sort(byNewest)
   }, [inPackage, view, filter, usage])
 
   // Filters are toggles: none on shows every child, so there is no "all" chip. No count before the
@@ -159,8 +156,8 @@ export default function ChildrenPage() {
       action={{ label: t.children.newRegistration, onPress: () => startTask('registration') }}
       width="wide"
     >
-      <section aria-label={t.children.title} className="@container on-felt rounded-panel bg-felt">
-        <div className="flex flex-col gap-3 px-4 pt-4 pb-3.5 @lg:px-[1.375rem] @lg:pt-[1.125rem] @lg:pb-4 @3xl:flex-row @3xl:flex-wrap @3xl:items-center">
+      <section aria-label={t.children.title} className="@container">
+        <div className="mb-4 flex flex-col gap-3 @3xl:flex-row @3xl:flex-wrap @3xl:items-center">
           <SearchField
             value={query}
             onChange={setQuery}
@@ -169,7 +166,7 @@ export default function ChildrenPage() {
             className="@3xl:w-[25rem] @3xl:max-w-full"
           />
           {/* Narrow: one row of filters that scrolls sideways; its padding keeps the chips' touch area inside */}
-          <div className="-mx-4 -my-1.5 flex items-center gap-2 overflow-x-auto px-4 py-1.5 @lg:-mx-[1.375rem] @lg:px-[1.375rem] @3xl:mx-0 @3xl:my-0 @3xl:overflow-visible @3xl:px-0 @3xl:py-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="-mx-4 -my-1.5 flex items-center gap-2 overflow-x-auto px-4 py-1.5 @3xl:mx-0 @3xl:my-0 @3xl:overflow-visible @3xl:px-0 @3xl:py-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {view === 'active' && (
               <Chips
                 aria-label={t.children.filters.label}
@@ -184,58 +181,36 @@ export default function ChildrenPage() {
         </div>
 
         {registrations.isError ? (
-          <div className="border-t border-line px-4 py-4 @lg:px-[1.375rem]">
+          <div className="rounded-panel bg-felt p-4 @lg:p-[1.375rem]">
             <LoadError message={t.children.loadFailed} retryLabel={t.common.retry} onRetry={() => void registrations.refetch()} />
           </div>
         ) : !rows ? (
-          <div className="flex flex-col gap-2 border-t border-line px-4 pt-3 pb-4 @lg:px-[1.375rem]" aria-busy>
-            {Array.from({ length: 8 }, (_, index) => (
-              <Skeleton key={index} className="h-[3.75rem]" />
+          <div className={GRID} aria-busy>
+            {Array.from({ length: 6 }, (_, index) => (
+              <div key={index} className="flex h-[13.25rem] flex-col gap-4 rounded-panel bg-felt px-[1.375rem] pt-[1.125rem]">
+                <Skeleton className="h-12 w-2/3" />
+                <Skeleton className="h-5 w-1/2" />
+                <Skeleton className="h-8 w-1/3" />
+              </div>
             ))}
           </div>
         ) : shown.length === 0 ? (
-          <div className="border-t border-line py-4">{empty}</div>
+          <div className="on-felt rounded-panel bg-felt py-4">{empty}</div>
         ) : (
-          <>
-            <div
-              aria-hidden
-              className={cx(
-                'hidden gap-x-5 px-[2.125rem] pb-2.5 text-[0.8125rem] font-semibold text-ink-3 @4xl:grid',
-                view === 'active' ? COLUMNS.active : COLUMNS.archived
-              )}
-            >
-              <span>{t.children.columns.child}</span>
-              <span>{t.children.columns.parent}</span>
-              <span>{t.children.columns.package}</span>
-              {view === 'active' && (
-                <>
-                  <span>{t.children.columns.left}</span>
-                  <span>{t.children.columns.payment}</span>
-                </>
-              )}
-            </div>
-            <ul aria-label={plural(t.children.count, shown.length)} className="border-t border-line px-1.5 pt-1.5 pb-2 @lg:px-2.5 @4xl:px-3 @4xl:pb-3">
-              {shown.map((row) => (
-                <li
-                  key={row.id}
-                  className={cx(
-                    // A hairline between rows; it steps aside for a row under the pointer
-                    'relative before:pointer-events-none before:absolute before:inset-x-2.5 before:top-0 before:h-px before:bg-line first:before:hidden',
-                    '@lg:before:inset-x-3 @4xl:before:inset-x-[1.375rem] [&:has([data-hovered])]:before:opacity-0 [li:has([data-hovered])+&]:before:opacity-0'
-                  )}
-                >
-                  <ChildRow
-                    row={row}
-                    own={usage?.[row.id]}
-                    usageFailed={usageFailed}
-                    onOpen={() => {
-                      listScroll.current = window.scrollY
-                    }}
-                  />
-                </li>
-              ))}
-            </ul>
-          </>
+          <ul aria-label={plural(t.children.count, shown.length)} className={GRID}>
+            {shown.map((row) => (
+              <li key={row.id} className="flex min-w-0">
+                <ChildCard
+                  row={row}
+                  own={usage?.[row.id]}
+                  usageFailed={usageFailed}
+                  onOpen={() => {
+                    listScroll.current = window.scrollY
+                  }}
+                />
+              </li>
+            ))}
+          </ul>
         )}
       </section>
     </Page>
@@ -243,101 +218,97 @@ export default function ChildrenPage() {
 }
 
 /**
- * A child in the table: the child, the parent, the package, the lessons left and the payment, and
- * the whole row opens the child. Narrow, it keeps the name, the package and parent in one line
- * (a payment due before them) and the lessons left.
+ * A child as a felt card: the name and age with the payment at the right, the package with its
+ * lessons left over a bar of its lessons, and the parent at the foot. Cards in a row share its
+ * height, so the feet line up. The whole card opens the child.
  */
-function ChildRow({ row, own, usageFailed, onOpen }: { row: Registration; own: Usage | undefined; usageFailed: boolean; onOpen: () => void }) {
+function ChildCard({ row, own, usageFailed, onOpen }: { row: Registration; own: Usage | undefined; usageFailed: boolean; onOpen: () => void }) {
   const i18n = useI18n()
   const { t } = i18n
   const labels = useLabels()
   const active = row.is_active === true
   const free = isFree(row)
-  const due = isPaymentDue(row)
-  const line = 'truncate text-[0.84375rem] leading-[1.125rem] text-ink-3'
+  const age = row.student_age?.trim()
 
   return (
     <Link
       href={`/children/${row.id}`}
       onPress={onOpen}
       className={cx(
-        'group flex items-center gap-3 rounded-[1.125rem] px-2.5 py-3 text-left text-ink no-underline outline-none @lg:px-3',
-        '@4xl:grid @4xl:gap-x-5 @4xl:px-[1.375rem]',
-        active ? COLUMNS.active : COLUMNS.archived,
-        'transition-colors duration-150 data-hovered:bg-hover data-pressed:bg-hover data-focus-visible:ring-2 data-focus-visible:ring-focus data-focus-visible:ring-inset'
+        'on-felt relative flex w-full min-w-0 flex-col rounded-panel bg-felt text-left text-ink no-underline outline-none',
+        // A step darker under the pointer, as the figure tiles are
+        'transition-[background-color,scale] duration-150 data-hovered:bg-[color-mix(in_oklab,var(--felt)_94%,var(--ink))] data-pressed:scale-[0.99]',
+        'data-focus-visible:ring-2 data-focus-visible:ring-focus data-focus-visible:ring-offset-2 data-focus-visible:ring-offset-page'
       )}
     >
-      <span className="flex min-w-0 flex-1 items-center gap-3">
-        <Avatar name={row.student_name} />
+      <span className="flex items-center gap-3 px-[1.375rem] pt-[1.125rem]">
+        <Avatar name={row.student_name} size="lg" />
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-base leading-[1.3125rem] font-medium">{row.student_name}</span>
-          {row.student_age?.trim() && <span className={cx(line, 'hidden @4xl:block')}>{row.student_age}</span>}
-          <span className="flex min-w-0 items-center gap-2 @4xl:hidden">
-            {due && <Mark tone="action">{t.children.pendingPayment}</Mark>}
-            <span className={cx('block min-w-0', line)}>
-              {labels.packageName(row.package_type)}
-              {row.parent_name?.trim() && ' · '}
-              <ParentName template={t.children.phone.parentOf} name={row.parent_name} />
-            </span>
+          <span className="block truncate text-[1.0625rem] leading-[1.375rem] font-semibold">{row.student_name}</span>
+          {age && <span className="block truncate text-[0.84375rem] leading-[1.125rem] text-ink-3">{age}</span>}
+        </span>
+        {active && <PaymentMark free={free} due={isPaymentDue(row)} />}
+      </span>
+
+      <span className="flex flex-col px-[1.375rem] pt-4 pb-[1.125rem]">
+        <span className="flex items-baseline justify-between gap-3">
+          <span className="min-w-0 truncate text-[0.9375rem] leading-5 font-medium text-ink-2">{labels.packageName(row.package_type)}</span>
+          <span className="shrink-0 text-[0.8125rem] leading-[1.125rem] text-ink-3 tabular">
+            {free ? t.children.detail.unlimited : packageStartText(i18n, row.package_start_date, row.package_type)}
           </span>
         </span>
+        {active && <LessonsLeft row={row} own={own} failed={usageFailed} />}
       </span>
 
-      <span className="hidden min-w-0 @4xl:block">
-        <span className="block truncate text-[0.9375rem] leading-5">{row.parent_name}</span>
-        <span className={cx('block tabular', line)}>{displayPhone(row.parent_phone)}</span>
-      </span>
-
-      <span className="hidden min-w-0 @4xl:block">
-        <span className="block truncate text-[0.9375rem] leading-5">{labels.packageName(row.package_type)}</span>
-        <span className={cx('block tabular', line)}>{free ? t.children.detail.unlimited : packageStartText(i18n, row.package_start_date, row.package_type)}</span>
-      </span>
-
-      {active && <LessonsLeft row={row} own={own} failed={usageFailed} />}
-
-      {active && (
-        <span className="hidden @4xl:flex">
-          <PaymentMark free={free} due={due} />
+      <span className="mt-auto flex items-center gap-3 border-t border-line px-[1.375rem] py-3 text-[0.84375rem] leading-[1.125rem] text-ink-3">
+        <span className="min-w-0 flex-1 truncate">
+          <ParentName template={t.children.phone.parentOf} name={row.parent_name} />
         </span>
-      )}
-
-      <CaretRightIcon aria-hidden className="size-[1.125rem] shrink-0 text-mute transition-colors duration-150 group-data-hovered:text-ink-3" />
+        <span className="shrink-0 tabular">{displayPhone(row.parent_phone)}</span>
+      </span>
     </Link>
   )
 }
 
 /**
- * "5 ders", in amber with "Bitmek üzere" or "Paket bitti" under it once the package needs renewing
- * (a fresh single session is not running out). Free participation has no count.
+ * "5 ders kaldı" over the bar of the package's lessons; in amber with "Bitmek üzere" or "Paket
+ * bitti" once the package needs renewing (a fresh single session is not running out). Free
+ * participation has no count.
  */
 function LessonsLeft({ row, own, failed }: { row: Registration; own: Usage | undefined; failed: boolean }) {
   const i18n = useI18n()
   const { t, plural } = i18n
-  if (isFree(row)) return <span className="shrink-0 text-sm text-ink-3">{t.children.form.noQuota}</span>
+  if (isFree(row)) return <span className="mt-2 text-sm text-ink-3">{t.children.form.noQuota}</span>
   if (!own) {
     return failed ? (
-      <span aria-hidden className="w-8 shrink-0 text-ink-3">
-        –
-      </span>
+      <span className="mt-2 text-sm text-ink-3">{t.children.phone.usageFailed}</span>
     ) : (
-      <span aria-hidden className="h-6 w-14 shrink-0 animate-shimmer rounded-lg bg-track" />
+      <span aria-hidden className="mt-2.5 flex flex-col gap-3">
+        <span className="h-7 w-32 animate-shimmer rounded-lg bg-track" />
+        <span className="h-2 animate-shimmer rounded-full bg-track" />
+      </span>
     )
   }
   const left = Math.max(own.remaining ?? 0, 0)
   const ending = needsRenewal(row, own)
   return (
-    <span className={cx('flex shrink-0 flex-col items-end @4xl:items-start', ending && 'text-amber-ink')}>
-      <span aria-hidden className="flex items-baseline gap-1.5">
-        <span className="text-xl leading-6 font-semibold tracking-[-0.02em] tabular">{left}</span>
-        <span className={cx('text-sm', !ending && 'text-ink-3')}>{plural(t.children.phone.lessonsUnit, left)}</span>
-      </span>
-      {ending && (
-        <span aria-hidden className="hidden text-[0.8125rem] leading-[1.125rem] font-medium @lg:block">
-          {left <= 0 ? t.children.ending.ended : t.children.ending.soon}
+    <>
+      <span className={cx('mt-1.5 flex items-baseline gap-2', ending && 'text-amber-ink')}>
+        <span aria-hidden className="text-[1.625rem] leading-8 font-semibold tracking-[-0.02em] tabular">
+          {left}
         </span>
-      )}
-      <span className="sr-only">{remainingText(i18n, own)}</span>
-    </span>
+        <span aria-hidden className={cx('text-[0.9375rem]', ending ? 'font-medium' : 'text-ink-2')}>
+          {plural(t.children.phone.leftUnit, left)}
+        </span>
+        {ending && (
+          <span aria-hidden className="ml-auto text-[0.8125rem] font-medium whitespace-nowrap">
+            {left <= 0 ? t.children.ending.ended : t.children.ending.soon}
+          </span>
+        )}
+        <span className="sr-only">{remainingText(i18n, own)}</span>
+      </span>
+      <BeadBar usage={own} label={beadsLabel(i18n, own)} className="mt-2.5" />
+    </>
   )
 }
 
@@ -350,7 +321,7 @@ function PaymentMark({ free, due }: { free: boolean; due: boolean }) {
       ? ['bg-amber', 'font-medium text-amber-ink', t.children.pendingPayment]
       : ['bg-green', 'font-medium text-ink-2', t.children.paid]
   return (
-    <span className={cx('inline-flex items-center gap-[0.4375rem] text-sm whitespace-nowrap', ink)}>
+    <span className={cx('inline-flex shrink-0 items-center gap-[0.4375rem] text-[0.8125rem] whitespace-nowrap', ink)}>
       <span aria-hidden className={cx('size-2 shrink-0 rounded-full', dot)} />
       {text}
     </span>

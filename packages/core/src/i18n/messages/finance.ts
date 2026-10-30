@@ -53,12 +53,12 @@ const tr = {
     paidOver: '{amount} fazla ödendi',
     paidAll: 'hepsi bölüşüldü',
     noSalaries: 'maaşlar hariç',
-    bank: 'Bankaya yolda',
+    bank: 'Bankaya geçecek',
     bankHint: 'henüz hesapta değil',
     bankNone: 'Hepsi hesaba geçti',
     showIn: 'Gelen hareketleri göster',
     showOut: 'Giden hareketleri göster',
-    showBank: 'Bankaya yoldaki parayı göster',
+    showBank: 'Bankaya geçecek parayı göster',
     inBank: 'Bankada',
     // Beside all card money on its way: the part of it the viewed period's split counts
     bankOfPeriod: '{amount} bu dönemden'
@@ -91,13 +91,13 @@ const tr = {
     more: { one: '{count} ödeme daha göster', other: '{count} ödeme daha göster' }
   },
   card: {
-    title: 'Bankaya yolda',
+    title: 'Bankaya geçecek',
     note: { one: 'Kartla alınan ödemeler yaklaşık {count} gün sonra hesaba geçer.', other: 'Kartla alınan ödemeler yaklaşık {count} gün sonra hesaba geçer.' },
     arrives: '{date} civarı',
     arrivesToday: 'Bugün',
     payments: { one: '{count} ödeme', other: '{count} ödeme' },
     commission: 'Komisyon ({rate}) düşünce yaklaşık {amount}',
-    empty: 'Yolda kart ödemesi yok.'
+    empty: 'Bankaya geçecek kart ödemesi yok.'
   },
   monthly: {
     title: 'Aylık giderler',

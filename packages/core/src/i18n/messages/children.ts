@@ -32,7 +32,6 @@ const tr = {
   free: 'Ücretsiz',
   pendingPayment: 'Ödeme bekliyor',
   paid: 'Ödendi',
-  columns: { child: 'Çocuk', parent: 'Veli', package: 'Paket', left: 'Kalan ders', payment: 'Ödeme' },
   ending: { soon: 'Bitmek üzere', ended: 'Paket bitti' },
   beads:
     'Paket {total} ders: {attended} katıldı, {absent} gelmedi, {unmarked} yoklaması girilmedi, {booked} planlandı, {remaining} kaldı.',
@@ -265,7 +264,6 @@ const en: Widen<typeof tr> = {
   free: 'Free',
   pendingPayment: 'Payment due',
   paid: 'Paid',
-  columns: { child: 'Child', parent: 'Parent', package: 'Package', left: 'Lessons left', payment: 'Payment' },
   ending: { soon: 'Running out', ended: 'Package used up' },
   beads: 'Package of {total} lessons: {attended} attended, {absent} absent, {unmarked} not marked, {booked} booked, {remaining} left.',
   detail: {
@@ -495,7 +493,6 @@ const uk: Widen<typeof tr> = {
   free: 'Безкоштовно',
   pendingPayment: 'Очікує оплату',
   paid: 'Оплачено',
-  columns: { child: 'Дитина', parent: 'Батьки', package: 'Пакет', left: 'Залишилось', payment: 'Оплата' },
   ending: { soon: 'Закінчується', ended: 'Пакет закінчився' },
   beads: 'Пакет на {total} занять: відвідано {attended}, пропущено {absent}, не відмічено {unmarked}, заплановано {booked}, залишилось {remaining}.',
   detail: {
