@@ -15,10 +15,10 @@ import { Button, ButtonLink } from '../../ui/Button'
 import { CardTabs } from '../../ui/Figures'
 import { Band, Card, CardLink } from '../../ui/Page'
 import { WhatsAppLink } from '../../ui/PhoneActions'
-import { LessonShape } from '../../ui/signature'
+import { LessonShape, MiniBeads } from '../../ui/signature'
 import { cx } from '../../ui/cx'
-import { lessonsLeftText, packageStartText, ParentName, remainingText, shortDate } from '../children/ChildBits'
-import { byName, needsRenewal } from '../children/rules'
+import { beadsLabel, lessonsLeftText, packageStartText, ParentName, shortDate } from '../children/ChildBits'
+import { byName } from '../children/rules'
 import { AttendancePicker } from '../lessons/AttendancePicker'
 import { useLessonTitle } from '../lessons/LessonBits'
 import type { useWaiting } from './data'
@@ -569,7 +569,8 @@ export function TomorrowCard({
   const labels = useLabels()
   const title = useLessonTitle()
   const write = useMessageWriter()
-  const usage = useActiveUsage().data
+  const activeUsage = useActiveUsage()
+  const usage = activeUsage.data
   const seatIds = useMemo(() => lessons.flatMap((lesson) => lesson.seats.map((seat) => seat.id)), [lessons])
   const { bySeat } = useSeatReminders(seatIds)
   const { log, unlog } = useReminderLog()
@@ -691,44 +692,50 @@ export function TomorrowCard({
                   const done = isSent(seat.id)
                   const own = usage?.[child.id]
                   return (
-                    <CardRow key={seat.id}>
+                    <CardRow key={seat.id} className="max-sm:flex-wrap max-sm:gap-y-1.5">
                       <Avatar name={child.student_name} />
                       <div className="min-w-0 flex-1">
                         <ChildLink id={child.id} name={child.student_name} className="block" />
-                        {/* The lessons left first, so a long parent's name is what gets cut */}
                         <p className="truncate text-[0.84375rem] leading-[1.125rem] text-ink-3">
-                          {own && <span className={cx('tabular', needsRenewal(child, own) && 'font-medium text-amber-ink')}>{remainingText(i18n, own)}</span>}
-                          {own && child.parent_name?.trim() && ' · '}
                           <ParentName template={t.today.lessonsCard.parentOf} name={child.parent_name} />
                         </p>
                       </div>
-                      {seat.status !== 'scheduled' ? (
-                        <Mark tone="neutral">{labels.attendance(seat.status)}</Mark>
-                      ) : !item ? null : done ? (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          aria-label={`${t.today.tomorrow.sent}. ${t.messages.undo}`}
-                          onPress={() => takeBack(seat.id)}
-                          className="shrink-0 max-lg:h-10"
-                          icon={<CheckIcon aria-hidden weight="bold" className="size-4 text-green-ink" />}
-                        >
-                          {t.today.tomorrow.sent}
-                        </Button>
-                      ) : (
-                        <ButtonLink
-                          href={item.chat!}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          size="sm"
-                          aria-label={fmt(t.today.tomorrow.remindLabel, { name: child.student_name })}
-                          onPress={() => send(item)}
-                          className="shrink-0 max-lg:h-10"
-                          icon={<WhatsappLogoIcon aria-hidden className="size-4" />}
-                        >
-                          {t.today.tomorrow.remind}
-                        </ButtonLink>
+                      {/* The lessons left as the lesson card shows them, a dot each and the count; under the name on a phone */}
+                      {(own || activeUsage.isPending) && (
+                        <div className="max-sm:order-last max-sm:basis-full max-sm:pl-12 sm:w-36 sm:shrink-0">
+                          <MiniBeads usage={own} label={own ? beadsLabel(i18n, own) : ''} freeText={labels.packageName(child.package_type)} />
+                        </div>
                       )}
+                      {/* One width for "Hatırlat" and "Gönderildi", so the dots keep one column as the reminders go out */}
+                      <div className="flex min-w-[7.75rem] shrink-0 justify-end">
+                        {seat.status !== 'scheduled' ? (
+                          <Mark tone="neutral">{labels.attendance(seat.status)}</Mark>
+                        ) : !item ? null : done ? (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            aria-label={`${t.today.tomorrow.sent}. ${t.messages.undo}`}
+                            onPress={() => takeBack(seat.id)}
+                            className="shrink-0 max-lg:h-10"
+                            icon={<CheckIcon aria-hidden weight="bold" className="size-4 text-green-ink" />}
+                          >
+                            {t.today.tomorrow.sent}
+                          </Button>
+                        ) : (
+                          <ButtonLink
+                            href={item.chat!}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            size="sm"
+                            aria-label={fmt(t.today.tomorrow.remindLabel, { name: child.student_name })}
+                            onPress={() => send(item)}
+                            className="shrink-0 max-lg:h-10"
+                            icon={<WhatsappLogoIcon aria-hidden className="size-4" />}
+                          >
+                            {t.today.tomorrow.remind}
+                          </ButtonLink>
+                        )}
+                      </div>
                     </CardRow>
                   )
                 })}

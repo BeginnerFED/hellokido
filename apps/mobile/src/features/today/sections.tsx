@@ -2,9 +2,9 @@ import { useMemo, useRef, useState, type ReactNode } from 'react'
 import { Linking, Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native'
 import { useQueryClient } from '@tanstack/react-query'
 import * as Haptics from 'expo-haptics'
-import { LessonError, setAttendance, type AttendanceStatus, type Lesson, type Registration, type Seat, type UnmarkedSeat } from '@hellokido/core/api'
+import { LessonError, remainingTone, setAttendance, type AttendanceStatus, type Lesson, type Registration, type Seat, type UnmarkedSeat, type Usage } from '@hellokido/core/api'
 import { whatsAppLink } from '@hellokido/core/rules/phone.js'
-import { byName, lessonsLeftText, needsRenewal, packageStartText, remainingText, shortDate } from '@hellokido/core/view'
+import { byName, lessonsLeftText, packageStartText, remainingText, shortDate } from '@hellokido/core/view'
 import { useMessageWriter, useRecentReminders, useReminderLog, useRemindedText, useSeatReminders } from '../../data/messages'
 import { keys, useActiveUsage, useLabels } from '../../data/queries'
 import { tasks, useOpenChild } from '../../lib/navigation'
@@ -465,8 +465,7 @@ export type TomorrowReminders = ReturnType<typeof useTomorrowReminders>
 
 /** Tomorrow's lessons with a reminder for every family; shown once opened from "Seni bekleyenler". */
 export function TomorrowSection({ lessons, reminders, open, onClose, onLayout }: { lessons: Lesson[]; reminders: TomorrowReminders; open: boolean; onClose: () => void; onLayout?: (event: LayoutChangeEvent) => void }) {
-  const i18n = useI18n()
-  const { t, fmt, date } = i18n
+  const { t, fmt, date } = useI18n()
   const labels = useLabels()
   const usage = useActiveUsage().data
   if (!open || lessons.length === 0) return null
@@ -489,36 +488,31 @@ export function TomorrowSection({ lessons, reminders, open, onClose, onLayout }:
                   const child = seat.child
                   const item = bySeatId.get(seat.id)
                   const done = isSent(seat.id)
-                  const own = usage?.[child.id]
-                  const ending = own !== undefined && needsRenewal(child, own)
                   return (
                     <View key={seat.id} style={styles.personRow}>
                       <Avatar name={child.student_name} size={36} />
                       <View style={styles.flex}>
                         <ChildName id={child.id} name={child.student_name} />
-                        {/* The lessons left first, so a long parent's name is what gets cut */}
                         <Text variant="sub" tone="ink3" numberOfLines={1}>
-                          {own && (
-                            <Text variant="sub" tone={ending ? 'amberInk' : 'ink3'} weight={ending ? '500' : undefined}>
-                              {remainingText(i18n, own)}
-                            </Text>
-                          )}
-                          {own && child.parent_name?.trim() ? DOT : ''}
                           {child.parent_name}
                         </Text>
                       </View>
-                      {seat.status !== 'scheduled' ? (
-                        <Mark tone="neutral">{labels.attendance(seat.status)}</Mark>
-                      ) : !item ? null : done ? (
-                        // A sent reminder taps back to "not sent", for a chat opened by mistake
-                        <Button size="sm" variant="plain" icon="check" accessibilityLabel={`${t.today.tomorrow.sent}. ${t.messages.undo}`} onPress={() => takeBack(seat.id)}>
-                          {t.today.tomorrow.sent}
-                        </Button>
-                      ) : (
-                        <Button size="sm" icon="chat" accessibilityLabel={fmt(t.today.tomorrow.remindLabel, { name: child.student_name })} onPress={() => send(item)}>
-                          {t.today.tomorrow.remind}
-                        </Button>
-                      )}
+                      <LessonsLeftFigure child={child} own={usage?.[child.id]} />
+                      {/* One width for "Hatırlat" and "Gönderildi", so the figures keep one column as the reminders go out */}
+                      <View style={styles.reminderAction}>
+                        {seat.status !== 'scheduled' ? (
+                          <Mark tone="neutral">{labels.attendance(seat.status)}</Mark>
+                        ) : !item ? null : done ? (
+                          // A sent reminder taps back to "not sent", for a chat opened by mistake
+                          <Button size="sm" variant="plain" icon="check" accessibilityLabel={`${t.today.tomorrow.sent}. ${t.messages.undo}`} onPress={() => takeBack(seat.id)}>
+                            {t.today.tomorrow.sent}
+                          </Button>
+                        ) : (
+                          <Button size="sm" icon="chat" accessibilityLabel={fmt(t.today.tomorrow.remindLabel, { name: child.student_name })} onPress={() => send(item)}>
+                            {t.today.tomorrow.remind}
+                          </Button>
+                        )}
+                      </View>
                     </View>
                   )
                 })}
@@ -528,6 +522,38 @@ export function TomorrowSection({ lessons, reminders, open, onClose, onLayout }:
         ))}
       </View>
     </Section>
+  )
+}
+
+/**
+ * A child's lessons left as a figure over "ders", as the Children list shows them: a column the
+ * eye runs down while the reminders go out; amber at two or fewer, as in the web's lesson card.
+ * A free package shows its name instead.
+ */
+function LessonsLeftFigure({ child, own }: { child: Pick<Registration, 'package_type'>; own: Usage | undefined }) {
+  const i18n = useI18n()
+  const { t, plural } = i18n
+  const labels = useLabels()
+  if (!own) return null
+  if (own.isFree || own.total === null) {
+    return (
+      <Text variant="foot" tone="ink3" numberOfLines={1} style={styles.shrink}>
+        {labels.packageName(child.package_type)}
+      </Text>
+    )
+  }
+  const left = Math.max(own.remaining ?? 0, 0)
+  const tone = remainingTone(own)
+  const low = tone === 'low' || tone === 'out'
+  return (
+    <View style={styles.leftFigure} accessible accessibilityLabel={remainingText(i18n, own)}>
+      <Text variant="figure" tabular tone={low ? 'amberInk' : 'ink'} maxFontSizeMultiplier={1.2}>
+        {left}
+      </Text>
+      <Text variant="foot" tone={low ? 'amberInk' : 'ink3'} weight={low ? '500' : undefined} numberOfLines={1} maxFontSizeMultiplier={1.2}>
+        {plural(t.children.phone.lessonsUnit, left)}
+      </Text>
+    </View>
   )
 }
 
@@ -542,6 +568,8 @@ const styles = StyleSheet.create({
   seat: { paddingHorizontal: 16, paddingVertical: 12, gap: 10 },
   seatHead: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   personRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingLeft: 16, paddingRight: 12, paddingVertical: 11 },
+  leftFigure: { alignItems: 'center', minWidth: 32, flexShrink: 0 },
+  reminderAction: { minWidth: 118, alignItems: 'flex-end', flexShrink: 0 },
   familyRow: { paddingLeft: 16, paddingRight: 12, paddingVertical: 12 },
   familyHead: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   // Under the name (past the 36pt avatar and its gap); a little into the head line, whose buttons stand taller than the name
